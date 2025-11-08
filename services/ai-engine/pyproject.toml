@@ -1,0 +1,147 @@
+[project]
+name = "athletai"
+version = "1.0.0"
+description = "AI-powered progressive overload training system"
+authors = [
+    {name = "AthleteAI Team"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["fitness", "training", "ai", "progressive-overload", "strength-training"]
+
+dependencies = [
+    # Core FastAPI dependencies
+    "fastapi==0.109.0",
+    "uvicorn[standard]==0.27.0",
+    "pydantic==2.5.3",
+    "pydantic-settings==2.1.0",
+    
+    # Database
+    "sqlalchemy==2.0.25",
+    "psycopg2-binary==2.9.9",
+    "alembic==1.13.1",
+    
+    # Scientific computing
+    "numpy==1.26.3",
+    "scipy==1.11.4",
+    "scikit-learn==1.4.0",
+    
+    # Utilities
+    "python-dotenv==1.0.0",
+    "python-multipart==0.0.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest==7.4.4",
+    "pytest-asyncio==0.23.3",
+    "pytest-cov==4.1.0",
+    "httpx==0.26.0",
+    
+    # Code quality
+    "black==23.12.1",
+    "ruff==0.1.13",
+    "mypy==1.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--verbose",
+    "--strict-markers",
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | alembic/versions
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "C",   # flake8-comprehensions
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]  # unused imports
+"tests/*" = ["E501"]      # line length in tests
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+follow_imports = "normal"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "*/tests/*",
+    "*/alembic/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "pass",
+]
+
+
