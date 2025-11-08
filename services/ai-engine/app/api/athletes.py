@@ -2,137 +2,14 @@
 Athletes API endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, undefer
 from typing import List
 
 from app.database import get_db
 from app.models import Athlete, WorkoutPlan, WorkoutSession
-from app.schemas.athlete import (
-    AthleteCreate,
-    AthleteUpdate,
-    AthleteResponse,
-    AthleteProgressSummary
-)
-from app.schemas.responses import SuccessResponse
 
 
 router = APIRouter()
-
-
-@router.post("/athletes", response_model=AthleteResponse, status_code=status.HTTP_201_CREATED)
-def create_athlete(
-    athlete_data: AthleteCreate,
-    db: Session = Depends(get_db)
-):
-    """
-    Create a new athlete profile.
-    """
-    # Check if email already exists
-    existing = db.query(Athlete).filter(Athlete.email == athlete_data.email).first()
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Athlete with email {athlete_data.email} already exists"
-        )
-    
-    # Create athlete
-    athlete = Athlete(
-        name=athlete_data.name,
-        email=athlete_data.email,
-        age=athlete_data.age,
-        gender=athlete_data.gender,
-        training_experience=athlete_data.training_experience,
-        injury_history=athlete_data.injury_history
-    )
-    
-    db.add(athlete)
-    db.commit()
-    db.refresh(athlete)
-    
-    return athlete
-
-
-@router.get("/athletes/{athlete_id}", response_model=AthleteResponse)
-def get_athlete(
-    athlete_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Get athlete by ID.
-    """
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    
-    if not athlete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
-        )
-    
-    return athlete
-
-
-@router.get("/athletes", response_model=List[AthleteResponse])
-def list_athletes(
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db)
-):
-    """
-    List all athletes.
-    """
-    athletes = db.query(Athlete).offset(skip).limit(limit).all()
-    return athletes
-
-
-@router.patch("/athletes/{athlete_id}", response_model=AthleteResponse)
-def update_athlete(
-    athlete_id: int,
-    athlete_data: AthleteUpdate,
-    db: Session = Depends(get_db)
-):
-    """
-    Update athlete information.
-    """
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    
-    if not athlete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
-        )
-    
-    # Update fields
-    update_data = athlete_data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(athlete, field, value)
-    
-    db.commit()
-    db.refresh(athlete)
-    
-    return athlete
-
-
-@router.delete("/athletes/{athlete_id}", response_model=SuccessResponse)
-def delete_athlete(
-    athlete_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Delete athlete.
-    """
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    
-    if not athlete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
-        )
-    
-    db.delete(athlete)
-    db.commit()
-    
-    return SuccessResponse(message=f"Athlete {athlete_id} deleted successfully")
-
 
 @router.get("/athletes/{athlete_id}/current-plan", response_model=dict)
 def get_current_plan(
@@ -150,8 +27,12 @@ def get_current_plan(
             detail=f"Athlete {athlete_id} not found"
         )
     
-    # Get active plan
-    plan = db.query(WorkoutPlan).filter(
+    # Get active plan with deferred fields undeferred for response
+    plan = db.query(WorkoutPlan).options(
+        undefer(WorkoutPlan.name),
+        undefer(WorkoutPlan.description),
+        undefer(WorkoutPlan.created_at)
+    ).filter(
         WorkoutPlan.athlete_id == athlete_id,
         WorkoutPlan.is_active == 1
     ).first()
@@ -173,7 +54,6 @@ def get_current_plan(
         "plan": WorkoutPlanResponse.model_validate(plan),
         "current_context": plan_context
     }
-
 
 @router.get("/athletes/{athlete_id}/progress", response_model=dict)
 def get_athlete_progress(
@@ -240,7 +120,6 @@ def get_athlete_progress(
     
     return {
         "athlete_id": athlete_id,
-        "athlete_name": athlete.name,
         "period_days": days,
         "total_workouts": total_workouts,
         "total_volume_lifted": round(total_volume, 1),
@@ -248,5 +127,3 @@ def get_athlete_progress(
         "weekly_breakdown": weeks_data,
         "training_experience": athlete.training_experience.value
     }
-
-

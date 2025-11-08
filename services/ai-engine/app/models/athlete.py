@@ -1,9 +1,11 @@
 """
 Athlete model and related data.
+
+Optimized for AI engine - only contains fields used by AI calculations.
+CRUD fields (name, email, injury_history, timestamps) are handled by NestJS API.
 """
-from sqlalchemy import Column, Integer, String, Enum, DateTime, Text, Float
+from sqlalchemy import Column, Integer, Enum, Float
 from sqlalchemy.orm import relationship
-from datetime import datetime
 
 from app.database import Base
 from app.utils.constants import TrainingExperience, Gender
@@ -11,40 +13,32 @@ from app.utils.constants import TrainingExperience, Gender
 
 class Athlete(Base):
     """
-    Athlete profile with demographic and training information.
+    Athlete profile optimized for AI engine performance.
+    
+    Only contains fields used by AI calculations:
+    - id, age, gender, training_experience, rpe_calibration_factor
+    
+    CRUD fields (name, email, injury_history, timestamps) are managed by NestJS API.
     """
     __tablename__ = "athletes"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False)
-    email = Column(String(255), unique=True, index=True, nullable=False)
     
-    # Demographics
+    # Core AI fields - used in AI calculations
     age = Column(Integer, nullable=False)
     gender = Column(Enum(Gender), nullable=False)
-    
-    # Training background
     training_experience = Column(Enum(TrainingExperience), nullable=False)
-    
-    # RPE calibration
     rpe_calibration_factor = Column(Float, nullable=False, default=1.0)
     
-    # Injury history (JSON-like text field for flexibility)
-    injury_history = Column(Text, nullable=True)
-    
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    
-    # Relationships
-    workout_plans = relationship("WorkoutPlan", back_populates="athlete", cascade="all, delete-orphan")
-    workout_sessions = relationship("WorkoutSession", back_populates="athlete", cascade="all, delete-orphan")
-    recovery_metrics = relationship("RecoveryMetrics", back_populates="athlete", cascade="all, delete-orphan")
-    rpe_calibrations = relationship("AthleteRPECalibration", back_populates="athlete", cascade="all, delete-orphan")
-    performance_trends = relationship("PerformanceTrend", back_populates="athlete", cascade="all, delete-orphan")
-    exercise_progressions = relationship("ExerciseProgressionTracking", back_populates="athlete", cascade="all, delete-orphan")
+    # Relationships - explicitly lazy to avoid accidental loads
+    workout_plans = relationship("WorkoutPlan", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")
+    workout_sessions = relationship("WorkoutSession", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")
+    recovery_metrics = relationship("RecoveryMetrics", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")
+    rpe_calibrations = relationship("AthleteRPECalibration", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")
+    performance_trends = relationship("PerformanceTrend", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")
+    exercise_progressions = relationship("ExerciseProgressionTracking", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")
     
     def __repr__(self):
-        return f"<Athlete(id={self.id}, name={self.name}, experience={self.training_experience})>"
+        return f"<Athlete(id={self.id}, experience={self.training_experience})>"
 
 

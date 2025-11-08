@@ -2,22 +2,21 @@
 Workouts API endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, undefer
 from datetime import datetime
 import json
 
 from app.database import get_db
 from app.models import (
     Athlete, WorkoutDay, WorkoutSession, ExerciseSet, 
-    RecoveryMetrics, PlanEntry
+    RecoveryMetrics
 )
 from app.schemas.workout import (
     WorkoutCompletionRequest,
     WorkoutCompletionResponse,
     WorkoutSessionResponse,
     RecoveryMetricsResponse,
-    NextWorkoutResponse,
-    ExerciseSetResponse
+    NextWorkoutResponse
 )
 from app.services.progressive_overload_engine import ProgressiveOverloadEngine
 from app.services.plan_updater import PlanUpdaterService
@@ -161,8 +160,21 @@ def complete_workout(
     
     # Commit all changes
     db.commit()
+    
+    # Undefer deferred fields for response
     db.refresh(workout_session)
     db.refresh(recovery_metrics)
+    
+    # Undefer notes and created_at for response
+    workout_session = db.query(WorkoutSession).options(
+        undefer(WorkoutSession.notes),
+        undefer(WorkoutSession.created_at)
+    ).filter(WorkoutSession.id == workout_session.id).first()
+    
+    recovery_metrics = db.query(RecoveryMetrics).options(
+        undefer(RecoveryMetrics.notes),
+        undefer(RecoveryMetrics.created_at)
+    ).filter(RecoveryMetrics.id == recovery_metrics.id).first()
     
     # Update plan entry if exists
     plan_context = ai_result["plan_context"]
@@ -254,38 +266,6 @@ def get_next_workout(
     )
     
     return next_workout
-
-
-@router.get("/workouts/sessions/{session_id}", response_model=dict)
-def get_workout_session(
-    session_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Get details of a specific workout session.
-    """
-    session = db.query(WorkoutSession).filter(
-        WorkoutSession.id == session_id
-    ).first()
-    
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Workout session {session_id} not found"
-        )
-    
-    # Get exercise sets
-    sets = [ExerciseSetResponse.model_validate(s) for s in session.exercise_sets]
-    
-    return {
-        "session": WorkoutSessionResponse.model_validate(session),
-        "exercise_sets": sets
-    }
-
-
-# =========================================
-# NEW API ENDPOINTS FOR ADVANCED FEATURES
-# =========================================
 
 @router.get("/athletes/{athlete_id}/rpe-calibration")
 def get_rpe_calibration_status(

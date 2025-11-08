@@ -2,7 +2,7 @@
 Recovery and readiness tracking models.
 """
 from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKey, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, deferred
 from datetime import datetime
 
 from app.database import Base
@@ -47,12 +47,9 @@ class RecoveryMetrics(Base):
     nutrition_adherence = Column(String(50), nullable=True)  # "excellent", "good", "fair", "poor"
     hydration_level = Column(String(50), nullable=True)  # "well_hydrated", "adequate", "dehydrated"
     
-    # Notes
-    notes = Column(Text, nullable=True)
-    
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    # Deferred fields - only loaded when explicitly needed (CRUD operations)
+    notes = deferred(Column(Text, nullable=True))
+    created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
     
     # Relationships
     athlete = relationship("Athlete", back_populates="recovery_metrics")

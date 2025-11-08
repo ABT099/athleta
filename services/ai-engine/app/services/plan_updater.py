@@ -5,17 +5,15 @@ Updates PlanEntry records and generates next workout with adjusted parameters.
 """
 from typing import Dict, List
 from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
-import json
+from sqlalchemy.orm import Session, undefer
 
 from app.models import (
-    WorkoutPlan, PlanEntry, WorkoutDay, WorkoutDayExercise,
+    PlanEntry, WorkoutDay, WorkoutDayExercise,
     WorkoutSession, ExerciseSet, RecoveryMetrics
 )
 from app.schemas.workout import (
     WorkoutDayResponse,
     WorkoutDayExerciseResponse,
-    NextWorkoutResponse
 )
 
 
@@ -189,6 +187,13 @@ class PlanUpdaterService:
             )
             
             adjusted_exercises.append(adjusted_ex)
+        
+        # Undefer deferred fields for response
+        workout_day = self.db.query(WorkoutDay).options(
+            undefer(WorkoutDay.name),
+            undefer(WorkoutDay.description),
+            undefer(WorkoutDay.created_at)
+        ).filter(WorkoutDay.id == workout_day.id).first()
         
         # Create workout day response
         workout_day_response = WorkoutDayResponse(

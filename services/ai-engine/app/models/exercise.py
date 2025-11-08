@@ -2,7 +2,7 @@
 Exercise library models.
 """
 from sqlalchemy import Column, Integer, String, Enum, Float, Text, ARRAY
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, deferred
 
 from app.database import Base
 from app.utils.constants import MuscleGroup
@@ -15,14 +15,13 @@ class Exercise(Base):
     __tablename__ = "exercises"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False, unique=True, index=True)
+    name = Column(String(255), nullable=False, unique=True, index=True)  # Eagerly loaded (used in AI error messages)
     
-    # Exercise characteristics
-    description = Column(Text, nullable=True)
-    equipment = Column(String(100), nullable=True)
-    difficulty = Column(String(50), nullable=True)  # beginner, intermediate, advanced
+    # Deferred fields - only loaded when explicitly needed (CRUD operations)
+    description = deferred(Column(Text, nullable=True))
+    equipment = deferred(Column(String(100), nullable=True))
     
-    # Muscle groups (stored as array of enums)
+    # Muscle groups (stored as array of enums) - eagerly loaded (used by AI)
     # Primary muscles targeted
     primary_muscles = Column(ARRAY(String), nullable=False)
     

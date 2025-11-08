@@ -2,7 +2,7 @@
 Workout planning and session models.
 """
 from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKey, Text, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, deferred
 from datetime import datetime
 
 from app.database import Base
@@ -18,10 +18,12 @@ class WorkoutPlan(Base):
     id = Column(Integer, primary_key=True, index=True)
     athlete_id = Column(Integer, ForeignKey("athletes.id"), nullable=False)
     
-    name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
+    # Deferred fields - only loaded when explicitly needed (CRUD operations)
+    name = deferred(Column(String(255), nullable=False))
+    description = deferred(Column(Text, nullable=True))
+    created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
     
-    # Plan characteristics
+    # Plan characteristics - eagerly loaded (used by AI)
     training_type = Column(Enum(TrainingType), nullable=False)
     periodization_model = Column(Enum(PeriodizationModel), nullable=False)
     
@@ -35,8 +37,6 @@ class WorkoutPlan(Base):
     # Timestamps
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     is_active = Column(Integer, default=1, nullable=False)  # 1 = active, 0 = inactive
     
@@ -46,7 +46,7 @@ class WorkoutPlan(Base):
     workout_days = relationship("WorkoutDay", back_populates="workout_plan", cascade="all, delete-orphan")
     
     def __repr__(self):
-        return f"<WorkoutPlan(id={self.id}, name={self.name}, type={self.training_type})>"
+        return f"<WorkoutPlan(id={self.id}, type={self.training_type})>"
 
 
 class PlanEntry(Base):
@@ -85,11 +85,7 @@ class PlanEntry(Base):
     
     # Notes
     notes = Column(Text, nullable=True)
-    
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    
+     
     # Relationships
     workout_plan = relationship("WorkoutPlan", back_populates="plan_entries")
     
@@ -106,10 +102,12 @@ class WorkoutDay(Base):
     id = Column(Integer, primary_key=True, index=True)
     workout_plan_id = Column(Integer, ForeignKey("workout_plans.id"), nullable=False)
     
-    name = Column(String(255), nullable=False)  # e.g., "Push Day A", "Lower Body"
-    description = Column(Text, nullable=True)
+    # Deferred fields - only loaded when explicitly needed (CRUD operations)
+    name = deferred(Column(String(255), nullable=False))  # e.g., "Push Day A", "Lower Body"
+    description = deferred(Column(Text, nullable=True))
+    created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
     
-    # Day of week (0=Monday, 6=Sunday)
+    # Day of week (0=Monday, 6=Sunday) - eagerly loaded (used by AI)
     day_of_week = Column(Integer, nullable=True)
     
     # Order in the weekly split
@@ -118,17 +116,13 @@ class WorkoutDay(Base):
     # Target muscle groups for this day
     target_muscle_groups = Column(JSON, nullable=False)
     
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    
     # Relationships
     workout_plan = relationship("WorkoutPlan", back_populates="workout_days")
     exercises = relationship("WorkoutDayExercise", back_populates="workout_day", cascade="all, delete-orphan")
     workout_sessions = relationship("WorkoutSession", back_populates="workout_day")
     
     def __repr__(self):
-        return f"<WorkoutDay(id={self.id}, name={self.name})>"
+        return f"<WorkoutDay(id={self.id})>"
 
 
 class WorkoutDayExercise(Base):
@@ -184,7 +178,7 @@ class WorkoutSession(Base):
     athlete_id = Column(Integer, ForeignKey("athletes.id"), nullable=False)
     workout_day_id = Column(Integer, ForeignKey("workout_days.id"), nullable=False)
     
-    # Session timing
+    # Session timing - eagerly loaded (used by AI)
     session_date = Column(DateTime, nullable=False)
     duration_minutes = Column(Integer, nullable=True)
     
@@ -192,16 +186,13 @@ class WorkoutSession(Base):
     overall_rpe = Column(Float, nullable=True)
     overall_feeling = Column(String(50), nullable=True)  # "great", "good", "okay", "poor"
     
-    # Session notes
-    notes = Column(Text, nullable=True)
-    
     # Calculated metrics (filled by AI engine)
     total_volume = Column(Float, nullable=True)  # total kg lifted
     estimated_fatigue = Column(Float, nullable=True)
     
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    # Deferred fields - only loaded when explicitly needed (CRUD operations)
+    notes = deferred(Column(Text, nullable=True))
+    created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
     
     # Relationships
     athlete = relationship("Athlete", back_populates="workout_sessions")
@@ -237,11 +228,9 @@ class ExerciseSet(Base):
     form_quality = Column(String(50), nullable=True)  # "excellent", "good", "fair", "poor"
     tempo_adherence = Column(String(50), nullable=True)  # "yes", "no", "partial"
     
-    # Set notes
-    notes = Column(Text, nullable=True)
-    
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # Deferred fields - only loaded when explicitly needed (CRUD operations)
+    notes = deferred(Column(Text, nullable=True))
+    created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
     
     # Relationships
     workout_session = relationship("WorkoutSession", back_populates="exercise_sets")

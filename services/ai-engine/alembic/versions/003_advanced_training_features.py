@@ -17,12 +17,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Add new fields to athletes table
-    op.add_column('athletes', sa.Column('rpe_calibration_factor', sa.Float(), nullable=False, server_default='1.0'))
-    
-    # Add new fields to exercises table
-    op.add_column('exercises', sa.Column('exercise_type', sa.String(50), nullable=False, server_default='compound'))
-    op.add_column('exercises', sa.Column('complexity_score', sa.Float(), nullable=False, server_default='1.0'))
+    # Note: Column additions to 'athletes' and 'exercises' tables are managed by NestJS migrations
+    # These tables belong to NestJS, so we don't modify them here
     
     # Create athlete_rpe_calibration table
     op.create_table('athlete_rpe_calibration',
@@ -119,10 +115,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_athlete_rpe_calibration_athlete_id'), table_name='athlete_rpe_calibration')
     op.drop_table('athlete_rpe_calibration')
     
-    # Remove columns from exercises table
-    op.drop_column('exercises', 'complexity_score')
-    op.drop_column('exercises', 'exercise_type')
-    
-    # Remove column from athletes table
-    op.drop_column('athletes', 'rpe_calibration_factor')
+    # Note: Column modifications for 'athletes' and 'exercises' tables are managed by NestJS migrations
+    # These tables belong to NestJS, so we don't modify them here
 
