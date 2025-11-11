@@ -28,10 +28,9 @@ export const exercisesTable = pgTable('exercises', {
   equipment: varchar({ length: 100 }).notNull(),
   primaryMuscles: text().array().notNull(),
   secondaryMuscles: text().array().notNull(),
-  injuryRiskLevel: integer().notNull(),
+  injuryRiskLevel: real().notNull(),
   jointStressAreas: varchar({ length: 255 }).array().notNull(),
   movementPattern: varchar({ length: 100 }).notNull(),
-  isCompound: integer().notNull(),
   exerciseType: varchar({ length: 50 }).notNull().$type<'compound' | 'isolation'>(),
   complexityScore: real().notNull().$default(() => 1.0),
 });
@@ -78,4 +77,15 @@ export const workoutDayExercisesTable = pgTable('workout_day_exercises', {
   notes: text(),
   isPrimary: boolean().notNull(),
   progressionScheme: varchar({ length: 50 }),
+});
+
+export const formQualityTrendsTable = pgTable('form_quality_trends', {
+  id: serial().primaryKey(),
+  athleteId: integer().references(() => athletesTable.id).notNull(),
+  exerciseId: integer().references(() => exercisesTable.id).notNull(),
+  date: timestamp().notNull(),
+  averageFormScore: real().notNull(), // 1.0=excellent, 0.75=good, 0.5=fair, 0.25=poor
+  setsAnalyzed: integer().notNull(),
+  degradationRate: real(), // Form drop across sets in session
+  highRpePoorFormCount: integer().notNull().$default(() => 0),
 });

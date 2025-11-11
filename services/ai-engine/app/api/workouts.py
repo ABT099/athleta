@@ -89,7 +89,6 @@ def complete_workout(
             rpe=set_data.rpe,
             rir=set_data.rir,
             form_quality=set_data.form_quality,
-            tempo_adherence=set_data.tempo_adherence,
             notes=set_data.notes
         )
         db.add(exercise_set)
@@ -157,6 +156,23 @@ def complete_workout(
     
     # Update workout session with estimated fatigue
     workout_session.estimated_fatigue = ai_result["recovery_status"]["fatigue_status"]["fatigue_score"]
+    
+    # Track form quality for this session
+    from app.services.form_quality_service import FormQualityService
+    form_service = FormQualityService(db)
+    session_metrics = form_service.track_session_form_quality(workout_session.id)
+    
+    # Save form quality trends for each exercise
+    for exercise_id, metrics in session_metrics.items():
+        form_service.save_form_quality_trend(
+            athlete_id=request.athlete_id,
+            exercise_id=exercise_id,
+            date=workout_session.session_date,
+            average_form_score=metrics["average_form_score"],
+            sets_analyzed=metrics["sets_analyzed"],
+            degradation_rate=metrics["degradation_rate"],
+            high_rpe_poor_form_count=metrics["high_rpe_poor_form_count"]
+        )
     
     # Commit all changes
     db.commit()

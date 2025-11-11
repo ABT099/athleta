@@ -15,6 +15,7 @@ from app.models.recovery import RecoveryMetrics
 from app.models.rpe_calibration import AthleteRPECalibration
 from app.models.performance_trends import PerformanceTrend
 from app.models.exercise_progression import ExerciseProgressionTracking
+from app.models.form_tracking import FormQualityTrend
 
 __all__ = [
     "Athlete",
@@ -29,6 +30,7 @@ __all__ = [
     "AthleteRPECalibration",
     "PerformanceTrend",
     "ExerciseProgressionTracking",
+    "FormQualityTrend",
 ]
 
 

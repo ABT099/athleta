@@ -226,7 +226,6 @@ class ExerciseSet(Base):
     
     # Form and execution
     form_quality = Column(String(50), nullable=True)  # "excellent", "good", "fair", "poor"
-    tempo_adherence = Column(String(50), nullable=True)  # "yes", "no", "partial"
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     notes = deferred(Column(Text, nullable=True))

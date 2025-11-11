@@ -50,7 +50,6 @@ class ExerciseSetData(BaseModel):
     rpe: Optional[float] = Field(None, ge=1, le=10)
     rir: Optional[int] = Field(None, ge=0, le=10)
     form_quality: Optional[str] = None  # "excellent", "good", "fair", "poor"
-    tempo_adherence: Optional[str] = None
     notes: Optional[str] = None
 
 

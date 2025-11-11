@@ -215,7 +215,6 @@ Submit completed workout and receive AI-generated next workout with progressive 
       "rpe": 8.0,      // Rate of Perceived Exertion (1-10)
       "rir": 2,        // Reps in Reserve
       "form_quality": "good",  // "excellent", "good", "fair", "poor"
-      "tempo_adherence": "yes",  // Optional
       "notes": "Felt strong"    // Optional
     },
     {

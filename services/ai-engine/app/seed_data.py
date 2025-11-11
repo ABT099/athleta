@@ -20,7 +20,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["shoulder", "elbow"],
         "movement_pattern": "push",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Incline Dumbbell Press",
@@ -32,7 +32,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder"],
         "movement_pattern": "push",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Cable Fly",
@@ -44,7 +44,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": ["shoulder"],
         "movement_pattern": "fly",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     {
         "name": "Push-Ups",
@@ -56,7 +56,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "push",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     
     # === BACK EXERCISES ===
@@ -70,7 +70,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 2.5,
         "joint_stress_areas": ["lower_back", "hip"],
         "movement_pattern": "hinge",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Pull-Ups",
@@ -82,7 +82,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder", "elbow"],
         "movement_pattern": "pull",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Bent-Over Barbell Row",
@@ -94,7 +94,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["lower_back"],
         "movement_pattern": "pull",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Lat Pulldown",
@@ -106,7 +106,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "pull",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Cable Row",
@@ -118,7 +118,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "pull",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     
     # === SHOULDER EXERCISES ===
@@ -132,7 +132,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 2.5,
         "joint_stress_areas": ["shoulder", "lower_back"],
         "movement_pattern": "push",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Dumbbell Lateral Raise",
@@ -144,7 +144,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder"],
         "movement_pattern": "raise",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     {
         "name": "Face Pulls",
@@ -156,7 +156,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "pull",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     
     # === LEG EXERCISES ===
@@ -170,7 +170,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 2.5,
         "joint_stress_areas": ["knee", "hip", "lower_back"],
         "movement_pattern": "squat",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Romanian Deadlift",
@@ -182,7 +182,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["lower_back", "hip"],
         "movement_pattern": "hinge",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Leg Press",
@@ -194,7 +194,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
         "movement_pattern": "squat",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Leg Extension",
@@ -206,7 +206,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
         "movement_pattern": "extension",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     {
         "name": "Leg Curl",
@@ -218,7 +218,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "curl",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     {
         "name": "Bulgarian Split Squat",
@@ -230,7 +230,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
         "movement_pattern": "squat",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Walking Lunges",
@@ -242,7 +242,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
         "movement_pattern": "lunge",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     
     # === ARM EXERCISES ===
@@ -256,7 +256,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "curl",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     {
         "name": "Hammer Curl",
@@ -268,7 +268,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "curl",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     {
         "name": "Tricep Dips",
@@ -280,7 +280,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["shoulder", "elbow"],
         "movement_pattern": "push",
-        "is_compound": 1
+        "exercise_type": "compound"
     },
     {
         "name": "Tricep Pushdown",
@@ -292,7 +292,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "extension",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     {
         "name": "Skull Crushers",
@@ -304,7 +304,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["elbow"],
         "movement_pattern": "extension",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     
     # === CORE EXERCISES ===
@@ -318,7 +318,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "hold",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     {
         "name": "Hanging Leg Raise",
@@ -330,7 +330,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder"],
         "movement_pattern": "raise",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     {
         "name": "Cable Crunch",
@@ -342,7 +342,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "crunch",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     
     # === CALF EXERCISES ===
@@ -356,7 +356,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "raise",
-        "is_compound": 0
+        "exercise_type": "isolation"
     },
     {
         "name": "Seated Calf Raise",
@@ -368,7 +368,7 @@ EXERCISE_SEED_DATA = [
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "raise",
-        "is_compound": 0
+        "exercise_type": "isolation"
     }
 ]
 

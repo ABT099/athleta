@@ -11,6 +11,7 @@ from sqlalchemy import func
 
 from app.models import WorkoutSession, ExerciseSet, Exercise, Athlete
 from app.services.training_calculations import TrainingCalculations
+from app.services.form_quality_service import FormQualityService
 from app.utils.constants import TrainingExperience, PROGRESSION_RATES
 
 
@@ -22,6 +23,7 @@ class InjuryPreventionService:
     def __init__(self, db: Session):
         self.db = db
         self.calc = TrainingCalculations()
+        self.form_service = FormQualityService(db)
     
     def check_all_injury_risks(
         self,
@@ -396,18 +398,23 @@ class InjuryPreventionService:
     
     def check_form_degradation(self, athlete_id: int, sessions_to_check: int = 3) -> Dict:
         """
-        Check for form degradation patterns.
+        Check for form degradation patterns with enhanced analysis.
         
-        Poor form combined with high RPE indicates excessive load.
+        Now includes:
+        - Per-exercise form tracking (not just aggregate)
+        - Within-session form degradation (set 1 vs final sets)
+        - Chronic poor form detection across multiple sessions
+        - Integration with joint stress monitoring
         
         Args:
             athlete_id: Athlete ID
             sessions_to_check: Number of recent sessions to analyze
             
         Returns:
-            Dict with form degradation warnings
+            Dict with form degradation warnings and detailed analysis
         """
         warnings = []
+        exercise_analysis = {}
         
         # Get recent sessions
         recent_sessions = (
@@ -419,30 +426,64 @@ class InjuryPreventionService:
         )
         
         if not recent_sessions:
-            return {"warnings": [], "poor_form_percentage": 0.0}
+            return {
+                "warnings": [],
+                "poor_form_percentage": 0.0,
+                "exercise_analysis": {},
+                "chronic_issues": {}
+            }
         
-        # Analyze form quality
+        # Analyze form quality per exercise
         total_sets = 0
         poor_form_sets = 0
         high_rpe_poor_form_sets = 0
         
         for session in recent_sessions:
-            for ex_set in session.exercise_sets:
-                total_sets += 1
+            # Get form quality metrics for this session
+            session_metrics = self.form_service.track_session_form_quality(session.id)
+            
+            for exercise_id, metrics in session_metrics.items():
+                if exercise_id not in exercise_analysis:
+                    exercise_analysis[exercise_id] = {
+                        "total_sets": 0,
+                        "poor_form_sets": 0,
+                        "high_rpe_poor_form_sets": 0,
+                        "degradation_events": 0,
+                        "average_score": []
+                    }
                 
-                if ex_set.form_quality in ["poor", "fair"]:
-                    poor_form_sets += 1
-                    
-                    # Especially concerning if also high RPE
-                    if ex_set.rpe and ex_set.rpe >= 9.0:
-                        high_rpe_poor_form_sets += 1
+                ex_analysis = exercise_analysis[exercise_id]
+                ex_analysis["total_sets"] += metrics["sets_analyzed"]
+                ex_analysis["average_score"].append(metrics["average_form_score"])
+                
+                # Count poor form sets (score < 0.6 = below "good")
+                poor_count = sum(
+                    1 for _ in range(metrics["sets_analyzed"])
+                    if metrics["average_form_score"] < 0.6
+                )
+                ex_analysis["poor_form_sets"] += poor_count
+                
+                ex_analysis["high_rpe_poor_form_sets"] += metrics["high_rpe_poor_form_count"]
+                
+                # Track degradation events
+                if metrics["degradation_rate"] and metrics["degradation_rate"] >= 0.20:
+                    ex_analysis["degradation_events"] += 1
+                
+                total_sets += metrics["sets_analyzed"]
+                poor_form_sets += poor_count
+                high_rpe_poor_form_sets += metrics["high_rpe_poor_form_count"]
         
         if total_sets == 0:
-            return {"warnings": [], "poor_form_percentage": 0.0}
+            return {
+                "warnings": [],
+                "poor_form_percentage": 0.0,
+                "exercise_analysis": {},
+                "chronic_issues": {}
+            }
         
         poor_form_percentage = (poor_form_sets / total_sets) * 100
         
-        # Generate warnings
+        # Generate aggregate warnings
         if poor_form_percentage > 30:
             warnings.append(
                 f"Form quality concerning: {poor_form_percentage:.1f}% of sets rated fair/poor. "
@@ -456,12 +497,161 @@ class InjuryPreventionService:
                 f"Reduce intensity immediately."
             )
         
+        # Generate per-exercise warnings
+        for exercise_id, ex_analysis in exercise_analysis.items():
+            if ex_analysis["total_sets"] == 0:
+                continue
+            
+            exercise = self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
+            exercise_name = exercise.name if exercise else f"Exercise {exercise_id}"
+            
+            ex_poor_percentage = (ex_analysis["poor_form_sets"] / ex_analysis["total_sets"]) * 100
+            avg_score = sum(ex_analysis["average_score"]) / len(ex_analysis["average_score"])
+            
+            # Exercise-specific warnings
+            if ex_poor_percentage > 40:
+                warnings.append(
+                    f"{exercise_name}: {ex_poor_percentage:.1f}% of sets with poor form. "
+                    f"Consider reducing loads or deloading."
+                )
+            
+            if ex_analysis["degradation_events"] > 0:
+                warnings.append(
+                    f"{exercise_name}: Form degrading within sessions detected. "
+                    f"Reduce volume or increase rest periods."
+                )
+            
+            # Check joint stress + poor form combination
+            if exercise:
+                joint_stress_areas = exercise.joint_stress_areas or []
+                if joint_stress_areas and avg_score < 0.6:
+                    warnings.append(
+                        f"{exercise_name}: Poor form on high joint-stress exercise. "
+                        f"Injury risk elevated. Reduce intensity immediately."
+                    )
+        
+        # Check for chronic issues
+        chronic_issues = self.form_service.detect_chronic_form_issues(athlete_id, days_lookback=14)
+        
         return {
             "warnings": warnings,
             "poor_form_percentage": round(poor_form_percentage, 1),
             "high_risk_sets": high_rpe_poor_form_sets,
-            "total_sets_analyzed": total_sets
+            "total_sets_analyzed": total_sets,
+            "exercise_analysis": {
+                ex_id: {
+                    "exercise_name": self.db.query(Exercise).filter(Exercise.id == ex_id).first().name if self.db.query(Exercise).filter(Exercise.id == ex_id).first() else f"Exercise {ex_id}",
+                    "poor_form_percentage": round((ex_data["poor_form_sets"] / ex_data["total_sets"] * 100) if ex_data["total_sets"] > 0 else 0, 1),
+                    "average_score": round(sum(ex_data["average_score"]) / len(ex_data["average_score"]), 3) if ex_data["average_score"] else None,
+                    "degradation_events": ex_data["degradation_events"]
+                }
+                for ex_id, ex_data in exercise_analysis.items()
+            },
+            "chronic_issues": chronic_issues
         }
+    
+    def analyze_form_degradation_patterns(
+        self,
+        athlete_id: int,
+        days_lookback: int = 14
+    ) -> Dict:
+        """
+        Analyze form degradation patterns to identify exercises with consistent form breakdown.
+        
+        Correlates form quality with fatigue accumulation and generates
+        exercise-specific technique warnings.
+        
+        Args:
+            athlete_id: Athlete ID
+            days_lookback: Number of days to analyze
+            
+        Returns:
+            Dict with pattern analysis and recommendations
+        """
+        # Get form quality alerts
+        alerts = self.form_service.generate_form_alerts(athlete_id, days_lookback=days_lookback)
+        
+        # Get chronic issues
+        chronic_issues = self.form_service.detect_chronic_form_issues(athlete_id, days_lookback=days_lookback)
+        
+        # Identify exercises with consistent form breakdown
+        problem_exercises = []
+        
+        for issue in chronic_issues.get("issues", []):
+            exercise = self.db.query(Exercise).filter(Exercise.id == issue["exercise_id"]).first()
+            if not exercise:
+                continue
+            
+            # Get trend for this exercise
+            trend = self.form_service.get_form_quality_trend(
+                athlete_id, issue["exercise_id"], days_lookback
+            )
+            
+            problem_exercises.append({
+                "exercise_id": issue["exercise_id"],
+                "exercise_name": issue["exercise_name"],
+                "poor_form_percentage": issue["poor_form_percentage"],
+                "trend_direction": trend.get("trend_direction"),
+                "joint_stress_areas": exercise.joint_stress_areas or [],
+                "recommendation": self._generate_exercise_specific_recommendation(
+                    exercise, issue, trend
+                )
+            })
+        
+        return {
+            "problem_exercises": problem_exercises,
+            "alerts": alerts,
+            "recommendations": self._generate_pattern_based_recommendations(problem_exercises)
+        }
+    
+    def _generate_exercise_specific_recommendation(
+        self,
+        exercise: Exercise,
+        issue: Dict,
+        trend: Dict
+    ) -> str:
+        """Generate exercise-specific recommendation based on form issues."""
+        recommendations = []
+        
+        if issue["poor_form_percentage"] > 50:
+            recommendations.append("Consider deloading this exercise")
+        
+        if trend.get("trend_direction") == "degrading":
+            recommendations.append("Form is getting worse - reduce volume or intensity")
+        
+        joint_stress = exercise.joint_stress_areas or []
+        if joint_stress and issue["poor_form_percentage"] > 30:
+            recommendations.append(
+                f"High joint stress areas ({', '.join(joint_stress)}) at risk - "
+                f"reduce loads immediately"
+            )
+        
+        if not recommendations:
+            recommendations.append("Focus on technique and consider reducing loads")
+        
+        return ". ".join(recommendations) + "."
+    
+    def _generate_pattern_based_recommendations(self, problem_exercises: List[Dict]) -> List[str]:
+        """Generate overall recommendations based on patterns."""
+        recommendations = []
+        
+        if len(problem_exercises) > 3:
+            recommendations.append(
+                "Multiple exercises showing form issues. Consider overall deload week."
+            )
+        
+        high_joint_stress_count = sum(
+            1 for ex in problem_exercises
+            if ex.get("joint_stress_areas")
+        )
+        
+        if high_joint_stress_count > 2:
+            recommendations.append(
+                "Multiple high joint-stress exercises with form issues. "
+                "Injury risk elevated - reduce training intensity."
+            )
+        
+        return recommendations
     
     def check_intensity_progression(
         self,
@@ -506,7 +696,7 @@ class InjuryPreventionService:
         weight_increase = (proposed_weight - last_set.weight) / last_set.weight
         
         # Set max progression based on exercise type
-        max_progression = 0.05 if exercise and exercise.is_compound else 0.10
+        max_progression = 0.05 if exercise and exercise.exercise_type == 'compound' else 0.10
         
         is_safe = weight_increase <= max_progression
         

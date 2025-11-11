@@ -36,7 +36,6 @@ class Exercise(Base):
     
     # Exercise categorization
     movement_pattern = Column(String(100), nullable=True)  # squat, hinge, push, pull, carry, etc.
-    is_compound = Column(Integer, default=1, nullable=False)  # 1 = compound, 0 = isolation
     exercise_type = Column(String(50), nullable=False, default='compound')  # compound, isolation
     complexity_score = Column(Float, nullable=False, default=1.0)  # 0.0-1.0, affects familiarity progression
     

@@ -39,10 +39,6 @@ class RecoveryMetrics(Base):
     # Calculated readiness score (by AI engine)
     readiness_score = Column(Float, nullable=True)  # 0.0-1.0
     
-    # Optional: HRV data (for future integration)
-    hrv = Column(Float, nullable=True)
-    resting_heart_rate = Column(Integer, nullable=True)
-    
     # Nutrition adherence
     nutrition_adherence = Column(String(50), nullable=True)  # "excellent", "good", "fair", "poor"
     hydration_level = Column(String(50), nullable=True)  # "well_hydrated", "adequate", "dehydrated"

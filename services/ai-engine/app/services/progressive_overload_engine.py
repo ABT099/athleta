@@ -21,6 +21,7 @@ from app.services.exercise_progression import ExerciseProgressionService
 from app.services.periodization import PeriodizationService
 from app.services.rpe_calibration import RPECalibrationService
 from app.services.volume_manager import VolumeManager
+from app.services.form_quality_service import FormQualityService
 from app.utils.constants import (
     TrainingType, TrainingPhase, TrainingExperience,
     PROGRESSION_RATES, REP_RANGES, INTENSITY_ZONES, DELOAD_THRESHOLDS
@@ -49,6 +50,7 @@ class ProgressiveOverloadEngine:
         self.periodization = PeriodizationService()
         self.rpe_calibration = RPECalibrationService(db)
         self.volume_manager = VolumeManager(db)
+        self.form_service = FormQualityService(db)
         
         # ML services (optional)
         if ML_AVAILABLE:
@@ -732,7 +734,36 @@ class ProgressiveOverloadEngine:
                 "exercise_adjustments": {}
             }
         
-        # === Priority 4: Performance-based adjustments ===
+        # === Priority 4: Form quality gates ===
+        # Check form quality trends and apply gates to prevent progression if form is poor
+        form_quality_gates = {}
+        form_blocked_exercises = []
+        
+        # Get exercises from performance analysis
+        exercise_analyses = performance.get("exercise_analyses", [])
+        for analysis in exercise_analyses:
+            ex_id = analysis.get("exercise_id")
+            if ex_id:
+                should_block, reason = self.form_service.should_block_progression(
+                    athlete.id, ex_id
+                )
+                
+                if should_block:
+                    form_quality_gates[ex_id] = {
+                        "blocked": True,
+                        "reason": reason
+                    }
+                    form_blocked_exercises.append(ex_id)
+                    # Reduce adjustments for exercises with poor form
+                    volume_adjustment *= 0.95
+                    intensity_adjustment *= 0.95
+        
+        # If multiple exercises have form issues, apply broader reduction
+        if len(form_blocked_exercises) > 2:
+            volume_adjustment *= 0.9
+            intensity_adjustment *= 0.95
+        
+        # === Priority 5: Performance-based adjustments ===
         performance_level = performance.get("performance_level", "on_target")
         
         # Get progression rates for athlete's experience
@@ -772,7 +803,7 @@ class ProgressiveOverloadEngine:
             volume_adjustment *= 0.85
             intensity_adjustment *= 0.90
         
-        # === Priority 5: Phase-specific adjustments ===
+        # === Priority 6: Phase-specific adjustments ===
         if current_phase == TrainingPhase.ACCUMULATION:
             # Volume phase - prioritize volume over intensity
             volume_adjustment *= 1.02
@@ -785,7 +816,7 @@ class ProgressiveOverloadEngine:
             intensity_adjustment *= 1.01
             volume_adjustment *= 0.90
         
-        # === Priority 6: Volume Landmarks (MEV/MAV/MRV) ===
+        # === Priority 7: Volume Landmarks (MEV/MAV/MRV) ===
         # Check volume position for primary muscle groups in the workout
         # Get muscle groups from performance analysis if available
         exercise_analyses = performance.get("exercise_analyses", [])
@@ -831,7 +862,8 @@ class ProgressiveOverloadEngine:
             intensity_adjustment,
             volume_adjustment,
             athlete.training_experience,
-            training_type
+            training_type,
+            form_quality_gates
         )
         
         # Generate reasoning
@@ -840,14 +872,16 @@ class ProgressiveOverloadEngine:
             readiness,
             injury_risk["risk_level"],
             training_type,
-            current_phase
+            current_phase,
+            form_blocked_exercises
         )
         
         return {
             "volume_multiplier": round(volume_adjustment, 3),
             "intensity_multiplier": round(intensity_adjustment, 3),
             "reasoning": reasoning,
-            "exercise_adjustments": exercise_adjustments
+            "exercise_adjustments": exercise_adjustments,
+            "form_quality_gates": form_quality_gates
         }
     
     def _calculate_exercise_specific_adjustments(
@@ -856,7 +890,8 @@ class ProgressiveOverloadEngine:
         base_intensity_adj: float,
         base_volume_adj: float,
         experience: TrainingExperience,
-        training_type: TrainingType
+        training_type: TrainingType,
+        form_quality_gates: Optional[Dict] = None
     ) -> Dict:
         """
         Calculate adjustments for each specific exercise.
@@ -901,6 +936,16 @@ class ProgressiveOverloadEngine:
             if analysis.get("is_primary"):
                 intensity_adj = 1.0 + (intensity_adj - 1.0) * 0.8
             
+            # Apply form quality gates - block or reduce progression if form is poor
+            form_gate_reason = None
+            if form_quality_gates and ex_id in form_quality_gates:
+                gate = form_quality_gates[ex_id]
+                if gate.get("blocked"):
+                    # Hold or reduce loads, don't progress
+                    intensity_adj = min(intensity_adj, 0.95)  # Cap at 95% (slight reduction)
+                    volume_adj = min(volume_adj, 0.95)
+                    form_gate_reason = gate.get("reason")
+            
             # Calculate actual weight suggestion
             # (Would need current weight from database in real implementation)
             
@@ -909,6 +954,9 @@ class ProgressiveOverloadEngine:
                 "volume_multiplier": round(volume_adj, 3),
                 "reason": self._get_exercise_adjustment_reason(rpe_diff)
             }
+            
+            if form_gate_reason:
+                adjustments[ex_id]["form_gate_reason"] = form_gate_reason
         
         return adjustments
     
@@ -963,7 +1011,8 @@ class ProgressiveOverloadEngine:
         readiness: float,
         injury_risk: str,
         training_type: TrainingType,
-        phase: TrainingPhase
+        phase: TrainingPhase,
+        form_blocked_exercises: Optional[List[int]] = None
     ) -> str:
         """Generate human-readable reasoning for adjustments."""
         reasons = []
@@ -985,6 +1034,13 @@ class ProgressiveOverloadEngine:
             reasons.append("Accumulation phase - volume focus")
         elif phase == TrainingPhase.INTENSIFICATION:
             reasons.append("Intensification phase - intensity focus")
+        
+        if form_blocked_exercises:
+            count = len(form_blocked_exercises)
+            reasons.append(
+                f"Form quality below target on {count} exercise{'s' if count > 1 else ''} - "
+                f"maintaining loads"
+            )
         
         return " | ".join(reasons)
     

@@ -1,10 +1,43 @@
 """
 Pytest configuration and fixtures.
 """
+import os
 import pytest
-from sqlalchemy import create_engine
+import json
+from sqlalchemy import create_engine, event, String, Text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.dialects import sqlite
+
+# Set test database URL before importing app modules
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+
 from app.database import Base
+
+
+# Custom type to handle PostgreSQL ARRAY in SQLite
+class SQLiteArray(String):
+    """Custom type to serialize/deserialize arrays for SQLite."""
+    
+    def bind_processor(self, dialect):
+        def process(value):
+            if value is None:
+                return None
+            if isinstance(value, list):
+                return json.dumps(value)
+            return value
+        return process
+    
+    def result_processor(self, dialect, coltype):
+        def process(value):
+            if value is None:
+                return []
+            if isinstance(value, str):
+                try:
+                    return json.loads(value)
+                except (json.JSONDecodeError, TypeError):
+                    return []
+            return value
+        return process
 
 
 @pytest.fixture(scope="function")
@@ -12,8 +45,23 @@ def db_session():
     """
     Create a test database session.
     
-    Uses in-memory SQLite for testing.
+    Uses in-memory SQLite for testing with PostgreSQL ARRAY compatibility.
     """
+    # Patch ARRAY type for SQLite compatibility
+    from sqlalchemy.dialects.postgresql import ARRAY
+    
+    # Override ARRAY compilation for SQLite
+    @event.listens_for(Base.metadata, "before_create")
+    def receive_before_create(target, connection, **kw):
+        """Handle ARRAY types in SQLite."""
+        if connection.dialect.name == 'sqlite':
+            for table in Base.metadata.tables.values():
+                for column in table.columns:
+                    if hasattr(column.type, '__class__'):
+                        if column.type.__class__.__name__ == 'ARRAY':
+                            # Replace ARRAY with Text for SQLite
+                            column.type = Text()
+    
     # Create in-memory SQLite database for testing
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
