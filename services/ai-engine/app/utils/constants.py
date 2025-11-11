@@ -175,18 +175,25 @@ class ExerciseType(str, Enum):
 
 # Age-based progression modifiers
 # Format: (min_age, max_age): multiplier
+# Note: These are starting points - individual variability is large
+# Well-trained older athletes may progress similar to younger novices
 AGE_PROGRESSION_MODIFIERS: Dict[tuple, float] = {
-    (18, 25): 1.15,   # Peak recovery capacity
+    (18, 25): 1.10,   # Peak recovery capacity (softened from 1.15)
     (26, 35): 1.0,    # Baseline
-    (36, 45): 0.85,   # Reduced recovery
-    (46, 55): 0.70,   # Further reduction
-    (56, 100): 0.60,  # Masters athletes
+    (36, 45): 0.90,   # Reduced recovery (softened from 0.85)
+    (46, 55): 0.80,   # Further reduction (softened from 0.70)
+    (56, 65): 0.70,   # Masters athletes (softened from 0.60)
+    (66, 100): 0.65,  # Senior masters (new bracket)
 }
 
 # Gender-based recovery modifiers
+# Note: Focuses on fatigue resistance in submaximal work rather than blanket "faster recovery"
+# Individual variability within genders is often larger than between-gender differences
+# Recovery varies significantly by exercise type, volume, and individual factors
 GENDER_RECOVERY_MODIFIERS: Dict[Gender, float] = {
     Gender.MALE: 1.0,    # Baseline
-    Gender.FEMALE: 1.1,  # Women recover ~10% faster from volume
+    Gender.FEMALE: 1.08,  # Women show ~8% greater fatigue resistance in submaximal work
+                          # (slightly reduced from 1.1 to reflect nuance)
 }
 
 # Exercise-specific progression rates (% per session)

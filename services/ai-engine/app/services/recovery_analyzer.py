@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.models import RecoveryMetrics, WorkoutSession, Athlete
 from app.utils.constants import (
     SleepQuality, SLEEP_QUALITY_MULTIPLIERS, MuscleGroup, 
-    Gender, AGE_PROGRESSION_MODIFIERS, GENDER_RECOVERY_MODIFIERS
+    Gender, AGE_PROGRESSION_MODIFIERS, GENDER_RECOVERY_MODIFIERS,
+    TrainingExperience
 )
 
 
@@ -24,63 +25,123 @@ class RecoveryAnalyzer:
         self.db = db
     
     @staticmethod
-    def calculate_gender_recovery_modifier(gender: Gender, age: int) -> float:
+    def calculate_gender_recovery_modifier(
+        gender: Gender, 
+        age: int, 
+        training_age_years: Optional[int] = None
+    ) -> float:
         """
-        Calculate gender-specific recovery modifier.
+        Calculate gender-specific recovery modifier with nuanced approach.
         
-        Women generally recover faster from volume training than men.
-        This is adjusted further by age, especially during peak reproductive years.
+        Women show greater fatigue resistance in submaximal work, but recovery
+        rates are more nuanced and vary by exercise type, volume, and individual factors.
+        Individual variability within genders is often larger than between-gender differences.
         
         References:
         - Kraemer et al. (2001): Gender differences in recovery from resistance training
-        - Hunter (2014): Sex differences in muscle recovery
+        - Hunter (2014): Sex differences in human fatigability
+        - Individual variability often exceeds gender differences
         
         Args:
             gender: Athlete gender
-            age: Athlete age
+            age: Chronological age
+            training_age_years: Years of consistent training (optional, can be inferred)
             
         Returns:
             Recovery multiplier (1.0 = baseline)
+            Note: Individual variability is typically larger than gender differences
         """
+        # Base modifier focuses on fatigue resistance rather than blanket "faster recovery"
+        # Women show ~10% greater fatigue resistance in submaximal work
         base_modifier = GENDER_RECOVERY_MODIFIERS[gender]
         
-        # Additional boost for women in peak reproductive years
-        if gender == Gender.FEMALE and 18 <= age <= 35:
-            base_modifier *= 1.05  # Additional 5% boost
+        # Age adjustments (softer than before, with wider ranges)
+        # Well-trained older athletes may progress similar to younger novices
+        age_modifier = RecoveryAnalyzer.calculate_age_progression_modifier(age, training_age_years)
         
-        # Age-related decline applies to all
-        if age > 40:
-            base_modifier *= 0.95  # 5% reduction after 40
+        # Training age consideration: experienced athletes adapt better regardless of age
+        if training_age_years is not None and training_age_years >= 5:
+            # Experienced athletes have better recovery capacity
+            training_age_boost = min(0.05, training_age_years * 0.01)  # Up to 5% boost
+            age_modifier *= (1.0 + training_age_boost)
         
-        if age > 50:
-            base_modifier *= 0.90  # Additional 10% reduction after 50
+        # Combine gender and age modifiers
+        # Individual variability is emphasized - these are starting points
+        combined_modifier = base_modifier * age_modifier
         
-        return round(base_modifier, 3)
+        # Clamp to reasonable range (0.7 - 1.2)
+        combined_modifier = max(0.7, min(1.2, combined_modifier))
+        
+        return round(combined_modifier, 3)
     
     @staticmethod
-    def calculate_age_progression_modifier(age: int) -> float:
+    def calculate_age_progression_modifier(
+        age: int, 
+        training_age_years: Optional[int] = None
+    ) -> float:
         """
-        Calculate age-based progression rate modifier.
+        Calculate age-based progression rate modifier with softer ranges.
         
-        Younger athletes can handle higher training volumes and progress faster.
-        Older athletes need more recovery time but can still progress effectively.
+        Distinguishes between chronological age and training age.
+        Masters athletes (40+) can still achieve significant gains with proper programming.
+        Well-trained older athletes may progress similar to younger novices.
         
         References:
         - Schoenfeld et al. (2016): Effects of age on muscle hypertrophy
         - Ahtiainen et al. (2016): Training adaptations across age groups
+        - Tanaka & Seals (2008): Aging athlete adaptations
         
         Args:
-            age: Athlete age
+            age: Chronological age
+            training_age_years: Years of consistent training (optional)
             
         Returns:
             Progression multiplier (1.0 = baseline)
         """
+        # Find base modifier from age brackets (softer ranges than before)
+        base_modifier = 1.0
         for (min_age, max_age), modifier in AGE_PROGRESSION_MODIFIERS.items():
             if min_age <= age <= max_age:
-                return modifier
+                base_modifier = modifier
+                break
         
-        # Default to baseline if age not in ranges
-        return 1.0
+        # If training age is provided, adjust based on training experience
+        # Well-trained older athletes can offset age-related decline
+        if training_age_years is not None and base_modifier < 1.0:
+            if training_age_years >= 10:
+                # Very experienced: offset 10-20% of age penalty
+                # At 10 years: 10% offset, increases by 2% per additional year, capped at 20%
+                offset = min(0.2, 0.1 + (training_age_years - 10) * 0.02)
+                base_modifier = base_modifier + (1.0 - base_modifier) * offset
+            elif training_age_years >= 5:
+                # Moderately experienced: offset 5-10% of age penalty
+                # At 5 years: 5% offset, increases by 1% per additional year, capped at 10%
+                offset = min(0.1, 0.05 + (training_age_years - 5) * 0.01)
+                base_modifier = base_modifier + (1.0 - base_modifier) * offset
+        
+        return round(base_modifier, 3)
+    
+    @staticmethod
+    def estimate_training_age_from_experience(training_experience: TrainingExperience) -> int:
+        """
+        Estimate training age in years from experience level.
+        
+        This is a rough estimate - actual training age should be provided when available.
+        
+        Args:
+            training_experience: Training experience enum
+            
+        Returns:
+            Estimated years of training
+        """
+        from app.utils.constants import TrainingExperience
+        
+        estimates = {
+            TrainingExperience.BEGINNER: 0,  # 0-1 years
+            TrainingExperience.INTERMEDIATE: 2,  # 2-4 years
+            TrainingExperience.ADVANCED: 5,  # 5+ years
+        }
+        return estimates.get(training_experience, 0)
     
     def calculate_readiness_score(
         self,

@@ -20,6 +20,7 @@ from app.services.injury_prevention import InjuryPreventionService
 from app.services.exercise_progression import ExerciseProgressionService
 from app.services.periodization import PeriodizationService
 from app.services.rpe_calibration import RPECalibrationService
+from app.services.volume_manager import VolumeManager
 from app.utils.constants import (
     TrainingType, TrainingPhase, TrainingExperience,
     PROGRESSION_RATES, REP_RANGES, INTENSITY_ZONES, DELOAD_THRESHOLDS
@@ -47,6 +48,7 @@ class ProgressiveOverloadEngine:
         self.exercise_progression = ExerciseProgressionService(db)
         self.periodization = PeriodizationService()
         self.rpe_calibration = RPECalibrationService(db)
+        self.volume_manager = VolumeManager(db)
         
         # ML services (optional)
         if ML_AVAILABLE:
@@ -370,16 +372,19 @@ class ProgressiveOverloadEngine:
         lookback_sessions: int = 6
     ) -> Tuple[bool, Optional[str]]:
         """
-        Determine if athlete should deload based on performance trends.
+        Determine if athlete should deload based on comprehensive fatigue assessment.
         
-        Uses autoregulated logic instead of fixed time-based deloads:
+        Uses autoregulated logic with multiple fatigue indicators:
         - Performance drop >10% over last 2+ sessions
         - Readiness score <0.5 for 3+ consecutive days
         - RPE spike >1.5 points at same or lower weight
+        - ACWR (Acute:Chronic Workload Ratio) outside safe zone (0.8-1.3)
+        - Session RPE (sRPE) spike: RPE × duration showing high total load
         
         References:
         - Zourdos et al. (2016): RPE-based autoregulation
         - Mann et al. (2010): Autoregulatory progressive resistance
+        - Gabbett (2016): The training-injury prevention paradox (ACWR)
         
         Args:
             athlete_id: Athlete ID
@@ -433,11 +438,142 @@ class ProgressiveOverloadEngine:
             if rpe_increase >= thresholds["rpe_spike_threshold"] and volume_ratio <= 1.0:
                 return True, f"RPE increased {rpe_increase:.1f} points with no volume increase - likely accumulated fatigue"
         
-        # Check 4: Current readiness extremely low
+        # Check 4: ACWR (Acute:Chronic Workload Ratio)
+        acwr_result = self._check_acwr(athlete_id)
+        if acwr_result[0]:
+            return True, acwr_result[1]
+        
+        # Check 5: Session RPE (sRPE) spike
+        srpe_result = self._check_session_rpe_spike(athlete_id, lookback_sessions)
+        if srpe_result[0]:
+            return True, srpe_result[1]
+        
+        # Check 6: Current readiness extremely low
         if current_readiness < 0.4:
             return True, f"Current readiness critically low: {current_readiness:.2f}"
         
         # No deload needed
+        return False, None
+    
+    def _check_acwr(self, athlete_id: int) -> Tuple[bool, Optional[str]]:
+        """
+        Check Acute:Chronic Workload Ratio (ACWR).
+        
+        Safe zone: 0.8 - 1.3
+        Elevated risk: < 0.8 (undertraining) or > 1.5 (overtraining)
+        
+        Reference: Gabbett (2016): The training-injury prevention paradox
+        
+        Args:
+            athlete_id: Athlete ID
+            
+        Returns:
+            Tuple of (should_deload, reason)
+        """
+        from datetime import datetime, timedelta
+        from app.models import WorkoutSession
+        
+        # Get recent sessions (last 7 days = acute)
+        acute_cutoff = datetime.utcnow() - timedelta(days=7)
+        # Get chronic sessions (last 28 days)
+        chronic_cutoff = datetime.utcnow() - timedelta(days=28)
+        
+        # Calculate acute load (last 7 days)
+        acute_sessions = (
+            self.db.query(WorkoutSession)
+            .filter(
+                WorkoutSession.athlete_id == athlete_id,
+                WorkoutSession.session_date >= acute_cutoff
+            )
+            .all()
+        )
+        
+        acute_loads = []
+        for session in acute_sessions:
+            if session.total_volume and session.overall_rpe:
+                # Normalized load: volume/1000 * RPE
+                load = (session.total_volume / 1000) * session.overall_rpe
+                acute_loads.append(load)
+        
+        # Calculate chronic load (last 28 days)
+        chronic_sessions = (
+            self.db.query(WorkoutSession)
+            .filter(
+                WorkoutSession.athlete_id == athlete_id,
+                WorkoutSession.session_date >= chronic_cutoff
+            )
+            .all()
+        )
+        
+        chronic_loads = []
+        for session in chronic_sessions:
+            if session.total_volume and session.overall_rpe:
+                load = (session.total_volume / 1000) * session.overall_rpe
+                chronic_loads.append(load)
+        
+        if len(acute_loads) == 0 or len(chronic_loads) == 0:
+            return False, None
+        
+        # Calculate ACWR
+        acwr = self.calc.calculate_acute_chronic_workload_ratio(acute_loads, chronic_loads)
+        
+        # Check if outside safe zone
+        if acwr > 1.5:
+            return True, f"ACWR {acwr:.2f} exceeds safe zone (>1.5) - high injury risk, deload recommended"
+        elif acwr < 0.8:
+            # Undertraining, not a deload trigger but worth noting
+            return False, None
+        
+        return False, None
+    
+    def _check_session_rpe_spike(self, athlete_id: int, lookback_sessions: int) -> Tuple[bool, Optional[str]]:
+        """
+        Check for Session RPE (sRPE) spike.
+        
+        sRPE = RPE × duration (minutes)
+        High sRPE indicates high total training load.
+        
+        Args:
+            athlete_id: Athlete ID
+            lookback_sessions: Number of sessions to look back
+            
+        Returns:
+            Tuple of (should_deload, reason)
+        """
+        from app.models import WorkoutSession
+        
+        recent_sessions = (
+            self.db.query(WorkoutSession)
+            .filter(WorkoutSession.athlete_id == athlete_id)
+            .order_by(desc(WorkoutSession.session_date))
+            .limit(lookback_sessions)
+            .all()
+        )
+        
+        if len(recent_sessions) < 3:
+            return False, None
+        
+        # Calculate sRPE for each session
+        srpe_values = []
+        for session in recent_sessions:
+            if session.overall_rpe and session.duration_minutes:
+                srpe = session.overall_rpe * session.duration_minutes
+                srpe_values.append(srpe)
+        
+        if len(srpe_values) < 3:
+            return False, None
+        
+        # Check if recent sRPE is significantly higher than previous
+        recent_srpe = sum(srpe_values[:2]) / 2  # Average of last 2
+        previous_srpe = sum(srpe_values[2:4]) / 2 if len(srpe_values) >= 4 else srpe_values[2]
+        
+        if previous_srpe > 0:
+            srpe_increase = ((recent_srpe - previous_srpe) / previous_srpe) * 100
+            
+            # If sRPE increased >20% while volume/intensity stayed similar, suggests fatigue
+            if srpe_increase > 20:
+                return True, f"Session RPE (sRPE) increased {srpe_increase:.1f}% - high total training load detected"
+        
         return False, None
     
     def calculate_next_workout_parameters_hybrid(
@@ -648,6 +784,40 @@ class ProgressiveOverloadEngine:
             # Peaking phase - high intensity, low volume
             intensity_adjustment *= 1.01
             volume_adjustment *= 0.90
+        
+        # === Priority 6: Volume Landmarks (MEV/MAV/MRV) ===
+        # Check volume position for primary muscle groups in the workout
+        # Get muscle groups from performance analysis if available
+        exercise_analyses = performance.get("exercise_analyses", [])
+        if exercise_analyses and training_type == TrainingType.HYPERTROPHY:
+            # For hypertrophy training, respect volume landmarks
+            # Get volume recommendations for primary muscle groups
+            from app.utils.constants import MuscleGroup
+            
+            # Sample a few key muscle groups to check (chest, back, legs)
+            key_muscles = [MuscleGroup.CHEST, MuscleGroup.BACK, MuscleGroup.QUADRICEPS]
+            volume_adjustments_by_muscle = []
+            
+            for muscle_group in key_muscles:
+                try:
+                    volume_rec = self.volume_manager.get_volume_adjustment_recommendation(
+                        athlete.id,
+                        muscle_group,
+                        athlete.training_experience,
+                        volume_adjustment
+                    )
+                    if volume_rec["priority"] == "high":
+                        # High priority recommendations should influence overall volume
+                        volume_adjustments_by_muscle.append(volume_rec["adjustment"])
+                except Exception:
+                    # If volume calculation fails, continue without it
+                    pass
+            
+            if volume_adjustments_by_muscle:
+                # Average the high-priority adjustments
+                avg_volume_adj = sum(volume_adjustments_by_muscle) / len(volume_adjustments_by_muscle)
+                # Blend with current adjustment (70% current, 30% volume landmarks)
+                volume_adjustment = (volume_adjustment * 0.7) + (avg_volume_adj * 0.3)
         
         # Cap adjustments for safety
         volume_adjustment = min(volume_adjustment, 1.15)

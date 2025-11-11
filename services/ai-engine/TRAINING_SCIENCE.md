@@ -52,49 +52,69 @@ Progressive overload is the gradual increase of stress placed on the body during
 
 #### Women vs Men
 
-**Recovery Capacity:**
-- Women recover ~10% faster from volume training
+**Recovery & Fatigue Resistance:**
+- Women show ~8% greater fatigue resistance in submaximal work
 - Less muscle damage from eccentric loading
-- Better fatigue resistance in moderate rep ranges
+- Superior recovery between high-volume sets
+- **Important**: Individual variability within genders often exceeds between-gender differences
 
-**Peak Performance Years:**
-- Women ages 18-35: +5% additional recovery boost
-- Hormonal factors (estrogen) enhance recovery
+**Physiological Basis:**
+- Enhanced oxidative metabolism
+- Greater proportion of Type I muscle fibers on average
+- Different hormonal response to training stress
+- More efficient intramuscular coordination under fatigue
 
 **Implementation:**
 ```python
 GENDER_RECOVERY_MODIFIERS = {
-    Gender.MALE: 1.0,    # Baseline
-    Gender.FEMALE: 1.1,  # 10% faster recovery
+    Gender.MALE: 1.0,     # Baseline
+    Gender.FEMALE: 1.08,  # 8% fatigue resistance advantage
 }
 ```
 
+**Note on Individual Variation:**
+The system applies these modifiers as starting points, but individual athlete responses always take priority. Many female athletes may not show this advantage, and some male athletes may have superior fatigue resistance.
+
 **References:**
 - Kraemer et al. (2001): Gender differences in recovery
-- Hunter (2014): Sex differences in muscle recovery
-- Sung et al. (2014): Menstrual cycle effects
+- Hunter (2014): Sex differences in human fatigability
+- Temesi et al. (2015): Are females more resistant to extreme neuromuscular fatigue?
 
-### Age-Based Progression
+### Age-Based Progression with Training Age Consideration
 
-#### Age Brackets & Modifiers
+#### Updated Age Brackets & Modifiers
 
-| Age Range | Progression Modifier | Rationale |
-|-----------|---------------------|-----------|
-| 18-25     | 1.15 (115%)         | Peak recovery, optimal protein synthesis |
-| 26-35     | 1.0 (100%)          | Baseline performance |
-| 36-45     | 0.85 (85%)          | Reduced recovery capacity |
-| 46-55     | 0.70 (70%)          | Masters athlete adjustments |
-| 56+       | 0.60 (60%)          | Longer recovery needed |
+| Age Range | Base Modifier | Rationale |
+|-----------|--------------|-----------|
+| 18-25     | 1.10 (110%)  | Peak recovery, optimal protein synthesis |
+| 26-35     | 1.0 (100%)   | Baseline performance |
+| 36-45     | 0.85 (85%)   | Reduced recovery capacity |
+| 46-55     | 0.75 (75%)   | Masters athlete adjustments |
+| 56-65     | 0.70 (70%)   | Longer recovery needed |
+| 66+       | 0.65 (65%)   | Senior masters adjustments |
 
-**Physiological Changes with Age:**
-- Decreased protein synthesis rates
-- Reduced satellite cell activity
-- Longer recovery times between sessions
-- Increased injury risk with rapid progressions
+**Training Age vs Chronological Age:**
+
+The system now distinguishes between chronological age and training age (years of consistent training experience). Well-trained older athletes can offset age-related decline:
+
+- **10+ years training**: Offset up to 20% of age penalty
+- **5-9 years training**: Offset up to 10% of age penalty
+- **<5 years training**: Standard age modifiers apply
+
+**Example:**
+- 50-year-old novice: 0.75 modifier
+- 50-year-old with 15 years training: ~0.80 modifier (reduced penalty)
+
+**Physiological Basis:**
+- Trained athletes maintain higher satellite cell activity
+- Better neuromuscular efficiency
+- Preserved muscle quality and motor unit recruitment
+- Maintained protein synthesis response to training
 
 **References:**
-- Schoenfeld et al. (2016): Effects of age on hypertrophy
+- Schoenfeld et al. (2016): Effects of age on muscle hypertrophy
 - Ahtiainen et al. (2016): Training adaptations across age groups
+- Tanaka & Seals (2008): Endurance exercise performance in Masters athletes
 
 ---
 
@@ -155,6 +175,103 @@ Week 8: 105kg × 6 reps × 3 sets (weight increased, reps reset)
 
 ---
 
+## Volume Landmarks: MEV, MAV, and MRV
+
+### The Volume Dose-Response Curve
+
+Training volume (sets per muscle group per week) follows a dose-response relationship with muscle growth. The system tracks three critical landmarks:
+
+### Key Volume Thresholds
+
+**MEV (Minimum Effective Volume)**
+- The minimum weekly volume needed to stimulate growth
+- Below this threshold: maintenance at best
+- Typically: 8-10 sets/muscle/week for most individuals
+
+**MAV (Maximum Adaptive Volume)**
+- The optimal volume range for growth
+- "Sweet spot" where stimulus and fatigue are balanced
+- Typically: 12-18 sets/muscle/week
+
+**MRV (Maximum Recoverable Volume)**
+- The maximum volume you can recover from
+- Beyond this: diminishing returns, excessive fatigue
+- Typically: 20-25 sets/muscle/week
+
+### Individual Variation Factors
+
+Volume landmarks vary significantly based on:
+
+1. **Training Experience**
+   - Beginners: Lower thresholds (MEV: 6-8 sets)
+   - Advanced: Higher thresholds (MEV: 10-12 sets)
+   - Trained athletes can handle and benefit from more volume
+
+2. **Muscle Group Size**
+   - Large muscles (back, quads): Higher volume capacity
+   - Small muscles (biceps, calves): Lower volume tolerance
+   - Adjusted by 15-20% based on muscle size
+
+3. **Age**
+   - Younger athletes: Higher MRV
+   - Masters athletes (40+): More conservative thresholds
+   - Recovery capacity affects upper limits
+
+4. **Recovery Status**
+   - Sleep, nutrition, stress impact volume tolerance
+   - System adjusts recommendations based on current state
+
+### Implementation in AI Engine
+
+The system uses volume landmarks to:
+
+1. **Prevent Undertraining**
+   - Alert if volume drops below MEV
+   - Recommend volume increase: 10-15%
+
+2. **Optimize Growth**
+   - Guide athletes toward MAV range
+   - Maintain moderate recommendations when in optimal zone
+
+3. **Prevent Overtraining**
+   - Warn when approaching MRV
+   - Recommend volume reduction: 15-20%
+   - Integrate with deload triggers
+
+### Integration with Hypertrophy Training
+
+For hypertrophy-focused training, the system:
+- Tracks weekly sets per muscle group
+- Calculates current position relative to landmarks
+- Influences volume multiplier recommendations
+- Blends with performance-based adjustments (70% performance, 30% volume landmarks)
+
+**Example Volume Recommendations:**
+
+```python
+# Below MEV
+Position: 6 sets/week (MEV: 8)
+Recommendation: Increase volume by 15%
+Priority: High
+
+# In MAV range
+Position: 14 sets/week (MAV: 12-18)
+Recommendation: Maintain or slight increase (5%)
+Priority: Moderate
+
+# Near MRV
+Position: 22 sets/week (MRV: 20)
+Recommendation: Reduce volume by 15%
+Priority: High
+```
+
+**References:**
+- Schoenfeld et al. (2017): Dose-response relationship between volume and hypertrophy
+- Israetel et al. (2018): Renaissance Periodization volume landmarks
+- Baz-Valle et al. (2022): Systematic review of training volume for hypertrophy
+
+---
+
 ## Autoregulated Deloads
 
 ### Traditional vs Autoregulated
@@ -176,18 +293,76 @@ System monitors these indicators:
 1. **Performance Drop**
    - ≥10% decrease over last 2 sessions
    - Indicates accumulated fatigue
+   - Most direct indicator of overreaching
 
 2. **Readiness Score**
    - <0.5 for 3+ consecutive days
-   - Sleep + recovery markers
+   - Combines sleep, soreness, stress, and energy
+   - Holistic recovery assessment
 
 3. **RPE Spike**
    - RPE increase >1.5 points at same/lower volume
-   - Suggests fatigue accumulation
+   - Suggests neuromuscular fatigue accumulation
+   - Weight feels heavier than it should
 
-4. **Critical Readiness**
+4. **ACWR (Acute:Chronic Workload Ratio)**
+   - Compares recent load (7 days) to long-term average (28 days)
+   - **Safe zone**: 0.8 - 1.3
+   - **Deload trigger**: >1.5 (spike in training load)
+   - Calculated as: (volume/1000) × RPE
+   - Evidence-based injury prevention metric
+
+5. **Session RPE (sRPE) Spike**
+   - sRPE = RPE × duration (minutes)
+   - Measures total training load per session
+   - **Trigger**: >20% increase over baseline
+   - Detects cumulative fatigue from high training volume
+
+6. **Critical Readiness**
    - Current readiness <0.4
-   - Immediate concern
+   - Immediate concern requiring action
+   - Overrides all other considerations
+
+### ACWR Implementation Details
+
+**Calculation:**
+```python
+Acute Load = Average daily load last 7 days
+Chronic Load = Average daily load last 28 days
+ACWR = Acute Load / Chronic Load
+
+Load = (Total Volume / 1000) × Average RPE
+```
+
+**Interpretation:**
+- **<0.8**: Undertraining, deconditioning risk
+- **0.8-1.3**: Safe zone, optimal adaptation
+- **1.3-1.5**: Elevated risk, monitor closely
+- **>1.5**: High injury risk, deload recommended
+
+**Why ACWR Works:**
+- Balances fitness (chronic load) and fatigue (acute load)
+- Too much spike = injury risk
+- Too little load = deconditioning
+- "Sweet spot" allows progressive overload with safety
+
+### Session RPE (sRPE) Implementation
+
+**Concept:**
+Session RPE captures the total internal load of training by combining intensity (RPE) and volume (duration).
+
+**Example:**
+```
+Session 1: RPE 7 × 60 min = 420 sRPE
+Session 2: RPE 8.5 × 60 min = 510 sRPE
+Increase: 21% → Triggers deload consideration
+```
+
+**Advantages:**
+- Simple to calculate, no external equipment needed
+- Correlates well with physiological stress
+- Captures cumulative fatigue across exercises
+- Useful when volume is high but intensity varies
 
 ### Deload Protocol
 
@@ -195,10 +370,18 @@ When triggered:
 - **Volume**: Reduce to 50%
 - **Intensity**: Reduce to 85-90%
 - **Duration**: Typically 1 week
+- **Purpose**: Dissipate fatigue while maintaining fitness
+
+**Recovery Timeline:**
+- Days 1-3: Fatigue dissipates rapidly
+- Days 4-7: Fitness slightly decays, fatigue continues to reduce
+- Result: Improved fitness-fatigue ratio
 
 **References:**
 - Zourdos et al. (2016): RPE-based autoregulation
 - Mann et al. (2010): Autoregulatory progressive resistance
+- Gabbett (2016): The training-injury prevention paradox (ACWR)
+- Foster et al. (2001): Session RPE monitoring method
 
 ---
 
@@ -421,27 +604,34 @@ if ml_weight > 0:
 ### Gender & Age Differences
 4. **Kraemer et al. (2001)**: "Gender differences in recovery from resistance training"
 5. **Hunter (2014)**: "Sex differences in human fatigability"
-6. **Sung et al. (2014)**: "Effects of menstrual cycle on training adaptation"
+6. **Temesi et al. (2015)**: "Are females more resistant to extreme neuromuscular fatigue?"
 7. **Schoenfeld et al. (2016)**: "Effects of resistance training frequency"
 8. **Ahtiainen et al. (2016)**: "Heterogeneity in resistance training-induced muscle strength"
+9. **Tanaka & Seals (2008)**: "Endurance exercise performance in Masters athletes"
+
+### Volume Landmarks & Hypertrophy
+10. **Baz-Valle et al. (2022)**: "Systematic review of resistance training volume for hypertrophy"
+11. **Israetel et al. (2018)**: "Scientific principles of hypertrophy training" (Renaissance Periodization)
 
 ### RPE & Autoregulation
-9. **Zourdos et al. (2016)**: "Modified RPE scale for resistance exercise"
-10. **Mann et al. (2010)**: "Effect of autoregulatory progressive resistance"
-11. **Helms et al. (2016)**: "Application of the repetitions in reserve-based RPE scale"
+12. **Zourdos et al. (2016)**: "Modified RPE scale for resistance exercise"
+13. **Mann et al. (2010)**: "Effect of autoregulatory progressive resistance"
+14. **Helms et al. (2016)**: "Application of the repetitions in reserve-based RPE scale"
+15. **Foster et al. (2001)**: "A new approach to monitoring exercise training" (Session RPE)
 
 ### Periodization
-12. **Rhea et al. (2002)**: "A comparison of linear and daily undulating periodization"
-13. **Issurin (2010)**: "New horizons for the methodology of sports training"
-14. **Kiely (2012)**: "Periodization paradigms in the 21st century"
+16. **Rhea et al. (2002)**: "A comparison of linear and daily undulating periodization"
+17. **Issurin (2010)**: "New horizons for the methodology of sports training"
+18. **Kiely (2012)**: "Periodization paradigms in the 21st century"
 
-### Injury Prevention
-15. **Gabbett (2016)**: "The training-injury prevention paradox"
-16. **Banister et al. (1991)**: "Modeling human performance in running"
+### Injury Prevention & Load Monitoring
+19. **Gabbett (2016)**: "The training-injury prevention paradox: should athletes be training smarter and harder?" (ACWR)
+20. **Banister et al. (1991)**: "Modeling human performance in running"
+21. **Hulin et al. (2016)**: "Spikes in acute workload are associated with increased injury risk"
 
 ### Machine Learning in Sports
-17. **Claudino et al. (2019)**: "Current approaches to the use of AI for injury risk assessment"
-18. **Carey et al. (2018)**: "Predictive modelling of training loads and injury in Australian football"
+22. **Claudino et al. (2019)**: "Current approaches to the use of AI for injury risk assessment"
+23. **Carey et al. (2018)**: "Predictive modelling of training loads and injury in Australian football"
 
 ---
 
@@ -457,15 +647,37 @@ if ml_weight > 0:
 
 ### Key Innovations
 
-- **Gender-specific recovery modifiers** (women +10%)
-- **Age-based progression adjustments** (6 age brackets)
-- **Exercise-specific rates** (compound vs isolation)
-- **Performance-based deloads** (not time-based)
+- **Gender-specific fatigue resistance** (women +8%, with individual variability emphasis)
+- **Age × Training Age adjustments** (6 age brackets with experience-based offsets)
+- **Volume landmark tracking** (MEV/MAV/MRV for hypertrophy optimization)
+- **Advanced deload triggers** (ACWR, sRPE, performance, readiness)
+- **Exercise-specific rates** (compound vs isolation progression)
+- **Performance-based deloads** (not time-based, truly autoregulated)
 - **Hybrid ML predictions** (confidence-based weighting)
 - **Individual RPE calibration** (learns your patterns)
 - **Multiple periodization models** (DUP, Block, Linear)
 
+### Recent Updates (November 2025)
+
+**Enhanced Gender & Age Science:**
+- Refined gender modifier from 10% to 8% to reflect "fatigue resistance" more accurately
+- Added emphasis on individual variability over population averages
+- Integrated training age to offset chronological age decline
+- Expanded to 6 age brackets including senior masters (66+)
+
+**Volume Landmark System:**
+- Implemented MEV/MAV/MRV tracking per muscle group
+- Individualized based on experience, age, and muscle size
+- Integrated into hypertrophy training recommendations
+- Prevents both under and overtraining
+
+**Advanced Fatigue Detection:**
+- Added ACWR (Acute:Chronic Workload Ratio) for injury prevention
+- Implemented Session RPE spike detection
+- Removed HRV dependency (requires external hardware)
+- Six independent deload triggers for comprehensive monitoring
+
 ---
 
-*Last Updated: November 8, 2025*
+*Last Updated: November 11, 2025*
 

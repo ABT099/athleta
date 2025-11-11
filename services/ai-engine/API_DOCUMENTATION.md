@@ -12,6 +12,21 @@ Currently no authentication is required (to be implemented).
 
 ---
 
+## What's New (November 2025)
+
+The AI engine has been significantly enhanced with new scientific capabilities. **No API changes required** - all improvements are internal and fully backward compatible:
+
+### Enhanced Intelligence
+- **Smarter Age & Gender Adjustments**: Now considers training age alongside chronological age, with more nuanced gender-based fatigue resistance modeling
+- **Volume Landmark Tracking**: MEV/MAV/MRV system prevents both under and overtraining for hypertrophy goals
+- **Advanced Fatigue Detection**: ACWR and Session RPE monitoring for proactive injury prevention
+- **Six Independent Deload Triggers**: Comprehensive autoregulation based on performance, recovery, workload ratios, and session load
+
+### API Compatibility
+All existing API calls work exactly as before. The AI simply makes smarter decisions using the same input data.
+
+---
+
 ## Athlete Endpoints
 
 ### Create Athlete
@@ -235,6 +250,7 @@ Submit completed workout and receive AI-generated next workout with progressive 
     "nutrition_adherence": "good",  // Optional
     "hydration_level": "adequate",  // Optional
     "notes": "Slept well"        // Optional
+    // Note: HRV field exists but is not currently used (requires external hardware)
   },
   "overall_rpe": 8.0,
   "overall_feeling": "good",     // Optional
@@ -474,7 +490,23 @@ Not currently implemented.
 
 ## Versioning
 
-API Version: 1.0.0
+**API Version**: 1.0.0  
+**AI Engine Version**: 1.1.0 (Internal improvements, November 2025)
 
 Current API does not use versioning in the URL. Future versions may use `/v1/`, `/v2/` prefixes.
+
+### Version History
+
+**v1.1.0 (November 2025)** - AI Engine Internal Improvements
+- Enhanced gender and age-based progression logic
+- Added MEV/MAV/MRV volume landmark tracking
+- Implemented ACWR and Session RPE fatigue monitoring
+- Improved deload autoregulation (6 independent triggers)
+- *No breaking changes - fully backward compatible*
+
+**v1.0.0 (November 2025)** - Initial Release
+- Core progressive overload engine
+- Hybrid ML + rule-based predictions
+- RPE calibration system
+- Multi-model periodization support
 
