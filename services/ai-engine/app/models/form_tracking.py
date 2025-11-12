@@ -52,3 +52,4 @@ class FormQualityTrend(Base):
     def __repr__(self):
         return f"<FormQualityTrend(id={self.id}, athlete_id={self.athlete_id}, exercise_id={self.exercise_id}, score={self.average_form_score})>"
 
+

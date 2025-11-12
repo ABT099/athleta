@@ -57,3 +57,4 @@ def downgrade() -> None:
     op.add_column('recovery_metrics', sa.Column('resting_heart_rate', sa.Integer(), nullable=True))
     op.add_column('recovery_metrics', sa.Column('hrv', sa.Float(), nullable=True))
 
+
