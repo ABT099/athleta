@@ -408,6 +408,401 @@ Retrieve details of a specific completed workout.
 
 ---
 
+## Machine Learning Endpoints
+
+### Train ML Model
+
+Train ML model for workout parameter prediction for a specific athlete.
+
+**Endpoint:** `POST /api/ml/train/{athlete_id}`
+
+**Path Parameters:**
+- `athlete_id` (int): Athlete ID
+
+**Requirements:**
+- Minimum 10 completed workout sessions
+- LightGBM must be installed
+
+**Response:** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "status": "success",
+  "session_count": 25,
+  "training_metrics": {
+    "model_type": "lightgbm",
+    "n_ensemble_models": 5,
+    "training_samples": 25,
+    "r2_score": 0.78,
+    "mse": 0.012
+  },
+  "trained_at": "2024-01-15T10:00:00"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Insufficient sessions (< 10)
+- `404 Not Found`: Athlete not found
+- `503 Service Unavailable`: ML services not available (lightgbm not installed)
+
+---
+
+### Get ML Model Status
+
+Get ML model status and information for an athlete.
+
+**Endpoint:** `GET /api/ml/status/{athlete_id}`
+
+**Path Parameters:**
+- `athlete_id` (int): Athlete ID
+
+**Response:** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "ml_available": true,
+  "session_count": 25,
+  "model_config": {
+    "model_type": "lightgbm",
+    "n_ensemble_models": 5,
+    "min_sessions": 10
+  },
+  "model_trained": true,
+  "can_train": true,
+  "model_metadata": {
+    "training_date": "2024-01-15T10:00:00",
+    "training_samples": 25,
+    "model_type": "lightgbm",
+    "version": "1.0"
+  },
+  "current_predictions": {
+    "volume_multiplier": 1.05,
+    "intensity_multiplier": 1.02,
+    "confidence": 0.75,
+    "uncertainty": 0.08,
+    "model_type": "lightgbm"
+  },
+  "feature_importance": {
+    "recent_readiness": 0.35,
+    "volume_trend": 0.20,
+    "age_experience": 0.15
+  }
+}
+```
+
+---
+
+### Retrain ML Model
+
+Force retrain ML model for an athlete.
+
+**Endpoint:** `POST /api/ml/retrain/{athlete_id}`
+
+**Path Parameters:**
+- `athlete_id` (int): Athlete ID
+
+**Query Parameters:**
+- `force` (bool, optional): If true, retrain even if model is recent (default: false)
+
+**Response:** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "status": "success",
+  "message": "Model retrained successfully",
+  "training_metrics": {
+    "model_type": "lightgbm",
+    "n_ensemble_models": 5,
+    "training_samples": 30,
+    "r2_score": 0.82
+  },
+  "retrained_at": "2024-01-20T10:00:00"
+}
+```
+
+**Response (Skipped):** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "status": "skipped",
+  "message": "Model is up to date. Use force=true to retrain anyway."
+}
+```
+
+---
+
+### Get Prediction Breakdown
+
+Get detailed prediction breakdown with uncertainty and feature importance.
+
+**Endpoint:** `GET /api/ml/predictions/{athlete_id}`
+
+**Path Parameters:**
+- `athlete_id` (int): Athlete ID
+
+**Response:** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "ml_predictions": {
+    "volume_multiplier": 1.05,
+    "intensity_multiplier": 1.02,
+    "confidence": 0.75,
+    "uncertainty": 0.08
+  },
+  "ml_source": "ml",
+  "rule_based_predictions": {
+    "volume_multiplier": 1.03,
+    "intensity_multiplier": 1.01,
+    "reasoning": "Performance on target - progressive increase"
+  },
+  "comparison": {
+    "volume_difference": 0.02,
+    "intensity_difference": 0.01
+  }
+}
+```
+
+---
+
+### List All Models
+
+List all trained ML models across all athletes.
+
+**Endpoint:** `GET /api/ml/models`
+
+**Query Parameters:**
+- `athlete_id` (int, optional): Filter by athlete ID
+
+**Response:** `200 OK`
+```json
+{
+  "models": [
+    {
+      "athlete_id": 1,
+      "model_type": "workout_predictor",
+      "training_date": "2024-01-15T10:00:00",
+      "training_samples": 25,
+      "version": "1.0"
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
+### Delete Old Model Versions
+
+Delete old model versions for an athlete, keeping only the latest N versions.
+
+**Endpoint:** `DELETE /api/ml/models/{athlete_id}`
+
+**Path Parameters:**
+- `athlete_id` (int): Athlete ID
+
+**Query Parameters:**
+- `keep_latest` (int, optional): Number of latest versions to keep (default: 1)
+
+**Response:** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "deleted_count": 3,
+  "kept_latest": 1
+}
+```
+
+---
+
+### Generate Synthetic Data
+
+Generate synthetic workout data for testing and validation.
+
+**WARNING:** This will create new athletes and sessions in the database. Use only in development/testing environments.
+
+**Endpoint:** `POST /api/ml/generate-synthetic-data`
+
+**Query Parameters:**
+- `n_athletes` (int, optional): Number of athletes to generate (default: 50)
+- `sessions_per_athlete` (int, optional): Sessions per athlete (default: 50)
+
+**Response:** `200 OK`
+```json
+{
+  "status": "success",
+  "summary": {
+    "athletes_created": 50,
+    "sessions_created": 2500,
+    "recovery_metrics_created": 2500
+  },
+  "message": "Generated 50 athletes with 2500 total sessions"
+}
+```
+
+---
+
+## Additional Athlete Endpoints
+
+### Get RPE Calibration Status
+
+Get RPE calibration status and accuracy for an athlete.
+
+**Endpoint:** `GET /api/athletes/{athlete_id}/rpe-calibration`
+
+**Path Parameters:**
+- `athlete_id` (int): Athlete ID
+
+**Response:** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "calibration": {
+    "total_samples": 45,
+    "average_accuracy": 0.85,
+    "calibration_factor": 1.02,
+    "bias": "slight_underestimate"
+  },
+  "ml_model": {
+    "trained": true,
+    "samples_used": 45,
+    "ml_weight": 0.70
+  }
+}
+```
+
+---
+
+### Train RPE ML Model
+
+Train ML model for RPE calibration.
+
+**Endpoint:** `POST /api/athletes/{athlete_id}/rpe-calibration/train-ml`
+
+**Path Parameters:**
+- `athlete_id` (int): Athlete ID
+
+**Requirements:**
+- Minimum 30 calibration samples with actual RIR data
+
+**Response:** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "status": "success",
+  "message": "RPE ML model trained successfully"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Insufficient samples (< 30)
+
+---
+
+### Get Workout ML Model Status
+
+Get ML model status for workout parameter prediction.
+
+**Endpoint:** `GET /api/athletes/{athlete_id}/ml-models`
+
+**Path Parameters:**
+- `athlete_id` (int): Athlete ID
+
+**Response:** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "ml_available": true,
+  "model_trained": true,
+  "model_metadata": {
+    "training_date": "2024-01-15T10:00:00",
+    "training_samples": 25,
+    "model_type": "lightgbm"
+  },
+  "should_retrain": false,
+  "min_sessions_needed": 10
+}
+```
+
+---
+
+### Train Workout ML Model
+
+Train ML model for workout parameter prediction.
+
+**Endpoint:** `POST /api/athletes/{athlete_id}/ml-models/train`
+
+**Path Parameters:**
+- `athlete_id` (int): Athlete ID
+
+**Requirements:**
+- Minimum 10 completed workout sessions (for LightGBM)
+- Minimum 20 sessions (for Sequential CNN, if available)
+
+**Response:** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "status": "success",
+  "metrics": {
+    "model_type": "lightgbm",
+    "n_ensemble_models": 5,
+    "training_samples": 25,
+    "r2_score": 0.78
+  },
+  "message": "Workout prediction ML model trained successfully"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Insufficient sessions or ML not available
+- `404 Not Found`: Athlete not found
+
+---
+
+### Get Athlete Analytics
+
+Get comprehensive analytics for an athlete including performance trends, recovery patterns, and injury risk indicators.
+
+**Endpoint:** `GET /api/athletes/{athlete_id}/analytics`
+
+**Path Parameters:**
+- `athlete_id` (int): Athlete ID
+
+**Query Parameters:**
+- `days` (int, optional): Number of days to analyze (default: 30)
+
+**Response:** `200 OK`
+```json
+{
+  "athlete_id": 1,
+  "period_days": 30,
+  "session_count": 12,
+  "averages": {
+    "performance_score": 0.782,
+    "readiness_score": 0.745,
+    "volume": 1540.0,
+    "rpe": 7.8
+  },
+  "deload_count": 1,
+  "current_acwr": 1.15,
+  "injury_risk_status": "low",
+  "trends": [
+    {
+      "date": "2024-01-15T10:00:00",
+      "performance_score": 0.82,
+      "readiness_score": 0.78,
+      "total_volume": 1600.0,
+      "average_rpe": 8.0,
+      "acwr": 1.15,
+      "deload_triggered": false
+    }
+  ]
+}
+```
+
+---
+
 ## Error Responses
 
 All endpoints may return error responses:
@@ -490,11 +885,18 @@ Not currently implemented.
 ## Versioning
 
 **API Version**: 1.0.0  
-**AI Engine Version**: 1.1.0 (Internal improvements, November 2025)
+**AI Engine Version**: 1.2.0 (ML Enhancements, November 2025)
 
 Current API does not use versioning in the URL. Future versions may use `/v1/`, `/v2/` prefixes.
 
 ### Version History
+
+**v1.2.0 (November 2025)** - ML Model Enhancements
+- LightGBM with Bayesian ensembles (production model)
+- Tiered model selection (10+ sessions: LightGBM, 20+ sessions: Sequential CNN optional)
+- Real-time PerformanceTrend integration (no session lag)
+- Comprehensive ML management API endpoints
+- *No breaking changes - fully backward compatible*
 
 **v1.1.0 (November 2025)** - AI Engine Internal Improvements
 - Enhanced gender and age-based progression logic
@@ -508,4 +910,16 @@ Current API does not use versioning in the URL. Future versions may use `/v1/`, 
 - Hybrid ML + rule-based predictions
 - RPE calibration system
 - Multi-model periodization support
+
+### Deprecation Notes
+
+**DateTime Usage:**
+- Some API responses may use `datetime.utcnow()` which is being phased out
+- Future versions will use `datetime.now(timezone.utc)` for timezone-aware timestamps
+- This is an internal implementation detail and does not affect API consumers
+
+**Model Requirements:**
+- **LightGBM**: Minimum 10 sessions, requires `lightgbm` package
+- **Sequential CNN**: Minimum 20 sessions, requires `tensorflow` and Python ≤3.12
+- If Sequential CNN dependencies unavailable, system automatically falls back to LightGBM
 

@@ -5,10 +5,11 @@ The core intelligence that analyzes workouts and calculates optimal progression.
 Respects plan context, periodization, recovery, and injury prevention.
 """
 from typing import Dict, List, Tuple, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 import json
+import numpy as np
 
 from app.models import (
     Athlete, WorkoutPlan, PlanEntry, WorkoutDay, WorkoutDayExercise,
@@ -472,13 +473,13 @@ class ProgressiveOverloadEngine:
         Returns:
             Tuple of (should_deload, reason)
         """
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         from app.models import WorkoutSession
         
         # Get recent sessions (last 7 days = acute)
-        acute_cutoff = datetime.utcnow() - timedelta(days=7)
+        acute_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         # Get chronic sessions (last 28 days)
-        chronic_cutoff = datetime.utcnow() - timedelta(days=28)
+        chronic_cutoff = datetime.now(timezone.utc) - timedelta(days=28)
         
         # Calculate acute load (last 7 days)
         acute_sessions = (
@@ -627,37 +628,60 @@ class ProgressiveOverloadEngine:
             athlete, plan_context, performance, recovery, injury_risk
         )
         
-        # Decide on prediction strategy
-        if ml_predictions and ml_confidence >= 0.7:
-            # High confidence ML - use 80% ML, 20% rules
-            final_volume = (ml_predictions["volume_multiplier"] * 0.8) + (rule_adjustments["volume_multiplier"] * 0.2)
-            final_intensity = (ml_predictions["intensity_multiplier"] * 0.8) + (rule_adjustments["intensity_multiplier"] * 0.2)
+        # Get uncertainty if available
+        uncertainty = ml_predictions.get("uncertainty", 0.0) if ml_predictions else 1.0
+        
+        # Decide on prediction strategy using confidence and uncertainty
+        if ml_predictions and ml_confidence >= 0.7 and uncertainty < 0.1:
+            # High confidence, low uncertainty - use 80% ML, 20% rules
+            ml_weight = 0.8
+            final_volume = (ml_predictions["volume_multiplier"] * ml_weight) + (rule_adjustments["volume_multiplier"] * (1 - ml_weight))
+            final_intensity = (ml_predictions["intensity_multiplier"] * ml_weight) + (rule_adjustments["intensity_multiplier"] * (1 - ml_weight))
             
             return {
                 "volume_multiplier": round(final_volume, 3),
                 "intensity_multiplier": round(final_intensity, 3),
-                "reasoning": f"Hybrid prediction (80% ML, 20% rules). ML confidence: {ml_confidence:.2f}",
+                "reasoning": f"Hybrid prediction ({ml_weight*100:.0f}% ML, {(1-ml_weight)*100:.0f}% rules). ML confidence: {ml_confidence:.2f}, uncertainty: {uncertainty:.3f}",
                 "exercise_adjustments": rule_adjustments.get("exercise_adjustments", {}),
                 "ml_confidence": ml_confidence,
+                "ml_uncertainty": uncertainty,
                 "ml_feature_importance": ml_predictions.get("feature_importance", {})
             }, "hybrid_ml_dominant"
         
-        elif ml_predictions and ml_confidence >= 0.5:
-            # Medium confidence ML - use 50% ML, 50% rules
-            final_volume = (ml_predictions["volume_multiplier"] * 0.5) + (rule_adjustments["volume_multiplier"] * 0.5)
-            final_intensity = (ml_predictions["intensity_multiplier"] * 0.5) + (rule_adjustments["intensity_multiplier"] * 0.5)
+        elif ml_predictions and ml_confidence >= 0.5 and uncertainty < 0.15:
+            # Medium confidence, moderate uncertainty - use 50% ML, 50% rules
+            ml_weight = 0.5
+            final_volume = (ml_predictions["volume_multiplier"] * ml_weight) + (rule_adjustments["volume_multiplier"] * (1 - ml_weight))
+            final_intensity = (ml_predictions["intensity_multiplier"] * ml_weight) + (rule_adjustments["intensity_multiplier"] * (1 - ml_weight))
             
             return {
                 "volume_multiplier": round(final_volume, 3),
                 "intensity_multiplier": round(final_intensity, 3),
-                "reasoning": f"Hybrid prediction (50% ML, 50% rules). ML confidence: {ml_confidence:.2f}",
+                "reasoning": f"Hybrid prediction ({ml_weight*100:.0f}% ML, {(1-ml_weight)*100:.0f}% rules). ML confidence: {ml_confidence:.2f}, uncertainty: {uncertainty:.3f}",
                 "exercise_adjustments": rule_adjustments.get("exercise_adjustments", {}),
-                "ml_confidence": ml_confidence
+                "ml_confidence": ml_confidence,
+                "ml_uncertainty": uncertainty
             }, "hybrid_balanced"
         
+        elif ml_predictions and ml_confidence >= 0.3 and uncertainty < 0.2:
+            # Low confidence or high uncertainty - use 30% ML, 70% rules
+            ml_weight = 0.3
+            final_volume = (ml_predictions["volume_multiplier"] * ml_weight) + (rule_adjustments["volume_multiplier"] * (1 - ml_weight))
+            final_intensity = (ml_predictions["intensity_multiplier"] * ml_weight) + (rule_adjustments["intensity_multiplier"] * (1 - ml_weight))
+            
+            return {
+                "volume_multiplier": round(final_volume, 3),
+                "intensity_multiplier": round(final_intensity, 3),
+                "reasoning": f"Hybrid prediction ({ml_weight*100:.0f}% ML, {(1-ml_weight)*100:.0f}% rules). ML confidence: {ml_confidence:.2f}, uncertainty: {uncertainty:.3f}",
+                "exercise_adjustments": rule_adjustments.get("exercise_adjustments", {}),
+                "ml_confidence": ml_confidence,
+                "ml_uncertainty": uncertainty
+            }, "hybrid_rules_dominant"
+        
         else:
-            # Low/no ML confidence - use pure rules
+            # Very low confidence or very high uncertainty - use pure rules
             rule_adjustments["ml_confidence"] = ml_confidence if ml_predictions else 0.0
+            rule_adjustments["ml_uncertainty"] = uncertainty if ml_predictions else 1.0
             return rule_adjustments, "rules"
     
     def calculate_next_workout_parameters(
@@ -1108,7 +1132,7 @@ class ProgressiveOverloadEngine:
     
     def _calculate_current_week(self, plan: WorkoutPlan) -> int:
         """Calculate current week number in plan."""
-        days_since_start = (datetime.utcnow() - plan.start_date).days
+        days_since_start = (datetime.now(timezone.utc) - plan.start_date).days
         return max(1, days_since_start // 7 + 1)
     
     def _determine_phase_from_week(self, week: int, total_weeks: int) -> TrainingPhase:
@@ -1121,5 +1145,305 @@ class ProgressiveOverloadEngine:
             return TrainingPhase.INTENSIFICATION
         else:
             return TrainingPhase.REALIZATION
+    
+    def create_performance_trend_for_session(
+        self,
+        workout_session: WorkoutSession,
+        recovery_status: Dict,
+        performance_analysis: Dict,
+        athlete_id: int
+    ) -> PerformanceTrend:
+        """
+        Create PerformanceTrend record for a completed workout session.
+        
+        This must be called before ML prediction so the new session is included
+        in feature extraction.
+        
+        Args:
+            workout_session: Completed WorkoutSession
+            recovery_status: Recovery status dict with readiness_score and fatigue_status
+            performance_analysis: Performance analysis dict with total_volume, average_rpe
+            athlete_id: Athlete ID
+            
+        Returns:
+            Created PerformanceTrend instance (not yet committed)
+        """
+        # Calculate average intensity from exercise sets
+        average_intensity = self._calculate_average_intensity(
+            workout_session.id, performance_analysis
+        )
+        
+        # Calculate performance score
+        performance_score = self._calculate_performance_score(
+            total_volume=performance_analysis.get("total_volume", 0),
+            average_intensity=average_intensity,
+            readiness_score=recovery_status.get("readiness_score", 0.5),
+            fatigue_index=recovery_status.get("fatigue_status", {}).get("fatigue_score", 0.0)
+        )
+        
+        # Calculate volume load
+        total_volume = performance_analysis.get("total_volume", 0)
+        volume_load = total_volume * average_intensity
+        
+        # Calculate training load metrics
+        acute_load, chronic_load, acwr = self._calculate_training_load_metrics(
+            athlete_id, workout_session.session_date, volume_load
+        )
+        
+        # Calculate training monotony and strain (optional, can be simplified)
+        training_monotony = None
+        training_strain = None
+        if acute_load is not None:
+            # Simplified monotony calculation
+            # Get recent loads including the current one we're creating
+            recent_loads = self._get_recent_volume_loads(athlete_id, days=7, include_current=volume_load)
+            if len(recent_loads) > 1:
+                mean_load = np.mean(recent_loads)
+                std_load = np.std(recent_loads) if len(recent_loads) > 1 else 1.0
+                training_monotony = mean_load / (std_load + 0.1)  # Add small epsilon to avoid division by zero
+                training_strain = volume_load * recovery_status.get("fatigue_status", {}).get("fatigue_score", 0.0)
+        
+        # Get average RPE
+        average_rpe = performance_analysis.get("average_rpe") or workout_session.overall_rpe or 7.0
+        
+        # Get readiness score
+        readiness_score = recovery_status.get("readiness_score", 0.5)
+        
+        # Get fatigue index
+        fatigue_index = recovery_status.get("fatigue_status", {}).get("fatigue_score", 0.0)
+        
+        # Create PerformanceTrend
+        performance_trend = PerformanceTrend(
+            athlete_id=athlete_id,
+            workout_session_id=workout_session.id,
+            session_date=workout_session.session_date,
+            total_volume=total_volume,
+            average_intensity=average_intensity,
+            average_rpe=average_rpe,
+            readiness_score=readiness_score,
+            performance_score=performance_score,
+            fatigue_index=fatigue_index,
+            volume_load=volume_load,
+            training_monotony=training_monotony,
+            training_strain=training_strain,
+            acute_load=acute_load,
+            chronic_load=chronic_load,
+            acwr=acwr,
+            deload_triggered=False,
+            deload_reason=None
+        )
+        
+        self.db.add(performance_trend)
+        return performance_trend
+    
+    def _calculate_average_intensity(
+        self,
+        workout_session_id: int,
+        performance_analysis: Dict
+    ) -> float:
+        """
+        Calculate average intensity from exercise sets.
+        
+        Intensity is calculated as weighted average of (weight / estimated_1RM) for each set.
+        
+        Args:
+            workout_session_id: WorkoutSession ID
+            performance_analysis: Performance analysis dict with exercise_analyses
+            
+        Returns:
+            Average intensity (0.0 - 1.0)
+        """
+        exercise_analyses = performance_analysis.get("exercise_analyses", [])
+        
+        if not exercise_analyses:
+            # Fallback: query exercise sets directly
+            exercise_sets = self.db.query(ExerciseSet).filter(
+                ExerciseSet.workout_session_id == workout_session_id
+            ).all()
+            
+            if not exercise_sets:
+                return 0.7  # Default intensity
+            
+            intensities = []
+            for set_data in exercise_sets:
+                if set_data.weight and set_data.reps:
+                    # Estimate 1RM
+                    estimated_1rm = self.calc.estimate_1rm_average(set_data.weight, set_data.reps)
+                    if estimated_1rm > 0:
+                        intensity = set_data.weight / estimated_1rm
+                        intensities.append(intensity)
+            
+            if intensities:
+                return sum(intensities) / len(intensities)
+            return 0.7
+        
+        # Query actual exercise sets for accurate intensity calculation
+        exercise_sets = self.db.query(ExerciseSet).filter(
+            ExerciseSet.workout_session_id == workout_session_id
+        ).all()
+        
+        if exercise_sets:
+            intensities = []
+            for set_data in exercise_sets:
+                if set_data.weight and set_data.reps:
+                    # Estimate 1RM
+                    estimated_1rm = self.calc.estimate_1rm_average(set_data.weight, set_data.reps)
+                    if estimated_1rm > 0:
+                        intensity = set_data.weight / estimated_1rm
+                        intensities.append(intensity)
+            
+            if intensities:
+                return sum(intensities) / len(intensities)
+        
+        # Fallback: use exercise analyses if available
+        intensities = []
+        for ex_analysis in exercise_analyses:
+            estimated_1rm = ex_analysis.get("estimated_1rm")
+            if estimated_1rm and estimated_1rm > 0:
+                # Use a reasonable default intensity based on RPE
+                # Higher RPE typically means higher intensity
+                avg_rpe = ex_analysis.get("average_rpe", 7.0)
+                # Map RPE to approximate intensity (7 RPE ≈ 70% 1RM, 9 RPE ≈ 90% 1RM)
+                estimated_intensity = 0.5 + (avg_rpe - 6.0) * 0.1
+                estimated_intensity = max(0.5, min(0.95, estimated_intensity))
+                intensities.append(estimated_intensity)
+        
+        if intensities:
+            return sum(intensities) / len(intensities)
+        
+        return 0.7  # Default intensity
+    
+    def _calculate_performance_score(
+        self,
+        total_volume: float,
+        average_intensity: float,
+        readiness_score: float,
+        fatigue_index: float
+    ) -> float:
+        """
+        Calculate composite performance score.
+        
+        Combines volume, intensity, readiness, and fatigue into a single score.
+        Higher score = better performance.
+        
+        Args:
+            total_volume: Total volume lifted (kg)
+            average_intensity: Average intensity (0.0-1.0)
+            readiness_score: Readiness score (0.0-1.0)
+            fatigue_index: Fatigue index (0.0-1.0, higher = more fatigue)
+            
+        Returns:
+            Performance score (typically 0.0-1.5)
+        """
+        # Normalize volume (assume typical range 1000-5000 kg)
+        volume_normalized = min(total_volume / 3000.0, 1.5)  # Cap at 1.5x
+        
+        # Intensity component (0.0-1.0)
+        intensity_component = average_intensity
+        
+        # Readiness component (0.0-1.0)
+        readiness_component = readiness_score
+        
+        # Fatigue penalty (reduces score)
+        fatigue_penalty = fatigue_index * 0.3  # Max 30% reduction
+        
+        # Weighted combination
+        performance_score = (
+            volume_normalized * 0.3 +  # Volume contribution
+            intensity_component * 0.3 +  # Intensity contribution
+            readiness_component * 0.4  # Readiness contribution (most important)
+        ) * (1.0 - fatigue_penalty)
+        
+        # Clamp to reasonable range
+        return max(0.0, min(1.5, performance_score))
+    
+    def _calculate_training_load_metrics(
+        self,
+        athlete_id: int,
+        session_date: datetime,
+        current_volume_load: float
+    ) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+        """
+        Calculate acute load, chronic load, and ACWR.
+        
+        Args:
+            athlete_id: Athlete ID
+            session_date: Date of current session
+            current_volume_load: Volume load for current session
+            
+        Returns:
+            Tuple of (acute_load, chronic_load, acwr)
+        """
+        # Get recent performance trends (excluding current session)
+        recent_trends = self.db.query(PerformanceTrend).filter(
+            PerformanceTrend.athlete_id == athlete_id,
+            PerformanceTrend.session_date < session_date
+        ).order_by(desc(PerformanceTrend.session_date)).all()
+        
+        # Calculate acute load (last 7 days including current)
+        acute_cutoff = session_date - timedelta(days=7)
+        acute_loads = [current_volume_load]  # Include current session
+        for trend in recent_trends:
+            if trend.session_date >= acute_cutoff:
+                acute_loads.append(trend.volume_load)
+            else:
+                break
+        
+        acute_load = sum(acute_loads) if acute_loads else None
+        
+        # Calculate chronic load (last 28 days including current)
+        chronic_cutoff = session_date - timedelta(days=28)
+        chronic_loads = [current_volume_load]  # Include current session
+        for trend in recent_trends:
+            if trend.session_date >= chronic_cutoff:
+                chronic_loads.append(trend.volume_load)
+            else:
+                break
+        
+        chronic_load = sum(chronic_loads) / len(chronic_loads) if chronic_loads else None
+        
+        # Calculate ACWR
+        acwr = None
+        if acute_load is not None and chronic_load is not None and chronic_load > 0:
+            # Use weekly average for acute (7 days)
+            acute_weekly_avg = acute_load / 7.0
+            acwr = self.calc.calculate_acute_chronic_workload_ratio(
+                [acute_weekly_avg],  # Single value for current week
+                [chronic_load]  # Single value for chronic average
+            )
+        
+        return acute_load, chronic_load, acwr
+    
+    def _get_recent_volume_loads(
+        self,
+        athlete_id: int,
+        days: int = 7,
+        include_current: Optional[float] = None
+    ) -> List[float]:
+        """
+        Get recent volume loads for an athlete.
+        
+        Args:
+            athlete_id: Athlete ID
+            days: Number of days to look back
+            include_current: Optional current volume load to include in results
+            
+        Returns:
+            List of volume loads
+        """
+        from datetime import timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        trends = self.db.query(PerformanceTrend).filter(
+            PerformanceTrend.athlete_id == athlete_id,
+            PerformanceTrend.session_date >= cutoff
+        ).order_by(PerformanceTrend.session_date).all()
+        
+        loads = [t.volume_load for t in trends]
+        
+        # Include current load if provided (for monotony calculation)
+        if include_current is not None:
+            loads.append(include_current)
+        
+        return loads
 
 

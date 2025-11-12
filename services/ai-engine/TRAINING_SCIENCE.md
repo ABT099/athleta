@@ -504,7 +504,7 @@ Sequential blocks focusing on specific adaptations
 - Calculate calibration factor
 
 **Phase 2: ML Enhancement (30+ sessions)**
-- Train GradientBoostingRegressor
+- Train LightGBM model
 - Features: RPE, weight, reps, interactions
 - Target: Actual RIR
 - Combine ML (70%) + Rules (30%)
@@ -523,10 +523,34 @@ Sequential blocks focusing on specific adaptations
 - ML learns individual patterns
 - Rules provide safety guardrails
 - Best of both worlds
+- Uncertainty-aware predictions prevent overconfidence
+
+### Tiered Model Selection
+
+The system uses a tiered approach based on available data:
+
+| Sessions | Model Type | Ensemble Size | Description |
+|----------|------------|---------------|-------------|
+| 0-9 | Rules Only | N/A | Pure rule-based predictions |
+| 10-19 | LightGBM | 5 models | Bayesian ensemble with 5 models |
+| 20+ | Sequential CNN | 5 models | Temporal modeling with 1D CNN (preferred) |
+| 20+ (fallback) | LightGBM | 10 models | Bayesian ensemble with 10 models (if sequential unavailable) |
+
+**Benefits of Tiered Approach:**
+- Users see ML benefits after just 10 sessions (~2 weeks)
+- Progressive improvement as more data accumulates
+- Safety-first: rules always available as fallback
 
 ### Workout Parameter Prediction
 
-**Model**: RandomForestRegressor
+**Model**: LightGBM with Bayesian Ensemble (Production Model)
+
+**Why LightGBM?**
+- 3-5x faster training than RandomForest
+- Better accuracy on small datasets
+- Lower memory usage
+- Built-in regularization
+- Production-ready for real-world deployment
 
 **Features** (40+):
 - Athlete demographics (age, gender, experience)
@@ -540,21 +564,63 @@ Sequential blocks focusing on specific adaptations
 - Intensity multiplier (0.8 - 1.15)
 
 **Training Requirements**:
-- Minimum: 20 completed sessions
+- Minimum: 10 completed sessions (tiered approach)
 - Optimal: 50+ sessions
 - Retraining: Every 50 sessions or 90 days
 
-**Prediction Strategy**:
+**Real-Time Data Integration:**
+- PerformanceTrend records are created immediately after workout completion
+- The just-completed session is included in ML predictions for the next workout
+- Eliminates one-session lag - predictions use the most current data available
 
-| ML Confidence | Weighting | Reasoning |
-|---------------|-----------|-----------|
-| ≥0.7 (High)   | 80% ML, 20% Rules | Trust ML heavily |
-| 0.5-0.7 (Med) | 50% ML, 50% Rules | Balanced approach |
-| <0.5 (Low)    | 100% Rules | Safety first |
+**Bayesian Uncertainty Estimation:**
+- Trains multiple models with different random seeds
+- Uses ensemble variance as uncertainty measure
+- Lower variance = higher confidence
+- Enables adaptive weighting with rules
+
+**Prediction Strategy** (Enhanced with Uncertainty):
+
+| ML Confidence | Uncertainty | Weighting | Reasoning |
+|---------------|-------------|-----------|-----------|
+| ≥0.7 (High)   | <0.1 (Low)  | 80% ML, 20% Rules | High confidence, low uncertainty |
+| ≥0.5 (Med)    | <0.15 (Med) | 50% ML, 50% Rules | Balanced approach |
+| ≥0.3 (Low)    | <0.2 (Med)  | 30% ML, 70% Rules | Conservative with uncertainty |
+| <0.3 or >0.2  | Any         | 100% Rules | Safety first |
+
+### Temporal Modeling (Sequential CNN)
+
+**Model**: 1D Convolutional Neural Network (Optional - Requires TensorFlow)
+
+**Note**: Sequential CNN is an optional enhancement that requires TensorFlow and Python ≤3.12. If unavailable, the system automatically falls back to LightGBM with a 10-model ensemble.
+
+**Architecture**:
+- Conv1D(64, kernel_size=3) → Conv1D(32, kernel_size=3)
+- GlobalMaxPooling1D
+- Dense(16) → Dropout(0.3) → Dense(2)
+
+**Why Sequential?**
+- Captures workout-to-workout dynamics
+- Learns fatigue accumulation patterns
+- Models progressive overload progression
+- Better handles periodization cycles
+
+**Features per Timestep** (15-20):
+- Volume, intensity, RPE, readiness, performance, fatigue
+- Recovery metrics (sleep, soreness, stress, energy)
+- Time features (days since start, day of week)
+- Rolling statistics (3-session moving averages)
+
+**Sequence Length**: 10-20 sessions
+
+**Training Requirements**:
+- Minimum: 20 sessions
+- Optimal: 50+ sessions
+- Uses early stopping on validation loss
 
 ### RPE Calibration ML
 
-**Model**: GradientBoostingRegressor
+**Model**: LightGBM (upgraded from GradientBoosting)
 
 **Features**:
 - Reported RPE
@@ -580,7 +646,12 @@ if ml_weight > 0:
 
 **Feature Importance**: Track which factors matter most
 
-**Example Rankings**:
+LightGBM provides feature importance scores that can be accessed via API:
+- Shows which features drive predictions
+- Helps understand model decisions
+- Useful for debugging and validation
+
+**Example Rankings** (typical):
 1. Recent readiness scores (35%)
 2. Volume trend (20%)
 3. Age/experience (15%)
@@ -588,9 +659,40 @@ if ml_weight > 0:
 5. RPE trends (10%)
 6. Other (5%)
 
+### Uncertainty Quantification
+
+**Bayesian Ensemble Approach:**
+- Trains multiple models (5-10) with different random seeds
+- Calculates prediction variance across ensemble
+- Lower variance = higher confidence
+- Enables principled uncertainty estimation
+
+**Uncertainty Thresholds:**
+- <0.1: Low uncertainty (high confidence)
+- 0.1-0.15: Moderate uncertainty
+- >0.15: High uncertainty (use rules)
+
+**Benefits:**
+- Know when predictions are reliable
+- Adaptive weighting with rule-based system
+- Prevents overconfident predictions
+- Better safety margins
+
+### API Endpoints
+
+**Model Management:**
+- `POST /api/ml/train/{athlete_id}` - Train model for athlete
+- `GET /api/ml/status/{athlete_id}` - Get model status and metrics
+- `POST /api/ml/retrain/{athlete_id}` - Force retrain
+- `GET /api/ml/predictions/{athlete_id}` - Get prediction breakdown
+- `GET /api/ml/models` - List all models
+- `DELETE /api/ml/models/{athlete_id}` - Delete old model versions
+
 **References:**
 - ML in sports: Claudino et al. (2019)
 - Predictive modeling: Carey et al. (2018)
+- LightGBM: Ke et al. (2017)
+- Bayesian ensembles: Lakshminarayanan et al. (2017)
 
 ---
 

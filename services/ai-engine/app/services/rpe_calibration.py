@@ -12,12 +12,17 @@ import statistics
 import numpy as np
 
 try:
-    from sklearn.ensemble import GradientBoostingRegressor
     from sklearn.model_selection import train_test_split
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
-    GradientBoostingRegressor = None
+
+try:
+    from lightgbm import LGBMRegressor
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+    LGBMRegressor = None
 
 from app.models import Athlete, Exercise, AthleteRPECalibration, ExerciseSet, WorkoutSession
 from app.utils.constants import TrainingExperience, RPE_TO_RIR
@@ -355,7 +360,7 @@ class RPECalibrationService:
                 "actual_rir": cal.actual_rir,
                 "accuracy": cal.calibration_accuracy
             })
-            return summaries
+        return summaries
     
     # =========================================
     # ML ENHANCEMENT METHODS (Phase 2)
@@ -369,7 +374,7 @@ class RPECalibrationService:
         """
         Train ML model for RIR prediction from RPE.
         
-        Uses GradientBoostingRegressor to learn athlete-specific RPE patterns.
+        Uses LightGBM to learn athlete-specific RPE patterns.
         
         Args:
             athlete_id: Athlete ID
@@ -378,8 +383,8 @@ class RPECalibrationService:
         Returns:
             Tuple of (success, error_message)
         """
-        if not SKLEARN_AVAILABLE:
-            return False, "scikit-learn not available"
+        if not LIGHTGBM_AVAILABLE:
+            return False, "lightgbm not available"
         
         # Get all calibration data with actual RIR
         calibrations = self.db.query(AthleteRPECalibration).filter(
@@ -409,11 +414,14 @@ class RPECalibrationService:
         
         # Train model
         try:
-            self.ml_model = GradientBoostingRegressor(
+            self.ml_model = LGBMRegressor(
                 n_estimators=100,
                 learning_rate=0.1,
-                max_depth=3,
-                random_state=42
+                max_depth=4,
+                num_leaves=15,
+                min_child_samples=5,
+                random_state=42,
+                n_jobs=-1
             )
             
             self.ml_model.fit(X, y)
@@ -424,7 +432,7 @@ class RPECalibrationService:
             self.ml_weight = min(0.7, (len(calibrations) - min_samples) / (50 - min_samples) * 0.7)
             
             return True, None
-        
+            
         except Exception as e:
             return False, str(e)
     
@@ -498,7 +506,7 @@ class RPECalibrationService:
         ).count()
         
         return {
-            "ml_available": SKLEARN_AVAILABLE,
+            "ml_available": LIGHTGBM_AVAILABLE,
             "model_trained": self.ml_model_trained,
             "sample_count": sample_count,
             "ml_weight": self.ml_weight,
@@ -511,8 +519,8 @@ class RPECalibrationService:
     @staticmethod
     def _determine_ml_status(sample_count: int, trained: bool) -> str:
         """Determine ML model status."""
-        if not SKLEARN_AVAILABLE:
-            return "sklearn_unavailable"
+        if not LIGHTGBM_AVAILABLE:
+            return "lightgbm_unavailable"
         elif sample_count < 30:
             return "insufficient_data"
         elif not trained:

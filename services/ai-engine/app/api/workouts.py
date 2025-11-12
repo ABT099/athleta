@@ -143,7 +143,31 @@ def complete_workout(
         "muscle_soreness": request.recovery_metrics.muscle_soreness
     }
     
-    # Process workout and get AI recommendations
+    # Step 1: Analyze plan context (needed for recovery assessment)
+    plan_context = engine.analyze_plan_context(request.athlete_id)
+    
+    # Step 2: Analyze workout performance (needed for PerformanceTrend)
+    athlete = db.query(Athlete).filter(Athlete.id == request.athlete_id).first()
+    performance_analysis = engine.analyze_workout_performance(
+        athlete, request.workout_day_id, session_data, plan_context
+    )
+    
+    # Step 3: Assess recovery status (needed for PerformanceTrend and ML)
+    recovery_status = engine.assess_recovery_status(
+        request.athlete_id, recovery_data, plan_context
+    )
+    
+    # Step 4: Create PerformanceTrend BEFORE ML prediction
+    # This ensures the new session is included in ML feature extraction
+    performance_trend = engine.create_performance_trend_for_session(
+        workout_session=workout_session,
+        recovery_status=recovery_status,
+        performance_analysis=performance_analysis,
+        athlete_id=request.athlete_id
+    )
+    db.flush()  # Make PerformanceTrend available for ML queries
+    
+    # Step 5: Process workout and get AI recommendations (now includes current session)
     ai_result = engine.process_workout_completion(
         athlete_id=request.athlete_id,
         workout_day_id=request.workout_day_id,
