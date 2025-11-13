@@ -216,10 +216,7 @@ NEW_EXERCISE_PROGRESSION_RATE = 0.01  # 1% per session for first 4-6 weeks
 # Double progression thresholds
 DOUBLE_PROGRESSION_CONFIG = {
     "rep_increase_per_session": 1,  # Add 1 rep per session
-    "min_reps": 6,                  # Minimum reps before weight increase
-    "max_reps": 12,                 # Maximum reps - trigger weight increase
     "weight_increase_percent": 0.05, # 5% weight increase when hitting max reps
-    "reset_reps_to": 6,             # Reset to min reps after weight increase
 }
 
 # Familiarity score progression (0.0 to 1.0)

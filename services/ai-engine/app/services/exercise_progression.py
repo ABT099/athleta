@@ -119,7 +119,9 @@ class ExerciseProgressionService:
         current_weight: float,
         total_reps_achieved: int,
         total_sets: int,
-        training_type: TrainingType
+        training_type: TrainingType,
+        prescribed_reps_min: int,
+        prescribed_reps_max: int
     ) -> Dict:
         """
         Calculate double progression parameters.
@@ -129,6 +131,7 @@ class ExerciseProgressionService:
         2. Then increase weight and reset reps to minimum
         
         This is particularly effective for hypertrophy training.
+        Uses athlete-specified rep ranges from their training plan.
         
         Args:
             athlete_id: Athlete ID
@@ -137,6 +140,8 @@ class ExerciseProgressionService:
             total_reps_achieved: Total reps achieved across all sets
             total_sets: Number of sets performed
             training_type: Training type (hypertrophy uses double progression)
+            prescribed_reps_min: Minimum reps in prescribed range (from athlete's plan)
+            prescribed_reps_max: Maximum reps in prescribed range (from athlete's plan)
             
         Returns:
             Dict with progression recommendations
@@ -164,7 +169,7 @@ class ExerciseProgressionService:
             current_state = ProgressionState(latest_tracking.progression_state)
         
         # Check if hit max reps - time to increase weight
-        if avg_reps_per_set >= config["max_reps"]:
+        if avg_reps_per_set >= prescribed_reps_max:
             new_weight = current_weight * (1 + config["weight_increase_percent"])
             # Round to nearest 2.5kg for practical loading
             new_weight = round(new_weight / 2.5) * 2.5
@@ -172,16 +177,16 @@ class ExerciseProgressionService:
             return {
                 "use_double_progression": True,
                 "next_weight": new_weight,
-                "next_target_reps": config["reset_reps_to"],
+                "next_target_reps": prescribed_reps_min,
                 "progression_state": ProgressionState.WEIGHT_PROGRESSION,
-                "message": f"Hit max reps! Increase weight to {new_weight}kg and reset to {config['reset_reps_to']} reps"
+                "message": f"Hit max reps! Increase weight to {new_weight}kg and reset to {prescribed_reps_min} reps"
             }
         
         # Still in rep progression phase
-        elif avg_reps_per_set < config["max_reps"]:
+        elif avg_reps_per_set < prescribed_reps_max:
             target_reps = min(
                 int(avg_reps_per_set) + config["rep_increase_per_session"],
-                config["max_reps"]
+                prescribed_reps_max
             )
             
             return {

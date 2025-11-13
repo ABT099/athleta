@@ -53,3 +53,4 @@ class FormQualityTrend(Base):
         return f"<FormQualityTrend(id={self.id}, athlete_id={self.athlete_id}, exercise_id={self.exercise_id}, score={self.average_form_score})>"
 
 
+

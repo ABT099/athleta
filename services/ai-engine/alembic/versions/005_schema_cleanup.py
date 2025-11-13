@@ -58,3 +58,4 @@ def downgrade() -> None:
     op.add_column('recovery_metrics', sa.Column('hrv', sa.Float(), nullable=True))
 
 
+
