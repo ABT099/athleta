@@ -8,8 +8,8 @@ from typing import List
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
-    # Database
-    DATABASE_URL: str = "postgresql://athletai_user:athletai_pass@localhost:5432/athletai_db"
+    # Database - required from environment
+    DATABASE_URL: str
     
     # API
     API_HOST: str = "0.0.0.0"

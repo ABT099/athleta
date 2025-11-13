@@ -1,5 +1,5 @@
 {
-  "id": "3d3e25c4-d5ab-41a7-8a2c-6e9b8cb1deff",
+  "id": "885bcd4d-ef35-476d-af25-8692c7a617a5",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -14,8 +14,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "userId": {
-          "name": "userId",
+        "user_id": {
+          "name": "user_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
@@ -32,14 +32,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "trainingExperience": {
-          "name": "trainingExperience",
+        "training_experience": {
+          "name": "training_experience",
           "type": "varchar(12)",
           "primaryKey": false,
           "notNull": true
         },
-        "rpeCalibrationFactor": {
-          "name": "rpeCalibrationFactor",
+        "rpe_calibration_factor": {
+          "name": "rpe_calibration_factor",
           "type": "real",
           "primaryKey": false,
           "notNull": true
@@ -47,12 +47,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "athletes_userId_users_id_fk": {
-          "name": "athletes_userId_users_id_fk",
+        "athletes_user_id_users_id_fk": {
+          "name": "athletes_user_id_users_id_fk",
           "tableFrom": "athletes",
           "tableTo": "users",
           "columnsFrom": [
-            "userId"
+            "user_id"
           ],
           "columnsTo": [
             "id"
@@ -95,50 +95,44 @@
           "primaryKey": false,
           "notNull": true
         },
-        "primaryMuscles": {
-          "name": "primaryMuscles",
+        "primary_muscles": {
+          "name": "primary_muscles",
           "type": "text[]",
           "primaryKey": false,
           "notNull": true
         },
-        "secondaryMuscles": {
-          "name": "secondaryMuscles",
+        "secondary_muscles": {
+          "name": "secondary_muscles",
           "type": "text[]",
           "primaryKey": false,
           "notNull": true
         },
-        "injuryRiskLevel": {
-          "name": "injuryRiskLevel",
-          "type": "integer",
+        "injury_risk_level": {
+          "name": "injury_risk_level",
+          "type": "real",
           "primaryKey": false,
           "notNull": true
         },
-        "jointStressAreas": {
-          "name": "jointStressAreas",
+        "joint_stress_areas": {
+          "name": "joint_stress_areas",
           "type": "varchar(255)[]",
           "primaryKey": false,
           "notNull": true
         },
-        "movementPattern": {
-          "name": "movementPattern",
+        "movement_pattern": {
+          "name": "movement_pattern",
           "type": "varchar(100)",
           "primaryKey": false,
           "notNull": true
         },
-        "isCompound": {
-          "name": "isCompound",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "exerciseType": {
-          "name": "exerciseType",
+        "exercise_type": {
+          "name": "exercise_type",
           "type": "varchar(50)",
           "primaryKey": false,
           "notNull": true
         },
-        "complexityScore": {
-          "name": "complexityScore",
+        "complexity_score": {
+          "name": "complexity_score",
           "type": "real",
           "primaryKey": false,
           "notNull": true
@@ -156,6 +150,94 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.form_quality_trends": {
+      "name": "form_quality_trends",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "athlete_id": {
+          "name": "athlete_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exercise_id": {
+          "name": "exercise_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "average_form_score": {
+          "name": "average_form_score",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sets_analyzed": {
+          "name": "sets_analyzed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "degradation_rate": {
+          "name": "degradation_rate",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "high_rpe_poor_form_count": {
+          "name": "high_rpe_poor_form_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "form_quality_trends_athlete_id_athletes_id_fk": {
+          "name": "form_quality_trends_athlete_id_athletes_id_fk",
+          "tableFrom": "form_quality_trends",
+          "tableTo": "athletes",
+          "columnsFrom": [
+            "athlete_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "form_quality_trends_exercise_id_exercises_id_fk": {
+          "name": "form_quality_trends_exercise_id_exercises_id_fk",
+          "tableFrom": "form_quality_trends",
+          "tableTo": "exercises",
+          "columnsFrom": [
+            "exercise_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -182,14 +264,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "firstName": {
-          "name": "firstName",
+        "first_name": {
+          "name": "first_name",
           "type": "varchar(255)",
           "primaryKey": false,
           "notNull": true
         },
-        "lastName": {
-          "name": "lastName",
+        "last_name": {
+          "name": "last_name",
           "type": "varchar(255)",
           "primaryKey": false,
           "notNull": true
@@ -200,8 +282,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "createdAt": {
-          "name": "createdAt",
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
@@ -234,56 +316,56 @@
           "primaryKey": true,
           "notNull": true
         },
-        "workoutDayId": {
-          "name": "workoutDayId",
+        "workout_day_id": {
+          "name": "workout_day_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "exerciseId": {
-          "name": "exerciseId",
+        "exercise_id": {
+          "name": "exercise_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "orderInWorkout": {
-          "name": "orderInWorkout",
+        "order_in_workout": {
+          "name": "order_in_workout",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "targetSets": {
-          "name": "targetSets",
+        "target_sets": {
+          "name": "target_sets",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "targetRepsMin": {
-          "name": "targetRepsMin",
+        "target_reps_min": {
+          "name": "target_reps_min",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "targetRepsMax": {
-          "name": "targetRepsMax",
+        "target_reps_max": {
+          "name": "target_reps_max",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "targetRpe": {
-          "name": "targetRpe",
+        "target_rpe": {
+          "name": "target_rpe",
           "type": "real",
           "primaryKey": false,
           "notNull": false
         },
-        "targetRir": {
-          "name": "targetRir",
+        "target_rir": {
+          "name": "target_rir",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
-        "restPeriodSeconds": {
-          "name": "restPeriodSeconds",
+        "rest_period_seconds": {
+          "name": "rest_period_seconds",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
@@ -300,14 +382,14 @@
           "primaryKey": false,
           "notNull": false
         },
-        "isPrimary": {
-          "name": "isPrimary",
+        "is_primary": {
+          "name": "is_primary",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true
         },
-        "progressionScheme": {
-          "name": "progressionScheme",
+        "progression_scheme": {
+          "name": "progression_scheme",
           "type": "varchar(50)",
           "primaryKey": false,
           "notNull": false
@@ -315,12 +397,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "workout_day_exercises_workoutDayId_workout_days_id_fk": {
-          "name": "workout_day_exercises_workoutDayId_workout_days_id_fk",
+        "workout_day_exercises_workout_day_id_workout_days_id_fk": {
+          "name": "workout_day_exercises_workout_day_id_workout_days_id_fk",
           "tableFrom": "workout_day_exercises",
           "tableTo": "workout_days",
           "columnsFrom": [
-            "workoutDayId"
+            "workout_day_id"
           ],
           "columnsTo": [
             "id"
@@ -328,12 +410,12 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "workout_day_exercises_exerciseId_exercises_id_fk": {
-          "name": "workout_day_exercises_exerciseId_exercises_id_fk",
+        "workout_day_exercises_exercise_id_exercises_id_fk": {
+          "name": "workout_day_exercises_exercise_id_exercises_id_fk",
           "tableFrom": "workout_day_exercises",
           "tableTo": "exercises",
           "columnsFrom": [
-            "exerciseId"
+            "exercise_id"
           ],
           "columnsTo": [
             "id"
@@ -358,8 +440,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "workoutPlanId": {
-          "name": "workoutPlanId",
+        "workout_plan_id": {
+          "name": "workout_plan_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
@@ -376,20 +458,20 @@
           "primaryKey": false,
           "notNull": true
         },
-        "dayOfWeek": {
-          "name": "dayOfWeek",
+        "day_of_week": {
+          "name": "day_of_week",
           "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
-        "orderInWeek": {
-          "name": "orderInWeek",
+        "order_in_week": {
+          "name": "order_in_week",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "targetMuscleGroups": {
-          "name": "targetMuscleGroups",
+        "target_muscle_groups": {
+          "name": "target_muscle_groups",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
@@ -397,12 +479,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "workout_days_workoutPlanId_workout_plans_id_fk": {
-          "name": "workout_days_workoutPlanId_workout_plans_id_fk",
+        "workout_days_workout_plan_id_workout_plans_id_fk": {
+          "name": "workout_days_workout_plan_id_workout_plans_id_fk",
           "tableFrom": "workout_days",
           "tableTo": "workout_plans",
           "columnsFrom": [
-            "workoutPlanId"
+            "workout_plan_id"
           ],
           "columnsTo": [
             "id"
@@ -427,8 +509,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "athleteId": {
-          "name": "athleteId",
+        "athlete_id": {
+          "name": "athlete_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
@@ -445,14 +527,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "trainingType": {
-          "name": "trainingType",
+        "training_type": {
+          "name": "training_type",
           "type": "varchar(50)",
           "primaryKey": false,
           "notNull": true
         },
-        "periodizationModel": {
-          "name": "periodizationModel",
+        "periodization_model": {
+          "name": "periodization_model",
           "type": "varchar(50)",
           "primaryKey": false,
           "notNull": true
@@ -463,39 +545,39 @@
           "primaryKey": false,
           "notNull": true
         },
-        "durationWeeks": {
-          "name": "durationWeeks",
+        "duration_weeks": {
+          "name": "duration_weeks",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
-        "splitType": {
-          "name": "splitType",
+        "split_type": {
+          "name": "split_type",
           "type": "varchar(100)",
           "primaryKey": false,
           "notNull": true
         },
-        "startDate": {
-          "name": "startDate",
+        "start_date": {
+          "name": "start_date",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
-        "endDate": {
-          "name": "endDate",
+        "end_date": {
+          "name": "end_date",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
-        "createdAt": {
-          "name": "createdAt",
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
         },
-        "isActive": {
-          "name": "isActive",
+        "is_active": {
+          "name": "is_active",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true
@@ -503,12 +585,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "workout_plans_athleteId_athletes_id_fk": {
-          "name": "workout_plans_athleteId_athletes_id_fk",
+        "workout_plans_athlete_id_athletes_id_fk": {
+          "name": "workout_plans_athlete_id_athletes_id_fk",
           "tableFrom": "workout_plans",
           "tableTo": "athletes",
           "columnsFrom": [
-            "athleteId"
+            "athlete_id"
           ],
           "columnsTo": [
             "id"

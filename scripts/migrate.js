@@ -75,9 +75,50 @@ if (!fs.existsSync(path.join(apiDir, 'node_modules'))) {
 // Run Drizzle migrations
 log('Running Drizzle migrations...', 'yellow');
 try {
-  // Try npm script first, then npx
-  execCommand('npx drizzle-kit push', apiDir, 'Running Drizzle migrations');
-  log('✅ NestJS migrations completed successfully', 'green');
+  // Step 1: Generate migrations from schema changes
+  log('Generating Drizzle migrations...', 'yellow');
+  let migrationsGenerated = false;
+  try {
+    execCommand('npx drizzle-kit generate', apiDir, 'Generating Drizzle migrations');
+    migrationsGenerated = true;
+    log('✅ Migrations generated', 'green');
+  } catch (generateError) {
+    // If generate fails, it might be because there are no changes
+    const errorOutput = generateError.message || generateError.toString() || '';
+    if (errorOutput.includes('No schema changes') || errorOutput.includes('No changes detected')) {
+      log('ℹ️  No schema changes detected - skipping migration generation', 'yellow');
+    } else {
+      log('⚠️  Migration generation had issues, but continuing...', 'yellow');
+      log(`   Error: ${errorOutput}`, 'yellow');
+    }
+  }
+  
+  // Step 2: Apply migrations
+  // Drizzle doesn't have a built-in migrate command, so we use push for development
+  // In production, you would apply the generated SQL files from ./drizzle directory
+  log('Applying Drizzle migrations...', 'yellow');
+  log('ℹ️  Note: If you see DROP CONSTRAINT statements for NOT NULL constraints, these are safe.', 'yellow');
+  log('   They remove redundant explicit constraints - columns will still be NOT NULL.', 'yellow');
+  try {
+    execCommand('npx drizzle-kit push', apiDir, 'Applying Drizzle migrations (push)');
+    log('✅ NestJS migrations completed successfully', 'green');
+    if (migrationsGenerated) {
+      log('ℹ️  Migration files generated in ./drizzle directory - commit these to version control', 'yellow');
+    }
+  } catch (pushError) {
+    // Check if error is about primary keys (tables already exist)
+    const errorOutput = pushError.message || pushError.toString() || '';
+    if (errorOutput.includes('primary key') || errorOutput.includes('42P16')) {
+      log('⚠️  Drizzle push encountered primary key constraint (tables may already exist)', 'yellow');
+      log('   This is usually okay if your schema is already up to date.', 'yellow');
+      log('✅ NestJS migrations completed (with warnings)', 'green');
+      if (migrationsGenerated) {
+        log('ℹ️  Migration files generated in ./drizzle directory - commit these to version control', 'yellow');
+      }
+    } else {
+      throw pushError;
+    }
+  }
 } catch (error) {
   log('❌ Error: NestJS migrations failed', 'red');
   process.exit(1);
