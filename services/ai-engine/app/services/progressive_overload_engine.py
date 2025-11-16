@@ -19,6 +19,7 @@ from app.services.training_calculations import TrainingCalculations
 from app.services.recovery_analyzer import RecoveryAnalyzer
 from app.services.injury_prevention import InjuryPreventionService
 from app.services.exercise_progression import ExerciseProgressionService
+from app.services.pr_tracker import PRTrackerService
 from app.services.periodization import PeriodizationService
 from app.services.rpe_calibration import RPECalibrationService
 from app.services.volume_manager import VolumeManager
@@ -167,8 +168,8 @@ class ProgressiveOverloadEngine:
             self.db.query(PlanEntry)
             .filter(
                 PlanEntry.workout_plan_id == plan.id,
-                PlanEntry.start_date <= datetime.utcnow(),
-                PlanEntry.end_date >= datetime.utcnow()
+                PlanEntry.start_date <= datetime.now(timezone.utc),
+                PlanEntry.end_date >= datetime.now(timezone.utc)
             )
             .first()
         )
@@ -188,6 +189,7 @@ class ProgressiveOverloadEngine:
                 "periodization_model": plan.periodization_model,
                 "current_phase": current_phase,
                 "week_number": week_number,
+                "duration_weeks": plan.duration_weeks,
                 "is_deload_week": is_deload,
                 "target_volume_multiplier": 0.5 if is_deload else 1.0,
                 "target_intensity_multiplier": 0.9 if is_deload else 1.0,
@@ -201,6 +203,7 @@ class ProgressiveOverloadEngine:
             "periodization_model": plan.periodization_model,
             "current_phase": current_entry.training_phase,
             "week_number": current_entry.week_number,
+            "duration_weeks": plan.duration_weeks,
             "is_deload_week": bool(current_entry.is_deload_week),
             "target_volume_multiplier": current_entry.target_volume_multiplier,
             "target_intensity_multiplier": current_entry.target_intensity_multiplier,
@@ -281,7 +284,9 @@ class ProgressiveOverloadEngine:
             actual_sets = len(sets)
             avg_reps = sum(s["reps"] for s in sets) / len(sets)
             
-            sets_diff = actual_sets - prescribed.target_sets
+            # Calculate expected sets (use midpoint of range for comparison)
+            expected_sets = (prescribed.target_sets_min + prescribed.target_sets_max) / 2
+            sets_diff = actual_sets - expected_sets
             reps_in_range = prescribed.target_reps_min <= avg_reps <= prescribed.target_reps_max
             
             # RPE comparison
@@ -289,11 +294,18 @@ class ProgressiveOverloadEngine:
             if avg_rpe and prescribed.target_rpe:
                 rpe_diff = avg_rpe - prescribed.target_rpe
             
+            # PR comparison
+            pr_tracker = PRTrackerService(self.db)
+            pr_comparison = pr_tracker.compare_to_pr(
+                ex_id, athlete.id, best_set
+            )
+            
             exercise_analyses.append({
                 "exercise_id": ex_id,
-                "prescribed_sets": prescribed.target_sets,
+                "prescribed_sets_range": f"{prescribed.target_sets_min}-{prescribed.target_sets_max}",
+                "expected_sets": round(expected_sets, 1),
                 "actual_sets": actual_sets,
-                "sets_difference": sets_diff,
+                "sets_difference": round(sets_diff, 1),
                 "prescribed_reps_range": f"{prescribed.target_reps_min}-{prescribed.target_reps_max}",
                 "actual_avg_reps": round(avg_reps, 1),
                 "reps_in_range": reps_in_range,
@@ -302,7 +314,8 @@ class ProgressiveOverloadEngine:
                 "rpe_difference": round(rpe_diff, 1) if rpe_diff else None,
                 "estimated_1rm": round(estimated_1rm, 1),
                 "volume": round(ex_volume, 1),
-                "is_primary": bool(prescribed.is_primary)
+                "is_primary": bool(prescribed.is_primary),
+                "pr_context": pr_comparison
             })
         
         # Overall performance metrics
@@ -579,6 +592,59 @@ class ProgressiveOverloadEngine:
         
         return False, None
     
+    def _detect_extended_break(self, athlete_id: int) -> Tuple[Optional[int], Optional[float], Optional[float]]:
+        """
+        Detect extended break from training and calculate detraining adjustments.
+        
+        Args:
+            athlete_id: Athlete ID
+            
+        Returns:
+            Tuple of (days_since_last_workout, volume_multiplier, intensity_multiplier)
+            Returns (None, None, None) if no break detected or no previous workouts
+        """
+        from app.models import WorkoutSession
+        
+        # Get last workout session
+        last_session = (
+            self.db.query(WorkoutSession)
+            .filter(WorkoutSession.athlete_id == athlete_id)
+            .order_by(desc(WorkoutSession.session_date))
+            .first()
+        )
+        
+        # If no previous workouts, return None (first workout ever)
+        if not last_session:
+            return None, None, None
+        
+        # Handle timezone-naive dates from database
+        session_date = last_session.session_date
+        if session_date.tzinfo is None:
+            session_date = session_date.replace(tzinfo=timezone.utc)
+        
+        # Calculate days since last workout
+        days_since = (datetime.now(timezone.utc) - session_date).days
+        
+        # Only apply adjustments for breaks of 7+ days
+        if days_since < 7:
+            return None, None, None
+        
+        # Calculate detraining adjustments based on break duration
+        # 7-13 days: 15% reduction
+        # 14-20 days: 25% reduction
+        # 21+ days: 40% reduction
+        if days_since <= 13:
+            volume_mult = 0.85
+            intensity_mult = 0.85
+        elif days_since <= 20:
+            volume_mult = 0.75
+            intensity_mult = 0.75
+        else:
+            volume_mult = 0.60
+            intensity_mult = 0.60
+        
+        return days_since, volume_mult, intensity_mult
+    
     def calculate_next_workout_parameters_hybrid(
         self,
         athlete: Athlete,
@@ -736,6 +802,20 @@ class ProgressiveOverloadEngine:
         elif injury_risk["risk_level"] == "moderate":
             volume_adjustment *= 0.8
             intensity_adjustment *= 0.95
+        
+        # === Priority 2.5: Extended break detection ===
+        # Check for extended break and apply detraining adjustments
+        days_since_break, break_volume_mult, break_intensity_mult = self._detect_extended_break(athlete.id)
+        break_info = None
+        if days_since_break is not None:
+            # Apply break adjustments (these are multipliers, so multiply)
+            volume_adjustment *= break_volume_mult
+            intensity_adjustment *= break_intensity_mult
+            break_info = {
+                "days_since_break": days_since_break,
+                "volume_reduction": round((1 - break_volume_mult) * 100, 0),
+                "intensity_reduction": round((1 - break_intensity_mult) * 100, 0)
+            }
         
         # === Priority 3: Recovery status ===
         readiness = recovery["readiness_score"]
@@ -897,7 +977,8 @@ class ProgressiveOverloadEngine:
             injury_risk["risk_level"],
             training_type,
             current_phase,
-            form_blocked_exercises
+            form_blocked_exercises,
+            break_info
         )
         
         return {
@@ -1036,10 +1117,21 @@ class ProgressiveOverloadEngine:
         injury_risk: str,
         training_type: TrainingType,
         phase: TrainingPhase,
-        form_blocked_exercises: Optional[List[int]] = None
+        form_blocked_exercises: Optional[List[int]] = None,
+        break_info: Optional[Dict] = None
     ) -> str:
         """Generate human-readable reasoning for adjustments."""
         reasons = []
+        
+        # Extended break takes priority in reasoning
+        if break_info:
+            days = break_info["days_since_break"]
+            vol_reduction = int(break_info["volume_reduction"])
+            int_reduction = int(break_info["intensity_reduction"])
+            reasons.append(
+                f"Extended break detected ({days} days) - reducing volume by {vol_reduction}% "
+                f"and intensity by {int_reduction}% to account for detraining"
+            )
         
         if performance_level == "exceeding":
             reasons.append("Performance exceeded targets - increasing load")
@@ -1132,7 +1224,11 @@ class ProgressiveOverloadEngine:
     
     def _calculate_current_week(self, plan: WorkoutPlan) -> int:
         """Calculate current week number in plan."""
-        days_since_start = (datetime.now(timezone.utc) - plan.start_date).days
+        # Handle timezone-naive dates from database
+        start_date = plan.start_date
+        if start_date.tzinfo is None:
+            start_date = start_date.replace(tzinfo=timezone.utc)
+        days_since_start = (datetime.now(timezone.utc) - start_date).days
         return max(1, days_since_start // 7 + 1)
     
     def _determine_phase_from_week(self, week: int, total_weeks: int) -> TrainingPhase:

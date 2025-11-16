@@ -1,7 +1,7 @@
 """
 Pydantic schemas for workout-related requests and responses.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
 from typing import List, Optional, Dict
 
@@ -23,7 +23,6 @@ class WorkoutPlanBase(BaseModel):
     periodization_model: PeriodizationModel
     frequency: int = Field(..., ge=1, le=7)
     duration_weeks: int = Field(..., ge=1, le=52)
-    split_type: Optional[str] = None
 
 
 class WorkoutPlanResponse(WorkoutPlanBase):
@@ -119,13 +118,26 @@ class WorkoutSessionResponse(BaseModel):
         from_attributes = True
 
 
+# ============ Warm-up Set Schemas ============
+
+class WarmupSetSchema(BaseModel):
+    """Schema for a warm-up set."""
+    set_number: int = Field(..., ge=1)
+    weight_percentage: float = Field(..., ge=0, le=1)
+    weight: Optional[float] = Field(None, ge=0)  # Calculated weight in kg
+    reps_min: int = Field(..., ge=1)
+    reps_max: int = Field(..., ge=1)
+    is_warmup: bool = True
+
+
 # ============ Workout Day Exercise Schemas ============
 
 class WorkoutDayExerciseBase(BaseModel):
     """Base schema for workout day exercise."""
     exercise_id: int
     order_in_workout: int
-    target_sets: int = Field(..., ge=1, le=20)
+    target_sets_min: int = Field(..., ge=1, le=20)
+    target_sets_max: int = Field(..., ge=1, le=20)
     target_reps_min: int = Field(..., ge=1)
     target_reps_max: int = Field(..., ge=1)
     target_rpe: Optional[float] = Field(None, ge=1, le=10)
@@ -135,6 +147,15 @@ class WorkoutDayExerciseBase(BaseModel):
     notes: Optional[str] = None
     is_primary: bool = True
     progression_scheme: Optional[str] = None
+    warm_up_sets: int = Field(0, ge=0, le=4)  # Number of warm-up sets (0-4)
+    auto_generate_warmups: bool = True  # Auto-generate warm-up weights/reps
+    
+    @model_validator(mode='after')
+    def validate_set_range(self):
+        """Ensure target_sets_max >= target_sets_min."""
+        if self.target_sets_max < self.target_sets_min:
+            raise ValueError(f"target_sets_max ({self.target_sets_max}) must be >= target_sets_min ({self.target_sets_min})")
+        return self
 
 
 class WorkoutDayExerciseCreate(WorkoutDayExerciseBase):
@@ -153,6 +174,9 @@ class WorkoutDayExerciseResponse(WorkoutDayExerciseBase):
     adjusted_reps_min: Optional[int] = None
     adjusted_reps_max: Optional[int] = None
     adjustment_reason: Optional[str] = None
+    
+    # Warm-up sets (generated if auto_generate_warmups is True)
+    warmup_sets: Optional[List[WarmupSetSchema]] = None
     
     class Config:
         from_attributes = True

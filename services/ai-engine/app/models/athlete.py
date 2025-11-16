@@ -37,6 +37,7 @@ class Athlete(Base):
     rpe_calibrations = relationship("AthleteRPECalibration", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")
     performance_trends = relationship("PerformanceTrend", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")
     exercise_progressions = relationship("ExerciseProgressionTracking", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")
+    personal_records = relationship("ExercisePersonalRecord", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")
     
     def __repr__(self):
         return f"<Athlete(id={self.id}, experience={self.training_experience})>"

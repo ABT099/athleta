@@ -9,6 +9,8 @@ from app.ml.model_selector import ModelSelector
 from app.models import WorkoutSession
 
 
+@pytest.mark.unit
+@pytest.mark.ml
 class TestModelSelector:
     """Test model selection logic."""
     

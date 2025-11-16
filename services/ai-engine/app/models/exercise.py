@@ -43,6 +43,7 @@ class Exercise(Base):
     workout_day_exercises = relationship("WorkoutDayExercise", back_populates="exercise")
     rpe_calibrations = relationship("AthleteRPECalibration", back_populates="exercise", cascade="all, delete-orphan")
     progression_tracking = relationship("ExerciseProgressionTracking", back_populates="exercise", cascade="all, delete-orphan")
+    personal_records = relationship("ExercisePersonalRecord", back_populates="exercise", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Exercise(id={self.id}, name={self.name})>"

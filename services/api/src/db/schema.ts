@@ -45,7 +45,6 @@ export const workoutPlansTable = pgTable('workout_plans', {
   periodizationModel: varchar({ length: 50 }).notNull().$type<('linear' | 'undulating' | 'block')>(),
   frequency: integer().notNull(),
   durationWeeks: integer().notNull(),
-  splitType: varchar({ length: 100 }).notNull(),
   startDate: timestamp(),
   endDate: timestamp(),
   createdAt: timestamp().notNull().defaultNow(),
@@ -67,7 +66,8 @@ export const workoutDayExercisesTable = pgTable('workout_day_exercises', {
   workoutDayId: integer().references(() => workoutDaysTable.id).notNull(),
   exerciseId: integer().references(() => exercisesTable.id).notNull(),
   orderInWorkout: integer().notNull(),
-  targetSets: integer().notNull(),
+  targetSetsMin: integer().notNull(),
+  targetSetsMax: integer().notNull(),
   targetRepsMin: integer().notNull(),
   targetRepsMax: integer().notNull(),
   targetRpe: real(),
@@ -77,6 +77,8 @@ export const workoutDayExercisesTable = pgTable('workout_day_exercises', {
   notes: text(),
   isPrimary: boolean().notNull(),
   progressionScheme: varchar({ length: 50 }),
+  warmUpSets: integer().notNull().$default(() => 0), // 0-4 warm-up sets
+  autoGenerateWarmups: boolean().notNull().$default(() => true), // Auto-generate warm-up weights/reps
 });
 
 export const formQualityTrendsTable = pgTable('form_quality_trends', {

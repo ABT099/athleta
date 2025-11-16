@@ -21,6 +21,7 @@ from app.schemas.workout import (
 from app.services.progressive_overload_engine import ProgressiveOverloadEngine
 from app.services.plan_updater import PlanUpdaterService
 from app.services.rpe_calibration import RPECalibrationService
+from app.services.pr_tracker import PRTrackerService
 
 # Import ML services with graceful degradation
 try:
@@ -200,6 +201,15 @@ def complete_workout(
     
     # Commit all changes
     db.commit()
+    
+    # === PR DETECTION ===
+    # Detect and update personal records
+    pr_tracker = PRTrackerService(db)
+    pr_updates = pr_tracker.detect_and_update_prs(workout_session.id)
+    
+    # Add PR achievements to AI insights
+    if pr_updates.get("achievements"):
+        ai_result["ai_insights"].extend(pr_updates["achievements"])
     
     # Undefer deferred fields for response
     db.refresh(workout_session)

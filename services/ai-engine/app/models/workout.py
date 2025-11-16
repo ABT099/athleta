@@ -31,9 +31,6 @@ class WorkoutPlan(Base):
     frequency = Column(Integer, nullable=False)  # workouts per week
     duration_weeks = Column(Integer, nullable=False)  # total program length
     
-    # Split information
-    split_type = Column(String(100), nullable=True)  # e.g., "upper/lower", "push/pull/legs", "full body"
-    
     # Timestamps
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=True)
@@ -139,7 +136,8 @@ class WorkoutDayExercise(Base):
     order_in_workout = Column(Integer, nullable=False)
     
     # Prescribed parameters (baseline - adjusted by AI)
-    target_sets = Column(Integer, nullable=False)
+    target_sets_min = Column(Integer, nullable=False)
+    target_sets_max = Column(Integer, nullable=False)
     target_reps_min = Column(Integer, nullable=False)
     target_reps_max = Column(Integer, nullable=False)
     target_rpe = Column(Float, nullable=True)  # target RPE
@@ -159,6 +157,10 @@ class WorkoutDayExercise(Base):
     
     # Progression scheme (e.g., "linear", "double_progression", "wave")
     progression_scheme = Column(String(50), nullable=True)
+    
+    # Warm-up sets configuration
+    warm_up_sets = Column(Integer, default=0, nullable=False)  # 0-4 warm-up sets
+    auto_generate_warmups = Column(Integer, default=1, nullable=False)  # 1 = auto-generate, 0 = manual
     
     # Relationships
     workout_day = relationship("WorkoutDay", back_populates="exercises")

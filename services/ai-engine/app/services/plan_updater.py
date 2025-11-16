@@ -4,17 +4,20 @@ Plan updater service.
 Updates PlanEntry records and generates next workout with adjusted parameters.
 """
 from typing import Dict, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session, undefer
 
 from app.models import (
     PlanEntry, WorkoutDay, WorkoutDayExercise,
-    WorkoutSession, ExerciseSet, RecoveryMetrics
+    WorkoutSession, ExerciseSet, RecoveryMetrics, Exercise
 )
 from app.schemas.workout import (
     WorkoutDayResponse,
     WorkoutDayExerciseResponse,
+    WarmupSetSchema,
 )
+from app.services.warmup_generator import WarmupGenerator
+from app.services.pr_tracker import PRTrackerService
 
 
 class PlanUpdaterService:
@@ -24,6 +27,7 @@ class PlanUpdaterService:
     
     def __init__(self, db: Session):
         self.db = db
+        self.warmup_generator = WarmupGenerator()
     
     def update_plan_entry_after_workout(
         self,
@@ -128,6 +132,14 @@ class PlanUpdaterService:
             .all()
         )
         
+        # Get plan context for weekly progression
+        from app.services.progressive_overload_engine import ProgressiveOverloadEngine
+        engine = ProgressiveOverloadEngine(self.db)
+        plan_context = engine.analyze_plan_context(athlete_id)
+        
+        # Extract recovery indicators from recommendations
+        recovery_score = self._estimate_recovery_from_recommendations(recovery_recommendations)
+        
         # Apply adjustments to each exercise
         adjusted_exercises = []
         exercise_adjustments = ai_adjustments.get("exercise_adjustments", {})
@@ -140,18 +152,41 @@ class PlanUpdaterService:
             ex_volume_mult = ex_adj.get("volume_multiplier", volume_mult)
             ex_intensity_mult = ex_adj.get("intensity_multiplier", intensity_mult)
             
-            # Calculate adjusted parameters
-            adjusted_sets = max(1, int(prescribed.target_sets * ex_volume_mult))
-            
-            # Get last weight used for this exercise
-            last_weight = self._get_last_weight_used(
-                athlete_id, prescribed.exercise_id
+            # Calculate adjusted sets using dynamic range selection
+            adjusted_sets = self._calculate_dynamic_sets(
+                prescribed=prescribed,
+                plan_context=plan_context,
+                recovery_score=recovery_score,
+                volume_multiplier=ex_volume_mult
             )
             
-            # Calculate adjusted weight
+            # Calculate adjusted weight using PR if available
+            pr_tracker = PRTrackerService(self.db)
+            target_reps_avg = (prescribed.target_reps_min + prescribed.target_reps_max) / 2
+            pr_record = pr_tracker.get_pr_for_rep_range(
+                prescribed.exercise_id,
+                athlete_id,
+                target_reps_avg
+            )
+            
             adjusted_weight = None
-            if last_weight:
-                adjusted_weight = round(last_weight * ex_intensity_mult / 2.5) * 2.5  # Round to 2.5kg
+            if pr_record:
+                # Use % of PR based on week/phase
+                training_pct = pr_tracker.calculate_training_percentage(
+                    plan_context.get("week_number", 1),
+                    plan_context.get("current_phase", "accumulation"),
+                    plan_context.get("is_deload_week", False)
+                )
+                base_weight = pr_record["weight"] * training_pct
+                # Apply intensity multiplier
+                adjusted_weight = round(base_weight * ex_intensity_mult / 2.5) * 2.5
+            else:
+                # Fallback to old method (last weight)
+                last_weight = self._get_last_weight_used(
+                    athlete_id, prescribed.exercise_id
+                )
+                if last_weight:
+                    adjusted_weight = round(last_weight * ex_intensity_mult / 2.5) * 2.5
             
             # Adjust rep ranges slightly based on volume
             reps_adjustment = 0
@@ -163,13 +198,53 @@ class PlanUpdaterService:
             adjusted_reps_min = max(1, prescribed.target_reps_min + reps_adjustment)
             adjusted_reps_max = max(adjusted_reps_min, prescribed.target_reps_max + reps_adjustment)
             
+            # Generate warm-up sets if auto-generate is enabled
+            warmup_sets = None
+            if prescribed.auto_generate_warmups == 1 and adjusted_weight:
+                # Determine number of warm-up sets if not set
+                num_warmup_sets = prescribed.warm_up_sets
+                if num_warmup_sets == 0:
+                    # Auto-determine based on exercise characteristics
+                    exercise = self.db.query(Exercise).filter(
+                        Exercise.id == prescribed.exercise_id
+                    ).first()
+                    if exercise:
+                        num_warmup_sets = self.warmup_generator.determine_warmup_set_count(
+                            exercise, bool(prescribed.is_primary)
+                        )
+                
+                # Calculate set range position for context-aware warmup
+                sets_range_position = None
+                sets_min = prescribed.target_sets_min
+                sets_max = prescribed.target_sets_max
+                if sets_max > sets_min and adjusted_sets is not None:
+                    # Calculate position: 0.0 = at min, 1.0 = at max
+                    sets_range_position = (adjusted_sets - sets_min) / (sets_max - sets_min)
+                    sets_range_position = max(0.0, min(1.0, sets_range_position))
+                
+                # Get deload status from plan context
+                is_deload_week = plan_context.get("is_deload_week", False)
+                
+                # Generate warm-up sets with context
+                if num_warmup_sets > 0:
+                    warmup_data = self.warmup_generator.generate_warmup_sets(
+                        working_weight=adjusted_weight,
+                        num_warmup_sets=num_warmup_sets,
+                        exercise_type=exercise.exercise_type if exercise else None,
+                        adjusted_sets=adjusted_sets,
+                        sets_range_position=sets_range_position,
+                        is_deload_week=is_deload_week
+                    )
+                    warmup_sets = [WarmupSetSchema(**warmup) for warmup in warmup_data]
+            
             # Create adjusted exercise response
             adjusted_ex = WorkoutDayExerciseResponse(
                 id=prescribed.id,
                 workout_day_id=prescribed.workout_day_id,
                 exercise_id=prescribed.exercise_id,
                 order_in_workout=prescribed.order_in_workout,
-                target_sets=prescribed.target_sets,
+                target_sets_min=prescribed.target_sets_min,
+                target_sets_max=prescribed.target_sets_max,
                 target_reps_min=prescribed.target_reps_min,
                 target_reps_max=prescribed.target_reps_max,
                 target_rpe=prescribed.target_rpe,
@@ -183,7 +258,10 @@ class PlanUpdaterService:
                 adjusted_sets=adjusted_sets,
                 adjusted_reps_min=adjusted_reps_min,
                 adjusted_reps_max=adjusted_reps_max,
-                adjustment_reason=ex_adj.get("reason", ai_adjustments.get("reasoning", "Standard progression"))
+                adjustment_reason=ex_adj.get("reason", ai_adjustments.get("reasoning", "Standard progression")),
+                warm_up_sets=prescribed.warm_up_sets,
+                auto_generate_warmups=bool(prescribed.auto_generate_warmups),
+                warmup_sets=warmup_sets
             )
             
             adjusted_exercises.append(adjusted_ex)
@@ -227,6 +305,116 @@ class PlanUpdaterService:
             "weekly_progress": weekly_progress
         }
     
+    def _calculate_dynamic_sets(
+        self,
+        prescribed: WorkoutDayExercise,
+        plan_context: Dict,
+        recovery_score: float,
+        volume_multiplier: float
+    ) -> int:
+        """
+        Calculate optimal number of sets using weekly progression and recovery.
+        
+        Implements Option 3c: Weekly progression + Recovery adaptation
+        
+        Args:
+            prescribed: Prescribed exercise with set range
+            plan_context: Plan context with week number, deload status, etc.
+            recovery_score: Recovery score (0.0 = poor, 1.0 = excellent)
+            volume_multiplier: Volume multiplier from AI adjustments
+            
+        Returns:
+            Optimal number of sets within [min, max] range
+        """
+        sets_min = prescribed.target_sets_min
+        sets_max = prescribed.target_sets_max
+        sets_range = sets_max - sets_min
+        
+        # If range is 0, just return the single value
+        if sets_range == 0:
+            return max(1, int(sets_min * volume_multiplier))
+        
+        # === 1. Weekly Progression ===
+        # Progress from min to max over mesocycle
+        week_number = plan_context.get("week_number", 1)
+        is_deload = plan_context.get("is_deload_week", False)
+        duration_weeks = plan_context.get("duration_weeks", 12)  # Default 12 weeks
+        
+        if is_deload:
+            # Deload week: use minimum sets
+            base_sets = sets_min
+        else:
+            # Calculate progression: early weeks = min, peak weeks = max
+            # Use a smooth progression curve
+            progress_ratio = min(1.0, (week_number - 1) / max(1, duration_weeks - 1))
+            # Apply a slight curve (ease in) for more gradual progression
+            progress_curve = progress_ratio ** 0.7
+            base_sets = sets_min + (sets_range * progress_curve)
+            base_sets = round(base_sets)
+        
+        # === 2. Recovery Adaptation ===
+        # Adjust within range based on recovery status
+        # Poor recovery (0.0-0.4) → reduce by 1-2 sets
+        # Good recovery (0.6-1.0) → can increase within range
+        # Medium recovery (0.4-0.6) → stay at base
+        
+        recovery_adjustment = 0
+        if recovery_score < 0.4:
+            # Poor recovery: reduce sets
+            recovery_adjustment = -2 if sets_range >= 2 else -1
+        elif recovery_score > 0.7:
+            # Excellent recovery: can increase if room
+            if base_sets < sets_max:
+                recovery_adjustment = 1
+        # Medium recovery: no adjustment
+        
+        # === 3. Apply Volume Multiplier ===
+        # Volume multiplier can further adjust
+        volume_adjusted = base_sets + recovery_adjustment
+        volume_adjusted = int(volume_adjusted * volume_multiplier)
+        
+        # === 4. Clamp to Range ===
+        final_sets = max(sets_min, min(sets_max, volume_adjusted))
+        
+        return final_sets
+    
+    def _estimate_recovery_from_recommendations(self, recovery_recommendations: List[str]) -> float:
+        """
+        Estimate recovery score from recovery recommendations.
+        
+        Args:
+            recovery_recommendations: List of recovery recommendation strings
+            
+        Returns:
+            Recovery score (0.0 = poor, 1.0 = excellent)
+        """
+        if not recovery_recommendations:
+            return 0.7  # Default to moderate recovery
+        
+        # Analyze recommendations for recovery indicators
+        recommendations_text = " ".join(recovery_recommendations).lower()
+        
+        # Negative indicators (poor recovery)
+        poor_indicators = ["rest", "recovery", "fatigue", "tired", "sore", "reduce", "lower", "deload"]
+        # Positive indicators (good recovery)
+        good_indicators = ["ready", "fresh", "energized", "good", "excellent", "strong"]
+        
+        poor_count = sum(1 for indicator in poor_indicators if indicator in recommendations_text)
+        good_count = sum(1 for indicator in good_indicators if indicator in recommendations_text)
+        
+        # Calculate score
+        if poor_count > good_count:
+            # More poor indicators
+            score = max(0.2, 0.7 - (poor_count * 0.15))
+        elif good_count > poor_count:
+            # More good indicators
+            score = min(1.0, 0.7 + (good_count * 0.1))
+        else:
+            # Balanced or neutral
+            score = 0.6
+        
+        return score
+    
     def _get_last_weight_used(self, athlete_id: int, exercise_id: int) -> float:
         """
         Get the last weight used for an exercise.
@@ -262,7 +450,8 @@ class PlanUpdaterService:
             Dict with weekly progress
         """
         # Get workouts from this week
-        week_start = datetime.utcnow() - timedelta(days=datetime.utcnow().weekday())
+        now = datetime.now(timezone.utc)
+        week_start = now - timedelta(days=now.weekday())
         
         weekly_sessions = (
             self.db.query(WorkoutSession)

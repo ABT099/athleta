@@ -65,6 +65,13 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
 ]
+markers = [
+    "unit: Unit tests (fast)",
+    "integration: Integration tests",
+    "slow: Slow-running tests",
+    "ml: ML model tests (requires TensorFlow/LightGBM)",
+    "smoke: Critical smoke tests",
+]
 
 [tool.black]
 line-length = 100
