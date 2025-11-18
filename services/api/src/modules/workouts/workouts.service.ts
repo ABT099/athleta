@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject } from '@nestjs/common';
+import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
+import { workoutDayExercisesTable, exercisesTable } from '../../db/schema';
 import { eq, and } from 'drizzle-orm';
-import * as schema from '../../db/schema';
-import { DatabaseService } from '../database/database.service';
 
 @Injectable()
 export class WorkoutsService {
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
   async substituteExercise(
     workoutDayId: number,
@@ -13,12 +13,13 @@ export class WorkoutsService {
     substituteExerciseId: number,
   ): Promise<void> {
     // Verify workout day exercise exists
-    const workoutExercise = await this.databaseService.db.query.workoutDayExercisesTable.findFirst({
-      where: and(
-        eq(schema.workoutDayExercisesTable.workoutDayId, workoutDayId),
-        eq(schema.workoutDayExercisesTable.exerciseId, exerciseId),
-      ),
-    });
+    const workoutExercise =
+      await this.db.query.workoutDayExercisesTable.findFirst({
+        where: and(
+          eq(workoutDayExercisesTable.workoutDayId, workoutDayId),
+          eq(workoutDayExercisesTable.exerciseId, exerciseId),
+        ),
+      });
 
     if (!workoutExercise) {
       throw new NotFoundException(
@@ -27,8 +28,8 @@ export class WorkoutsService {
     }
 
     // Verify substitute exercise exists
-    const substituteExercise = await this.databaseService.db.query.exercisesTable.findFirst({
-      where: eq(schema.exercisesTable.id, substituteExerciseId),
+    const substituteExercise = await this.db.query.exercisesTable.findFirst({
+      where: eq(exercisesTable.id, substituteExerciseId),
     });
 
     if (!substituteExercise) {
@@ -38,10 +39,9 @@ export class WorkoutsService {
     }
 
     // Update the exercise ID, keeping all other parameters
-    await this.databaseService.db
-      .update(schema.workoutDayExercisesTable)
+    await this.db
+      .update(workoutDayExercisesTable)
       .set({ exerciseId: substituteExerciseId })
-      .where(eq(schema.workoutDayExercisesTable.id, workoutExercise.id));
+      .where(eq(workoutDayExercisesTable.id, workoutExercise.id));
   }
 }
-

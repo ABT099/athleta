@@ -1,21 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { eq, and, ne, lte, inArray } from 'drizzle-orm';
-import * as schema from '../../db/schema';
+import { Injectable, NotFoundException, Inject } from '@nestjs/common';
+import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
+import { exercisesTable } from '../../db/schema';
+import { eq, ne, lte, inArray, and } from 'drizzle-orm';
 import { MuscleSimilarityUtil } from './utils/muscle-similarity.util';
-import { AIEngineClient } from '../../clients/ai-engine.client';
+import { AIEngineIntegration } from './integrations/ai-engine.integration';
 import {
   SubstitutionResultDto,
   ExerciseDto,
   MatchDetailsDto,
 } from './dto/substitution-result.dto';
 import { SubstitutionFiltersDto } from './dto/substitution-filters.dto';
-import { DatabaseService } from '../database/database.service';
+
+type ExerciseEntity = typeof exercisesTable.$inferSelect;
 
 @Injectable()
-export class ExerciseSubstitutionService {
+export class ExerciseService {
   constructor(
-    private readonly databaseService: DatabaseService,
-    private readonly aiEngineClient: AIEngineClient,
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly aiEngineIntegration: AIEngineIntegration,
   ) {}
 
   async findSubstitutions(
@@ -23,8 +25,8 @@ export class ExerciseSubstitutionService {
     filters?: SubstitutionFiltersDto,
   ): Promise<SubstitutionResultDto[]> {
     // Get original exercise
-    const originalExercise = await this.databaseService.db.query.exercisesTable.findFirst({
-      where: eq(schema.exercisesTable.id, originalExerciseId),
+    const originalExercise = await this.db.query.exercisesTable.findFirst({
+      where: eq(exercisesTable.id, originalExerciseId),
     });
 
     if (!originalExercise) {
@@ -34,51 +36,34 @@ export class ExerciseSubstitutionService {
     }
 
     // Build query conditions
-    const conditions = [ne(schema.exercisesTable.id, originalExerciseId)];
+    const conditions = [ne(exercisesTable.id, originalExerciseId)];
 
-    // Filter by equipment if specified
     if (filters?.availableEquipment && filters.availableEquipment.length > 0) {
       conditions.push(
-        inArray(schema.exercisesTable.equipment, filters.availableEquipment),
+        inArray(exercisesTable.equipment, filters.availableEquipment),
       );
     }
 
-    // Filter by max complexity
     if (filters?.maxComplexity !== undefined) {
       conditions.push(
-        lte(schema.exercisesTable.complexityScore, filters.maxComplexity),
+        lte(exercisesTable.complexityScore, filters.maxComplexity),
       );
     }
 
-    // Filter by max injury risk
     if (filters?.maxInjuryRisk !== undefined) {
       conditions.push(
-        lte(schema.exercisesTable.injuryRiskLevel, filters.maxInjuryRisk),
+        lte(exercisesTable.injuryRiskLevel, filters.maxInjuryRisk),
       );
     }
 
-    // Exclude specific exercise IDs
     if (filters?.excludeIds && filters.excludeIds.length > 0) {
-      // Add each exclusion condition separately - they will be combined with AND
-      // This ensures: id != excludeId1 AND id != excludeId2 AND id != excludeId3
       filters.excludeIds.forEach((id) => {
-        conditions.push(ne(schema.exercisesTable.id, id));
+        conditions.push(ne(exercisesTable.id, id));
       });
     }
 
-    // Exclude exercises with specific joint stress
-    if (
-      filters?.excludeJointStress &&
-      filters.excludeJointStress.length > 0
-    ) {
-      // For array fields, we need to check if any of the excluded joints are in the array
-      // This is a simplified approach - in production, you might want to use array overlap operators
-      // For now, we'll filter in JavaScript after fetching
-    }
-
-    // Get all exercises matching basic filters
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-    const candidateExercises = await this.databaseService.db.query.exercisesTable.findMany({
+    const candidateExercises = await this.db.query.exercisesTable.findMany({
       where: whereClause,
     });
 
@@ -122,8 +107,8 @@ export class ExerciseSubstitutionService {
   ): Promise<SubstitutionResultDto[]> {
     // Get AI engine insights for athlete
     const [jointProfile, problematicExercises] = await Promise.all([
-      this.aiEngineClient.getJointStressProfile(athleteId),
-      this.aiEngineClient.getProblematicExercises(athleteId),
+      this.aiEngineIntegration.getJointStressProfile(athleteId),
+      this.aiEngineIntegration.getProblematicExercises(athleteId),
     ]);
 
     // Merge AI insights into filters
@@ -143,18 +128,20 @@ export class ExerciseSubstitutionService {
   }
 
   private calculateMatchDetails(
-    exercise1: typeof schema.exercisesTable.$inferSelect,
-    exercise2: typeof schema.exercisesTable.$inferSelect,
+    exercise1: ExerciseEntity,
+    exercise2: ExerciseEntity,
   ): MatchDetailsDto {
-    const primaryMuscleOverlap = MuscleSimilarityUtil.calculateJaccardSimilarity(
-      exercise1.primaryMuscles || [],
-      exercise2.primaryMuscles || [],
-    );
+    const primaryMuscleOverlap =
+      MuscleSimilarityUtil.calculateJaccardSimilarity(
+        exercise1.primaryMuscles || [],
+        exercise2.primaryMuscles || [],
+      );
 
-    const secondaryMuscleOverlap = MuscleSimilarityUtil.calculateJaccardSimilarity(
-      exercise1.secondaryMuscles || [],
-      exercise2.secondaryMuscles || [],
-    );
+    const secondaryMuscleOverlap =
+      MuscleSimilarityUtil.calculateJaccardSimilarity(
+        exercise1.secondaryMuscles || [],
+        exercise2.secondaryMuscles || [],
+      );
 
     const movementPatternMatch =
       exercise1.movementPattern === exercise2.movementPattern
@@ -169,14 +156,14 @@ export class ExerciseSubstitutionService {
     const exerciseTypeMatch =
       exercise1.exerciseType === exercise2.exerciseType ? 1.0 : 0.5;
 
-    // Calculate complexity similarity, normalized to [0, 1]
-    // Assuming complexity scores typically range from 0 to 2
-    // Using a normalized difference to ensure result stays between 0 and 1
-    const maxComplexityDiff = 2.0; // Maximum expected difference
+    const maxComplexityDiff = 2.0;
     const complexityDiff = Math.abs(
       (exercise1.complexityScore || 1.0) - (exercise2.complexityScore || 1.0),
     );
-    const complexitySimilarity = Math.max(0, 1.0 - (complexityDiff / maxComplexityDiff));
+    const complexitySimilarity = Math.max(
+      0,
+      1.0 - complexityDiff / maxComplexityDiff,
+    );
 
     return {
       primaryMuscleOverlap,
@@ -197,9 +184,7 @@ export class ExerciseSubstitutionService {
     );
   }
 
-  private mapToExerciseDto(
-    exercise: typeof schema.exercisesTable.$inferSelect,
-  ): ExerciseDto {
+  private mapToExerciseDto(exercise: ExerciseEntity): ExerciseDto {
     return {
       id: exercise.id,
       name: exercise.name,
@@ -215,4 +200,3 @@ export class ExerciseSubstitutionService {
     };
   }
 }
-

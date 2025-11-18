@@ -5,22 +5,20 @@ import {
   ParseIntPipe,
   Query,
 } from '@nestjs/common';
-import { ExerciseSubstitutionService } from './exercise-substitution.service';
+import { ExerciseService } from './exercise.service';
 import { SubstitutionFiltersDto } from './dto/substitution-filters.dto';
 import { SubstitutionResultDto } from './dto/substitution-result.dto';
 
 @Controller('exercises')
 export class ExerciseController {
-  constructor(
-    private readonly substitutionService: ExerciseSubstitutionService,
-  ) {}
+  constructor(private readonly exerciseService: ExerciseService) {}
 
   @Get(':exerciseId/substitutions')
   async getSubstitutions(
     @Param('exerciseId', ParseIntPipe) exerciseId: number,
     @Query() filters: SubstitutionFiltersDto,
   ): Promise<SubstitutionResultDto[]> {
-    return this.substitutionService.findSubstitutions(exerciseId, filters);
+    return this.exerciseService.findSubstitutions(exerciseId, filters);
   }
 
   @Get(':exerciseId/substitutions/athlete/:athleteId')
@@ -29,7 +27,7 @@ export class ExerciseController {
     @Param('athleteId', ParseIntPipe) athleteId: number,
     @Query() filters: SubstitutionFiltersDto,
   ): Promise<SubstitutionResultDto[]> {
-    return this.substitutionService.findPersonalizedSubstitutions(
+    return this.exerciseService.findPersonalizedSubstitutions(
       exerciseId,
       athleteId,
       filters,

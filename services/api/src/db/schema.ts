@@ -5,10 +5,12 @@ import { boolean, integer, pgTable, text, timestamp, varchar } from 'drizzle-orm
 export const usersTable = pgTable('users', {
   id: serial().primaryKey(),
   email: varchar({ length: 255 }).notNull().unique(),
-  password: varchar({ length: 255 }).notNull(),
+  password: varchar({ length: 255 }),
   firstName: varchar({ length: 255 }).notNull(),
   lastName: varchar({ length: 255 }).notNull(),
   role: varchar({ length: 10 }).notNull().$type<'admin' | 'user'>(),
+  googleId: varchar({ length: 255 }),
+  appleId: varchar({ length: 255 }),
   createdAt: timestamp().notNull().defaultNow(),
 });
 
@@ -90,4 +92,12 @@ export const formQualityTrendsTable = pgTable('form_quality_trends', {
   setsAnalyzed: integer().notNull(),
   degradationRate: real(), // Form drop across sets in session
   highRpePoorFormCount: integer().notNull().$default(() => 0),
+});
+
+export const refreshTokensTable = pgTable('refresh_tokens', {
+  id: serial().primaryKey(),
+  userId: integer().references(() => usersTable.id).notNull(),
+  token: text().notNull().unique(),
+  expiresAt: timestamp().notNull(),
+  createdAt: timestamp().notNull().defaultNow(),
 });

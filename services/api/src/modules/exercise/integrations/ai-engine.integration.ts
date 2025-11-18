@@ -14,8 +14,8 @@ export interface ProblematicExerciseDto {
 }
 
 @Injectable()
-export class AIEngineClient {
-  private readonly logger = new Logger(AIEngineClient.name);
+export class AIEngineIntegration {
+  private readonly logger = new Logger(AIEngineIntegration.name);
   private readonly baseURL: string;
 
   constructor(
