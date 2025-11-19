@@ -100,4 +100,5 @@ export const refreshTokensTable = pgTable('refresh_tokens', {
   token: text().notNull().unique(),
   expiresAt: timestamp().notNull(),
   createdAt: timestamp().notNull().defaultNow(),
+  usedAt: timestamp(),
 });

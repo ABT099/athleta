@@ -2,11 +2,10 @@ import { Controller, Get, Post, Request, UseGuards, Body } from '@nestjs/common'
 import { AuthenticationService } from './services/authentication.service';
 import { TokenManagementService } from './services/token-management.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
-import { AuthGuard } from '@nestjs/passport';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { AppleAuthGuard } from './guards/apple-auth.guard';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { AllowAnonymous } from './guards/allow-anonymous';
 
 @Controller('auth')
 export class AuthController {
@@ -41,6 +40,7 @@ export class AuthController {
     return this.authenticationService.login(req.user);
   }
 
+  @UseGuards(AllowAnonymous)
   @Post('refresh')
   async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
     return this.tokenManagementService.refreshAccessToken(
@@ -48,7 +48,6 @@ export class AuthController {
     );
   }
 
-  @UseGuards(JwtAuthGuard)
   @Post('logout')
   async logout(@Body() refreshTokenDto: RefreshTokenDto) {
     await this.tokenManagementService.revokeRefreshToken(
