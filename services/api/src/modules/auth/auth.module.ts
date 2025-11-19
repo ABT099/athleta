@@ -15,7 +15,6 @@ import { OAuthService } from './services/oauth.service';
 
 @Module({
   imports: [
-    ConfigModule,
     UsersModule,
     PassportModule,
     JwtModule.register({

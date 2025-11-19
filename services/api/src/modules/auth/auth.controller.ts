@@ -40,7 +40,7 @@ export class AuthController {
     return this.authenticationService.login(req.user);
   }
 
-  @UseGuards(AllowAnonymous)
+  @AllowAnonymous()
   @Post('refresh')
   async refresh(@Body() refreshTokenDto: RefreshTokenDto) {
     return this.tokenManagementService.refreshAccessToken(
