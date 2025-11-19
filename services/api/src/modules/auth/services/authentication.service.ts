@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { UsersService } from '../../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { TokenManagementService } from './token-management.service';
@@ -16,7 +16,7 @@ export class AuthenticationService {
     const user = await this.usersService.findOne(email);
 
     if (!user) {
-      return null;
+      throw new NotFoundException();
     }
 
     if (!user.password) {
