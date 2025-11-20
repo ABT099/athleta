@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Request, UseGuards, Body } from '@nestjs/common';
+import { Controller, Get, Post, Request, UseGuards, Body, Query } from '@nestjs/common';
 import { AuthenticationService } from './services/authentication.service';
 import { TokenManagementService } from './services/token-management.service';
+import { OAuthService } from './services/oauth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { AppleAuthGuard } from './guards/apple-auth.guard';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { AppleMobileDto } from './dto/apple-mobile.dto';
 import { AllowAnonymous } from './guards/allow-anonymous';
 
 @Controller('auth')
@@ -12,6 +14,7 @@ export class AuthController {
   constructor(
     private readonly authenticationService: AuthenticationService,
     private readonly tokenManagementService: TokenManagementService,
+    private readonly oauthService: OAuthService,
   ) {}
 
   @UseGuards(LocalAuthGuard)
@@ -38,6 +41,18 @@ export class AuthController {
   @UseGuards(AppleAuthGuard)
   async appleAuthCallback(@Request() req) {
     return this.authenticationService.login(req.user);
+  }
+
+  @AllowAnonymous()
+  @Post('apple/mobile')
+  async appleMobileAuth(@Body() appleMobileDto: AppleMobileDto) {
+    const profile = await this.oauthService.verifyAppleIdToken(
+      appleMobileDto.idToken,
+    );
+    const user = await this.oauthService.validateAppleUser(profile, {
+      sub: profile.id,
+    });
+    return this.authenticationService.login(user);
   }
 
   @AllowAnonymous()
