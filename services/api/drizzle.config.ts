@@ -11,4 +11,16 @@ export default defineConfig({
   casing: 'snake_case',
   strict: true,
   verbose: true,
+  tablesFilter: [
+      '!alembic_version',
+      '!plan_entries',
+      '!workout_sessions',
+      '!exercise_sets',
+      '!recovery_metrics',
+      '!athlete_rpe_calibration',
+      '!performance_trends',
+      '!exercise_progression_tracking',
+      '!ml_model_metadata',
+      '!exercise_personal_records',
+    ], // Exclude alembic_version table from Drizzle operations
 });

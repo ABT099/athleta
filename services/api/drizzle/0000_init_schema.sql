@@ -33,15 +33,29 @@ CREATE TABLE "form_quality_trends" (
 	"high_rpe_poor_form_count" integer NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "refresh_tokens" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"token" text NOT NULL,
+	"expires_at" timestamp NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"used_at" timestamp,
+	CONSTRAINT "refresh_tokens_token_unique" UNIQUE("token")
+);
+--> statement-breakpoint
 CREATE TABLE "users" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"email" varchar(255) NOT NULL,
-	"password" varchar(255) NOT NULL,
+	"password" varchar(255),
 	"first_name" varchar(255) NOT NULL,
 	"last_name" varchar(255) NOT NULL,
 	"role" varchar(10) NOT NULL,
+	"google_id" varchar(255),
+	"apple_id" varchar(255),
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "users_email_unique" UNIQUE("email")
+	CONSTRAINT "users_email_unique" UNIQUE("email"),
+	CONSTRAINT "users_google_id_unique" UNIQUE("google_id"),
+	CONSTRAINT "users_apple_id_unique" UNIQUE("apple_id")
 );
 --> statement-breakpoint
 CREATE TABLE "workout_day_exercises" (
@@ -49,7 +63,8 @@ CREATE TABLE "workout_day_exercises" (
 	"workout_day_id" integer NOT NULL,
 	"exercise_id" integer NOT NULL,
 	"order_in_workout" integer NOT NULL,
-	"target_sets" integer NOT NULL,
+	"target_sets_min" integer NOT NULL,
+	"target_sets_max" integer NOT NULL,
 	"target_reps_min" integer NOT NULL,
 	"target_reps_max" integer NOT NULL,
 	"target_rpe" real,
@@ -58,7 +73,9 @@ CREATE TABLE "workout_day_exercises" (
 	"tempo" varchar(20),
 	"notes" text,
 	"is_primary" boolean NOT NULL,
-	"progression_scheme" varchar(50)
+	"progression_scheme" varchar(50),
+	"warm_up_sets" integer NOT NULL,
+	"auto_generate_warmups" boolean NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "workout_days" (
@@ -80,7 +97,6 @@ CREATE TABLE "workout_plans" (
 	"periodization_model" varchar(50) NOT NULL,
 	"frequency" integer NOT NULL,
 	"duration_weeks" integer NOT NULL,
-	"split_type" varchar(100) NOT NULL,
 	"start_date" timestamp,
 	"end_date" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
@@ -90,6 +106,7 @@ CREATE TABLE "workout_plans" (
 ALTER TABLE "athletes" ADD CONSTRAINT "athletes_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "form_quality_trends" ADD CONSTRAINT "form_quality_trends_athlete_id_athletes_id_fk" FOREIGN KEY ("athlete_id") REFERENCES "public"."athletes"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "form_quality_trends" ADD CONSTRAINT "form_quality_trends_exercise_id_exercises_id_fk" FOREIGN KEY ("exercise_id") REFERENCES "public"."exercises"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workout_day_exercises" ADD CONSTRAINT "workout_day_exercises_workout_day_id_workout_days_id_fk" FOREIGN KEY ("workout_day_id") REFERENCES "public"."workout_days"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workout_day_exercises" ADD CONSTRAINT "workout_day_exercises_exercise_id_exercises_id_fk" FOREIGN KEY ("exercise_id") REFERENCES "public"."exercises"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workout_days" ADD CONSTRAINT "workout_days_workout_plan_id_workout_plans_id_fk" FOREIGN KEY ("workout_plan_id") REFERENCES "public"."workout_plans"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

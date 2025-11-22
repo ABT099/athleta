@@ -21,7 +21,11 @@ export const drizzleProvider: Provider = {
       connectionString,
     });
 
-    const db = drizzle({ client: pool, schema });
+    const db = drizzle({
+      client: pool,
+      schema,
+      casing: 'snake_case',
+    });
 
     return db;
   },

@@ -9,8 +9,8 @@ export const usersTable = pgTable('users', {
   firstName: varchar({ length: 255 }).notNull(),
   lastName: varchar({ length: 255 }).notNull(),
   role: varchar({ length: 10 }).notNull().$type<'admin' | 'user'>(),
-  googleId: varchar({ length: 255 }),
-  appleId: varchar({ length: 255 }),
+  googleId: varchar( { length: 255 }).unique(),
+  appleId: varchar({ length: 255 }).unique(),
   createdAt: timestamp().notNull().defaultNow(),
 });
 

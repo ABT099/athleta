@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1763027680742,
-      "tag": "0000_handy_frank_castle",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1763304276647,
-      "tag": "0001_lowly_meggan",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1763493124594,
-      "tag": "0002_flat_hannibal_king",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1763493610095,
-      "tag": "0003_acoustic_carmella_unuscione",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1763570984213,
-      "tag": "0004_harsh_wendigo",
+      "when": 1763841244566,
+      "tag": "0000_init_schema",
       "breakpoints": true
     }
   ]

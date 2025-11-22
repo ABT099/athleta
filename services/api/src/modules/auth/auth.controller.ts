@@ -46,8 +46,10 @@ export class AuthController {
   @Post('oauth/token')
   @UseInterceptors(NoFilesInterceptor())
   async oauthToken(@Body() oauthTokenDto: OauthTokenDto) {
-    const token = this.oauthService.getOAuthToken(oauthTokenDto.code, oauthTokenDto.provider as OAuthProvider);
-    console.log(token);
+    const token = await this.oauthService.getOAuthToken(
+      oauthTokenDto.code,
+      oauthTokenDto.provider,
+    );
     return token;
   }
 

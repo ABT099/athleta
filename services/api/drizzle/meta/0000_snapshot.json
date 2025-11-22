@@ -1,5 +1,5 @@
 {
-  "id": "885bcd4d-ef35-476d-af25-8692c7a617a5",
+  "id": "96ef658d-6cc1-4278-97ed-46dc451c0f9c",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -242,6 +242,78 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.refresh_tokens": {
+      "name": "refresh_tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "refresh_tokens_user_id_users_id_fk": {
+          "name": "refresh_tokens_user_id_users_id_fk",
+          "tableFrom": "refresh_tokens",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "refresh_tokens_token_unique": {
+          "name": "refresh_tokens_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.users": {
       "name": "users",
       "schema": "",
@@ -262,7 +334,7 @@
           "name": "password",
           "type": "varchar(255)",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "first_name": {
           "name": "first_name",
@@ -282,6 +354,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "google_id": {
+          "name": "google_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "apple_id": {
+          "name": "apple_id",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -299,6 +383,20 @@
           "nullsNotDistinct": false,
           "columns": [
             "email"
+          ]
+        },
+        "users_google_id_unique": {
+          "name": "users_google_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "google_id"
+          ]
+        },
+        "users_apple_id_unique": {
+          "name": "users_apple_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "apple_id"
           ]
         }
       },
@@ -334,8 +432,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "target_sets": {
-          "name": "target_sets",
+        "target_sets_min": {
+          "name": "target_sets_min",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_sets_max": {
+          "name": "target_sets_max",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
@@ -393,6 +497,18 @@
           "type": "varchar(50)",
           "primaryKey": false,
           "notNull": false
+        },
+        "warm_up_sets": {
+          "name": "warm_up_sets",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auto_generate_warmups": {
+          "name": "auto_generate_warmups",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
         }
       },
       "indexes": {},
@@ -548,12 +664,6 @@
         "duration_weeks": {
           "name": "duration_weeks",
           "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "split_type": {
-          "name": "split_type",
-          "type": "varchar(100)",
           "primaryKey": false,
           "notNull": true
         },
