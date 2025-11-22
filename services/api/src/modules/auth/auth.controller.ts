@@ -1,13 +1,13 @@
-import { Controller, Get, Post, Request, UseGuards, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Request, UseGuards, Body, Query, Res, UseInterceptors } from '@nestjs/common';
 import { AuthenticationService } from './services/authentication.service';
 import { TokenManagementService } from './services/token-management.service';
-import { OAuthService } from './services/oauth.service';
+import { OAuthProvider, OAuthService } from './services/oauth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
-import { GoogleAuthGuard } from './guards/google-auth.guard';
-import { AppleAuthGuard } from './guards/apple-auth.guard';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { AppleMobileDto } from './dto/apple-mobile.dto';
 import { AllowAnonymous } from './guards/allow-anonymous';
+import type { Response } from 'express';
+import { NoFilesInterceptor } from '@nestjs/platform-express';
+import { OauthTokenDto } from './dto/oauth-token.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -23,36 +23,32 @@ export class AuthController {
     return this.authenticationService.login(req.user);
   }
 
-  @Get('google')
-  @UseGuards(GoogleAuthGuard)
-  async googleAuth() {}
-
-  @Get('google/callback')
-  @UseGuards(GoogleAuthGuard)
-  async googleAuthCallback(@Request() req) {
-    return this.authenticationService.login(req.user);
-  }
-
-  @Get('apple')
-  @UseGuards(AppleAuthGuard)
-  async appleAuth() {}
-
-  @Get('apple/callback')
-  @UseGuards(AppleAuthGuard)
-  async appleAuthCallback(@Request() req) {
-    return this.authenticationService.login(req.user);
+  @AllowAnonymous()
+  @Get('oauth')
+  async oauth(@Query() query: Record<string, string>, @Res() res: Response) {
+    const params = new URLSearchParams(query);
+    const redirectUrl = await this.oauthService.startOAuth(params);
+    return res.redirect(redirectUrl);
   }
 
   @AllowAnonymous()
-  @Post('apple/mobile')
-  async appleMobileAuth(@Body() appleMobileDto: AppleMobileDto) {
-    const profile = await this.oauthService.verifyAppleIdToken(
-      appleMobileDto.idToken,
-    );
-    const user = await this.oauthService.validateAppleUser(profile, {
-      sub: profile.id,
-    });
-    return this.authenticationService.login(user);
+  @Get('oauth/callback')
+  async oauthCallback(
+    @Query() query: Record<string, string>,
+    @Res() res: Response,
+  ) {
+    const params = new URLSearchParams(query);
+    const redirectUrl = await this.oauthService.handleOAuthCallback(params);
+    return res.redirect(redirectUrl);
+  }
+
+  @AllowAnonymous()
+  @Post('oauth/token')
+  @UseInterceptors(NoFilesInterceptor())
+  async oauthToken(@Body() oauthTokenDto: OauthTokenDto) {
+    const token = this.oauthService.getOAuthToken(oauthTokenDto.code, oauthTokenDto.provider as OAuthProvider);
+    console.log(token);
+    return token;
   }
 
   @AllowAnonymous()

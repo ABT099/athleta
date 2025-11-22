@@ -1,13 +1,12 @@
 import {
   Injectable,
-  UnauthorizedException,
-  Logger,
-  OnModuleInit,
+  BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../../users/users.service';
-import * as jwt from 'jsonwebtoken';
-import * as jwksClient from 'jwks-rsa';
+import axios from 'axios';
+import { AuthenticationService } from './authentication.service';
+import { jwtDecode } from 'jwt-decode';
 
 export interface OAuthUserProfile {
   id: string;
@@ -21,31 +20,144 @@ export interface OAuthUserProfile {
   emails?: Array<{ value: string }>;
 }
 
+export enum OAuthProvider {
+  GOOGLE = 'google',
+  APPLE = 'apple',
+}
 @Injectable()
-export class OAuthService implements OnModuleInit {
-  private readonly logger = new Logger(OAuthService.name);
-  private appleJwksClient: jwksClient.JwksClient;
+export class OAuthService {
   private readonly appleClientId: string;
+  private readonly googleClientId: string;
+  private readonly googleClientSecret: string;
+  private readonly appScheme: string;
+  private readonly webBaseUrl: string;
+  private readonly oAuthRedirectUri: string;
 
   constructor(
     private readonly usersService: UsersService,
     private readonly configService: ConfigService,
+    private readonly authenticationService: AuthenticationService,
   ) {
-    this.appleClientId = this.configService.getOrThrow<string>('APPLE_CLIENT_ID');
+    this.appleClientId =
+      this.configService.getOrThrow<string>('APPLE_CLIENT_ID');
+    this.googleClientId =
+      this.configService.getOrThrow<string>('GOOGLE_CLIENT_ID');
+    this.googleClientSecret =
+      this.configService.getOrThrow<string>('GOOGLE_CLIENT_SECRET');
+    this.appScheme = this.configService.getOrThrow<string>('EXPO_APP_SCHEME');
+    this.webBaseUrl = this.configService.getOrThrow<string>('WEB_BASE_URL');
+    this.oAuthRedirectUri =
+      this.configService.getOrThrow<string>('OAUTH_REDIRECT_URI');
   }
 
-  onModuleInit() {
-    // Initialize Apple JWKS client
-    this.appleJwksClient = jwksClient.default({
-      jwksUri: 'https://appleid.apple.com/auth/keys',
-      cache: true,
-      cacheMaxAge: 86400000, // 24 hours
+  async startOAuth(params: URLSearchParams) {
+    let idpClient: string;
+    const internalClient = params.get('client_id');
+    const redirectUri = params.get('redirect_uri');
+    let redirectTo: string;
+
+    let platform: 'mobile' | 'web';
+
+    if (redirectUri === this.appScheme) {
+      platform = 'mobile';
+    } else if (redirectUri === this.webBaseUrl) {
+      platform = 'web';
+    } else {
+      throw new BadRequestException('Invalid redirect URI');
+    }
+
+    let state = platform + '|' + params.get('state');
+
+    if (internalClient == OAuthProvider.GOOGLE) {
+      idpClient = this.googleClientId;
+      redirectTo = 'https://accounts.google.com/o/oauth2/v2/auth';
+    } else if (internalClient == OAuthProvider.APPLE) {
+      idpClient = this.appleClientId;
+      redirectTo = 'https://appleid.apple.com/auth/authorize';
+    } else {
+      throw new BadRequestException('Invalid client ID');
+    }
+
+    const paramsToSend = new URLSearchParams({
+      client_id: idpClient,
+      redirect_uri: this.oAuthRedirectUri,
+      response_type: 'code',
+      scope: params.get('scope') || 'identity',
+      state: state,
     });
 
-    this.logger.log('OAuth service initialized');
+    return redirectTo + '?' + paramsToSend.toString();
   }
 
-  async validateGoogleUser(profile: OAuthUserProfile) {
+  async handleOAuthCallback(incomingParams: URLSearchParams) {
+    const combinedPlatformAndState = incomingParams.get('state');
+
+    if (!combinedPlatformAndState) {
+      throw new BadRequestException('Missing state parameter');
+    }
+
+    const [platform, state] = combinedPlatformAndState.split('|');
+
+    const outgoingParams = new URLSearchParams({
+      code: incomingParams.get('code') || '',
+      state: state,
+    });
+
+    return (
+      (platform === 'mobile' ? this.appScheme : this.webBaseUrl) +
+      '?' +
+      outgoingParams.toString()
+    );
+  }
+
+  async getOAuthToken(code: string, provider: OAuthProvider) {
+    if (provider == OAuthProvider.GOOGLE) {
+      const response = await axios.post(
+        'https://oauth2.googleapis.com/token',
+        new URLSearchParams({
+          code,
+          client_id: this.googleClientId,
+          client_secret: this.googleClientSecret,
+          redirect_uri: this.oAuthRedirectUri,
+          grant_type: 'authorization_code',
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        },
+      );
+
+      const data = response.data;
+
+      if (!data.id_token) {
+        throw new BadRequestException('Invalid Google OAuth response');
+      }
+
+      const decoded: any = jwtDecode(data.id_token);
+      const profile: OAuthUserProfile = {
+        id: decoded.sub,
+        email: decoded.email,
+        name: {
+          givenName: decoded.given_name,
+          familyName: decoded.family_name,
+        },
+      };
+
+      const user = await this.validateOrCreateGoogleUser(profile);
+
+      const { access_token, refresh_token } = await this.authenticationService.login({ id: user.id });
+
+      return {
+        access_token,
+        refresh_token,
+      };
+    } else if (provider == OAuthProvider.APPLE) {
+      // TODO: Implement Apple OAuth
+    }
+  }
+
+  private async validateOrCreateGoogleUser(profile: OAuthUserProfile) {
     const googleId = profile.id;
     const email = profile.emails?.[0]?.value || profile.email;
     const firstName = profile.name?.givenName || '';
@@ -77,7 +189,7 @@ export class OAuthService implements OnModuleInit {
     return user;
   }
 
-  async validateAppleUser(
+  private async validateOrCreateAppleUser(
     profile: OAuthUserProfile,
     idToken?: { sub?: string },
   ) {
@@ -115,66 +227,5 @@ export class OAuthService implements OnModuleInit {
     });
 
     return user;
-  }
-  
-  async verifyAppleIdToken(idToken: string): Promise<OAuthUserProfile> {
-    try {
-      // Decode the token to get the header (without verification)
-      const decoded = jwt.decode(idToken, { complete: true });
-      if (!decoded || typeof decoded === 'string') {
-        this.logger.warn('Apple ID token decode failed: invalid format');
-        throw new UnauthorizedException('Invalid Apple ID token');
-      }
-
-      const kid = decoded.header.kid;
-      if (!kid) {
-        this.logger.warn('Apple ID token missing kid in header');
-        throw new UnauthorizedException('Invalid Apple ID token: missing kid');
-      }
-
-      // Get the signing key from Apple's JWKS
-      const key = await this.appleJwksClient.getSigningKey(kid);
-      const signingKey = key.getPublicKey();
-
-      // Verify the token
-      const payload = jwt.verify(idToken, signingKey, {
-        algorithms: ['RS256'],
-        audience: this.appleClientId,
-        issuer: 'https://appleid.apple.com',
-      }) as jwt.JwtPayload;
-
-      if (!payload.sub) {
-        this.logger.warn('Apple ID token missing subject (sub)');
-        throw new UnauthorizedException('Invalid Apple ID token');
-      }
-
-      // Extract user information from the token
-      // Note: Apple only sends email on first sign-in, so it might be missing
-      const email = payload.email || '';
-      const name = payload.name
-        ? {
-            firstName: payload.name.firstName,
-            lastName: payload.name.lastName,
-            givenName: payload.name.firstName,
-            familyName: payload.name.lastName,
-          }
-        : undefined;
-
-      return {
-        id: payload.sub,
-        email,
-        name,
-      };
-    } catch (error) {
-      if (error instanceof UnauthorizedException) {
-        throw error;
-      }
-      if (error instanceof jwt.JsonWebTokenError) {
-        this.logger.warn(`Apple ID token verification failed: ${error.message}`);
-        throw new UnauthorizedException('Invalid Apple ID token');
-      }
-      this.logger.error(`Apple ID token verification error: ${error.message}`);
-      throw new UnauthorizedException('Invalid Apple ID token');
-    }
   }
 }

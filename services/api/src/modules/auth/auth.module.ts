@@ -6,8 +6,6 @@ import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { GoogleStrategy } from './strategies/google.strategy';
-import { AppleStrategy } from './strategies/apple.strategy';
 import { AuthenticationService } from './services/authentication.service';
 import { TokenManagementService } from './services/token-management.service';
 import { OAuthService } from './services/oauth.service';
@@ -31,8 +29,6 @@ import { OAuthService } from './services/oauth.service';
     OAuthService,
     LocalStrategy,
     JwtStrategy,
-    GoogleStrategy,
-    AppleStrategy,
   ],
   controllers: [AuthController],
 })
