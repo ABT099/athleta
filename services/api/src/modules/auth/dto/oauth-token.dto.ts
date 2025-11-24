@@ -1,12 +1,8 @@
-import { IsNotEmpty, IsOptional, IsString, IsEnum } from "class-validator";
+import { IsNotEmpty, IsOptional, IsString, IsEnum, ValidateIf } from "class-validator";
 import { Transform } from "class-transformer";
 import { OAuthProvider } from "../services/oauth.service";
 
 export class OauthTokenDto {
-  @IsString()
-  @IsNotEmpty()
-  code: string;
-
   @IsString()
   @IsOptional()
   platform?: string;
@@ -17,4 +13,14 @@ export class OauthTokenDto {
   })
   @IsNotEmpty()
   provider: OAuthProvider;
+
+  @ValidateIf((o) => o.provider === OAuthProvider.GOOGLE)
+  @IsString()
+  @IsNotEmpty()
+  code?: string;
+
+  @ValidateIf((o) => o.provider === OAuthProvider.APPLE)
+  @IsString()
+  @IsNotEmpty()
+  idToken?: string;
 }

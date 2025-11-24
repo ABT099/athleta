@@ -47,8 +47,8 @@ export class AuthController {
   @UseInterceptors(NoFilesInterceptor())
   async oauthToken(@Body() oauthTokenDto: OauthTokenDto) {
     const token = await this.oauthService.getOAuthToken(
-      oauthTokenDto.code,
       oauthTokenDto.provider,
+      oauthTokenDto.code ?? oauthTokenDto.idToken!,
     );
     return token;
   }
