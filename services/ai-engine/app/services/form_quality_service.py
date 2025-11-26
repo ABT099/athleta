@@ -9,7 +9,7 @@ Provides comprehensive form quality analysis including:
 - Alert generation
 """
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
@@ -256,7 +256,7 @@ class FormQualityService:
         Returns:
             Dict with trend data including average score, trend direction, etc.
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days_lookback)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
         
         trends = (
             self.db.query(FormQualityTrend)
@@ -320,7 +320,7 @@ class FormQualityService:
         Returns:
             Dict with detected issues and recommendations
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days_lookback)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
         
         query = (
             self.db.query(FormQualityTrend)
@@ -406,7 +406,7 @@ class FormQualityService:
             List of alert dicts with severity and message
         """
         alerts = []
-        cutoff_date = datetime.utcnow() - timedelta(days=days_lookback)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
         
         # Get recent trends
         query = (

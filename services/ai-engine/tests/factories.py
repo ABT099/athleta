@@ -4,7 +4,7 @@ Test factories for creating test data.
 Provides factory functions to generate realistic test data for models,
 reducing boilerplate in tests and improving maintainability.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 
@@ -201,7 +201,7 @@ class WorkoutPlanFactory:
             Created WorkoutPlan instance
         """
         if start_date is None:
-            start_date = datetime.utcnow() - timedelta(days=30)
+            start_date = datetime.now(timezone.utc) - timedelta(days=30)
         
         plan = WorkoutPlan(
             athlete_id=athlete_id,
@@ -293,7 +293,7 @@ class WorkoutSessionFactory:
             Created WorkoutSession instance
         """
         if session_date is None:
-            session_date = datetime.utcnow()
+            session_date = datetime.now(timezone.utc)
         
         session = WorkoutSession(
             athlete_id=athlete_id,
@@ -434,7 +434,7 @@ class RecoveryMetricsFactory:
             Created RecoveryMetrics instance
         """
         if date is None:
-            date = datetime.utcnow()
+            date = datetime.now(timezone.utc)
         
         recovery = RecoveryMetrics(
             athlete_id=athlete_id,

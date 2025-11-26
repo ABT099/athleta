@@ -134,6 +134,22 @@ MRV_SETS_PER_WEEK: Dict[TrainingExperience, int] = {
     TrainingExperience.ADVANCED: 25,
 }
 
+# RPE to %1RM mapping (Zourdos et al., 2016)
+# Reference: Zourdos et al. (2016). Novel Resistance Training-Specific Rating of Perceived Exertion Scale
+RPE_TO_INTENSITY: Dict[float, float] = {
+    10.0: 1.00,  # Maximal effort
+    9.5: 0.98,
+    9.0: 0.96,
+    8.5: 0.94,
+    8.0: 0.92,
+    7.5: 0.89,
+    7.0: 0.86,
+    6.5: 0.84,
+    6.0: 0.82,
+    5.5: 0.80,
+    5.0: 0.77
+}
+
 # RPE to RIR conversion (Rate of Perceived Exertion to Reps in Reserve)
 RPE_TO_RIR: Dict[float, int] = {
     10.0: 0,

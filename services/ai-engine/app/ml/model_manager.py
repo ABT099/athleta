@@ -8,7 +8,7 @@ from typing import Dict, Optional, Any
 import os
 import pickle
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ except ImportError:
     tf = None
 
 from app.ml.base_model import BaseMLModel
+from app.ml.feature_scaler import FeatureScaler
 
 
 class ModelManager:
@@ -62,7 +63,7 @@ class ModelManager:
             raise ValueError("Cannot save untrained model")
         
         # Generate filename
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         version_str = version or timestamp
         
         # Determine model type
@@ -88,6 +89,26 @@ class ModelManager:
             # Save pickle-based model
             filepath = self._save_pickle_model(model, athlete_id, version_str)
         
+        # Save scaler if available (for sequential models, scaler may be in feature engineer)
+        scaler_filepath = None
+        scaler = None
+        
+        # Check if model has scaler attribute
+        if hasattr(model, 'scaler') and model.scaler is not None:
+            scaler = model.scaler
+        # Check if model has feature_engineer with scaler (for sequential models)
+        elif hasattr(model, 'feature_engineer') and hasattr(model.feature_engineer, 'get_scaler'):
+            if athlete_id:
+                scaler = model.feature_engineer.get_scaler(athlete_id)
+        
+        if scaler is not None:
+            if athlete_id:
+                scaler_filename = f"{model.model_name}_athlete_{athlete_id}_v{version_str}_scaler.json"
+            else:
+                scaler_filename = f"{model.model_name}_global_v{version_str}_scaler.json"
+            scaler_filepath = self.models_dir / scaler_filename
+            scaler.save(str(scaler_filepath))
+        
         # Save metadata
         metadata = {
             "model_name": model.model_name,
@@ -98,8 +119,9 @@ class ModelManager:
             "training_samples": model.training_samples,
             "feature_names": model.feature_names,
             "target_names": model.target_names,
-            "saved_at": datetime.utcnow().isoformat(),
-            "filepath": str(filepath)
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+            "filepath": str(filepath),
+            "scaler_filepath": str(scaler_filepath) if scaler_filepath else None
         }
         
         metadata_file = self.metadata_dir / f"{model.model_name}_athlete_{athlete_id}_v{version_str}.json" if athlete_id else self.metadata_dir / f"{model.model_name}_global_v{version_str}.json"
@@ -218,6 +240,19 @@ class ModelManager:
         try:
             with open(target_file, 'rb') as f:
                 model = pickle.load(f)
+            
+            # Load scaler if available
+            # Note: Directly assign scaler without hasattr check, as the attribute
+            # may not exist after unpickling. This matches the TensorFlow loading behavior.
+            metadata = self.get_model_metadata(model_name, athlete_id)
+            if metadata:
+                scaler_filepath = metadata.get("scaler_filepath")
+                if scaler_filepath and Path(scaler_filepath).exists():
+                    try:
+                        model.scaler = FeatureScaler.load(scaler_filepath)
+                    except Exception as e:
+                        print(f"Warning: Could not load scaler from {scaler_filepath}: {e}")
+            
             return model
         except Exception as e:
             print(f"Error loading model from {target_file}: {e}")
@@ -279,6 +314,15 @@ class ModelManager:
                 wrapper.training_samples = metadata.get("training_samples", 0)
                 wrapper.feature_names = metadata.get("feature_names", [])
                 wrapper.target_names = metadata.get("target_names", [])
+                
+                # Load scaler if available
+                scaler_filepath = metadata.get("scaler_filepath")
+                if scaler_filepath and Path(scaler_filepath).exists():
+                    try:
+                        wrapper.scaler = FeatureScaler.load(scaler_filepath)
+                    except Exception as e:
+                        print(f"Warning: Could not load scaler from {scaler_filepath}: {e}")
+            
             
             return wrapper
         except Exception as e:

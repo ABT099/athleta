@@ -3,7 +3,7 @@ Workouts API endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, undefer
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 
 from app.database import get_db
@@ -487,7 +487,7 @@ def get_athlete_analytics(
         )
     
     # Get performance trends
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
     trends = db.query(PerformanceTrend).filter(
         PerformanceTrend.athlete_id == athlete_id,
         PerformanceTrend.session_date >= cutoff_date

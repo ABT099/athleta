@@ -5,7 +5,7 @@ Tracks volume per muscle group and provides MEV/MAV/MRV-based recommendations.
 Based on Renaissance Periodization volume landmarks research.
 """
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
@@ -90,7 +90,7 @@ class VolumeManager:
         Returns:
             Dict with volume metrics
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days_lookback)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
         
         # Get recent workout sessions
         sessions = (

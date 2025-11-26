@@ -6,7 +6,7 @@ Provides common interface for all ML models in the system.
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class BaseMLModel(ABC):
@@ -150,7 +150,7 @@ class BaseMLModel(ABC):
         
         # Check if model is old (>90 days)
         if self.training_date:
-            days_since_training = (datetime.utcnow() - self.training_date).days
+            days_since_training = (datetime.now(timezone.utc) - self.training_date).days
             if days_since_training > 90:
                 return True
         

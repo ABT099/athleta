@@ -2,7 +2,7 @@
 Unit tests for form quality service.
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.services.form_quality_service import FormQualityService
 from app.models import (
     Athlete, Exercise, WorkoutSession, ExerciseSet, FormQualityTrend
@@ -98,7 +98,7 @@ class TestFormDegradation:
             id=1,
             athlete_id=sample_athlete.id,
             workout_day_id=1,
-            session_date=datetime.utcnow(),
+            session_date=datetime.now(timezone.utc),
             duration_minutes=60,
             overall_rpe=8.0
         )
@@ -145,7 +145,7 @@ class TestFormDegradation:
             id=1,
             athlete_id=sample_athlete.id,
             workout_day_id=1,
-            session_date=datetime.utcnow(),
+            session_date=datetime.now(timezone.utc),
             duration_minutes=60,
             overall_rpe=8.0
         )
@@ -185,7 +185,7 @@ class TestFormDegradation:
             id=1,
             athlete_id=sample_athlete.id,
             workout_day_id=1,
-            session_date=datetime.utcnow(),
+            session_date=datetime.now(timezone.utc),
             duration_minutes=60,
             overall_rpe=8.0
         )
@@ -224,7 +224,7 @@ class TestFormQualityTrends:
         trend = form_service.save_form_quality_trend(
             athlete_id=sample_athlete.id,
             exercise_id=sample_exercise.id,
-            date=datetime.utcnow(),
+            date=datetime.now(timezone.utc),
             average_form_score=0.75,
             sets_analyzed=4,
             degradation_rate=0.15,
@@ -255,7 +255,7 @@ class TestFormQualityTrends:
     ):
         """Test getting trend with data."""
         # Create multiple trend entries
-        base_date = datetime.utcnow()
+        base_date = datetime.now(timezone.utc)
         for i in range(5):
             trend = FormQualityTrend(
                 athlete_id=sample_athlete.id,
@@ -298,7 +298,7 @@ class TestChronicFormIssues:
     ):
         """Test detection of chronic form issues."""
         # Create multiple trend entries with poor form
-        base_date = datetime.utcnow()
+        base_date = datetime.now(timezone.utc)
         for i in range(5):
             trend = FormQualityTrend(
                 athlete_id=sample_athlete.id,
@@ -342,7 +342,7 @@ class TestFormAlerts:
         trend = FormQualityTrend(
             athlete_id=sample_athlete.id,
             exercise_id=sample_exercise.id,
-            date=datetime.utcnow(),
+            date=datetime.now(timezone.utc),
             average_form_score=0.75,
             sets_analyzed=4,
             degradation_rate=0.25,  # 25% degradation (above 20% threshold)
@@ -368,7 +368,7 @@ class TestFormAlerts:
         trend = FormQualityTrend(
             athlete_id=sample_athlete.id,
             exercise_id=sample_exercise.id,
-            date=datetime.utcnow(),
+            date=datetime.now(timezone.utc),
             average_form_score=0.75,
             sets_analyzed=4,
             degradation_rate=0.0,
@@ -406,7 +406,7 @@ class TestProgressionBlocking:
     ):
         """Test when form is good - should not block."""
         # Create trends with good form
-        base_date = datetime.utcnow()
+        base_date = datetime.now(timezone.utc)
         for i in range(3):
             trend = FormQualityTrend(
                 athlete_id=sample_athlete.id,
@@ -432,7 +432,7 @@ class TestProgressionBlocking:
     ):
         """Test when form is poor - should block."""
         # Create trends with poor form
-        base_date = datetime.utcnow()
+        base_date = datetime.now(timezone.utc)
         for i in range(3):
             trend = FormQualityTrend(
                 athlete_id=sample_athlete.id,
@@ -460,7 +460,7 @@ class TestProgressionBlocking:
         """Test when form is degrading - should block."""
         # Create trends showing degradation
         # More recent scores are worse (ordered from newest to oldest)
-        base_date = datetime.utcnow()
+        base_date = datetime.now(timezone.utc)
         scores_by_date = [
             (0, 0.55),  # Most recent (today) - poorest
             (1, 0.60),  # Yesterday
@@ -502,7 +502,7 @@ class TestSessionFormQualityTracking:
             id=1,
             athlete_id=sample_athlete.id,
             workout_day_id=1,
-            session_date=datetime.utcnow(),
+            session_date=datetime.now(timezone.utc),
             duration_minutes=60,
             overall_rpe=8.0
         )

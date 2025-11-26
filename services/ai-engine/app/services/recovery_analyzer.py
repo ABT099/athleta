@@ -5,7 +5,7 @@ Evaluates athlete readiness based on sleep, soreness, stress, and other wellness
 """
 import json
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models import RecoveryMetrics, WorkoutSession, Athlete
@@ -261,7 +261,7 @@ class RecoveryAnalyzer:
         Returns:
             Dict with recovery status and metrics
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days_lookback)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
         
         # Get recent workouts targeting this muscle
         recent_sessions = (
@@ -278,7 +278,7 @@ class RecoveryAnalyzer:
         # (Simplified - in production would need to check workout_day target muscles)
         if recent_sessions:
             last_workout = recent_sessions[0]
-            days_since_workout = (datetime.utcnow() - last_workout.session_date).days
+            days_since_workout = (datetime.now(timezone.utc) - last_workout.session_date).days
         else:
             days_since_workout = 7  # No recent workout
         
@@ -298,7 +298,8 @@ class RecoveryAnalyzer:
             try:
                 soreness_dict = json.loads(recent_recovery.muscle_soreness)
                 muscle_soreness_level = soreness_dict.get(muscle_group.value, 1)
-            except:
+            except (json.JSONDecodeError, TypeError, KeyError, AttributeError):
+                # AttributeError: JSON parses to non-dict (list/string), .get() fails
                 pass
         
         # Determine recovery status
@@ -369,7 +370,7 @@ class RecoveryAnalyzer:
         Returns:
             Dict with fatigue metrics
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days_lookback)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
         
         # Get recent workouts
         sessions = (
@@ -406,7 +407,7 @@ class RecoveryAnalyzer:
         days_ago = []
         
         for session in sessions:
-            days_since = (datetime.utcnow() - session.session_date).days
+            days_since = (datetime.now(timezone.utc) - session.session_date).days
             load = 0
             
             if session.total_volume and session.overall_rpe:

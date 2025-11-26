@@ -64,15 +64,9 @@ class ModelSelector:
         
         if session_count < 10:
             return "rules_only", 0, {}
-        elif session_count < 20:
-            # LightGBM with 5-model ensemble
-            return "lightgbm", 5, {
-                "min_sessions": 10,
-                "use_ensemble": True
-            }
-        else:
+        elif session_count < 30:
+            # LightGBM with 5-model ensemble (<30 sessions)
             # Try sequential first for 20+ sessions, fallback to LightGBM
-            # Check if sequential model is available and data is sufficient
             try:
                 from app.ml.sequential_predictor import SequentialPredictor
                 from app.ml.sequential_features import SequentialFeatureEngineer
@@ -81,16 +75,43 @@ class ModelSelector:
                 SEQUENTIAL_AVAILABLE = False
             
             if SEQUENTIAL_AVAILABLE and session_count >= 20:
-                # Try sequential model
+                # Try sequential model with 5-model ensemble
                 return "sequential", 5, {
                     "min_sessions": 20,
                     "use_ensemble": True,
                     "sequence_length": 15
                 }
             else:
+                # Fallback to LightGBM with 5-model ensemble
+                # Use appropriate min_sessions: 20 for 20-29 sessions, 11 for 10-19 sessions
+                # Note: min_sessions=11 (not 10) because shifted targets require 6 overhead
+                # (5 history + 1 target), so 11 sessions produce 5 samples (11-6=5)
+                fallback_min_sessions = 20 if session_count >= 20 else 11
+                return "lightgbm", 5, {
+                    "min_sessions": fallback_min_sessions,
+                    "use_ensemble": True
+                }
+        else:
+            # 30+ sessions: Use 10-model ensemble
+            # Try sequential first, fallback to LightGBM
+            try:
+                from app.ml.sequential_predictor import SequentialPredictor
+                from app.ml.sequential_features import SequentialFeatureEngineer
+                SEQUENTIAL_AVAILABLE = True
+            except ImportError:
+                SEQUENTIAL_AVAILABLE = False
+            
+            if SEQUENTIAL_AVAILABLE:
+                # Sequential model with 10-model ensemble
+                return "sequential", 10, {
+                    "min_sessions": 30,
+                    "use_ensemble": True,
+                    "sequence_length": 15
+                }
+            else:
                 # Fallback to LightGBM with 10-model ensemble
                 return "lightgbm", 10, {
-                    "min_sessions": 20,
+                    "min_sessions": 30,
                     "use_ensemble": True
                 }
     

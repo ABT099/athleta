@@ -1396,12 +1396,15 @@ class ProgressiveOverloadEngine:
         for ex_analysis in exercise_analyses:
             estimated_1rm = ex_analysis.get("estimated_1rm")
             if estimated_1rm and estimated_1rm > 0:
-                # Use a reasonable default intensity based on RPE
-                # Higher RPE typically means higher intensity
+                # Use established RPE-to-intensity mapping (Zourdos et al., 2016)
                 avg_rpe = ex_analysis.get("average_rpe", 7.0)
-                # Map RPE to approximate intensity (7 RPE ≈ 70% 1RM, 9 RPE ≈ 90% 1RM)
-                estimated_intensity = 0.5 + (avg_rpe - 6.0) * 0.1
-                estimated_intensity = max(0.5, min(0.95, estimated_intensity))
+                # Round to nearest 0.5 for lookup
+                rpe_rounded = round(avg_rpe * 2) / 2
+                # Clamp to valid range
+                rpe_rounded = max(5.0, min(10.0, rpe_rounded))
+                # Lookup intensity
+                from app.utils.constants import RPE_TO_INTENSITY
+                estimated_intensity = RPE_TO_INTENSITY.get(rpe_rounded, 0.86)  # Default to 7 RPE
                 intensities.append(estimated_intensity)
         
         if intensities:

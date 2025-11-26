@@ -6,7 +6,7 @@ Endpoints for training, managing, and monitoring ML models.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import get_db
 from app.models import Athlete, WorkoutSession
@@ -79,7 +79,7 @@ def train_athlete_model(
         "status": "success",
         "session_count": session_count,
         "training_metrics": metrics,
-        "trained_at": datetime.utcnow().isoformat()
+        "trained_at": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -217,7 +217,7 @@ def retrain_athlete_model(
         "status": "success",
         "message": "Model retrained successfully",
         "training_metrics": metrics,
-        "retrained_at": datetime.utcnow().isoformat()
+        "retrained_at": datetime.now(timezone.utc).isoformat()
     }
 
 

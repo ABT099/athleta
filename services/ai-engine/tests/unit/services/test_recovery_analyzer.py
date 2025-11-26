@@ -9,13 +9,9 @@ from app.utils.constants import SleepQuality
 class TestRecoveryAnalyzer:
     """Test suite for recovery analyzer."""
     
-    def test_calculate_readiness_score_all_factors(self):
+    def test_calculate_readiness_score_all_factors(self, db_session):
         """Test readiness score with all factors."""
-        # Note: This test doesn't require a database session
-        # We'll test the calculation logic directly
-        
-        # Mock analyzer (in real implementation would need proper setup)
-        # For now, test the scoring logic
+        analyzer = RecoveryAnalyzer(db_session)
         
         # Perfect recovery scenario
         sleep_quality = SleepQuality.EXCELLENT
@@ -23,11 +19,32 @@ class TestRecoveryAnalyzer:
         overall_soreness = 1  # No soreness
         stress_level = 2  # Low stress
         energy_level = 9  # High energy
-        motivation = 10  # Maximum motivation
         
-        # These should give a high readiness score
-        # (Would need actual RecoveryAnalyzer instance with db to test fully)
-        pass
+        # Calculate readiness score
+        readiness = analyzer.calculate_readiness_score(
+            sleep_quality=sleep_quality,
+            sleep_hours=sleep_hours,
+            overall_soreness=overall_soreness,
+            stress_level=stress_level,
+            energy_level=energy_level
+        )
+        
+        # Should give a high readiness score (>0.8)
+        assert readiness > 0.8
+        assert readiness <= 1.0
+        
+        # Poor recovery scenario
+        poor_readiness = analyzer.calculate_readiness_score(
+            sleep_quality=SleepQuality.POOR,
+            sleep_hours=5.0,
+            overall_soreness=8,  # High soreness
+            stress_level=9,  # High stress
+            energy_level=3  # Low energy
+        )
+        
+        # Should give a low readiness score (<0.5)
+        assert poor_readiness < 0.5
+        assert poor_readiness >= 0.0
     
     def test_sleep_quality_multipliers(self):
         """Test sleep quality scoring."""
@@ -39,18 +56,33 @@ class TestRecoveryAnalyzer:
         assert SLEEP_QUALITY_MULTIPLIERS[SleepQuality.GOOD] == 0.95
         assert SLEEP_QUALITY_MULTIPLIERS[SleepQuality.EXCELLENT] == 1.0
     
-    def test_recovery_recommendations_logic(self):
+    def test_recovery_recommendations_logic(self, db_session):
         """Test recovery recommendation generation logic."""
+        analyzer = RecoveryAnalyzer(db_session)
+        
         # Test low readiness recommendations
         readiness_low = 0.4
+        recommendations_low = analyzer.get_recovery_recommendations(
+            readiness_score=readiness_low,
+            fatigue_level="high",
+            sleep_quality=SleepQuality.POOR
+        )
+        
         # Should recommend rest or reduced training
+        assert len(recommendations_low) > 0
+        assert any("skip" in rec.lower() or "reduce" in rec.lower() for rec in recommendations_low)
         
         # Test high readiness
         readiness_high = 0.95
-        # Should allow normal training
+        recommendations_high = analyzer.get_recovery_recommendations(
+            readiness_score=readiness_high,
+            fatigue_level="low",
+            sleep_quality=SleepQuality.EXCELLENT
+        )
         
-        # This validates the thresholds exist
-        assert readiness_low < 0.5
-        assert readiness_high > 0.9
+        # Should allow normal training or have positive recommendations
+        assert len(recommendations_high) > 0
+        # High readiness should not recommend skipping
+        assert not any("skip" in rec.lower() for rec in recommendations_high)
 
 

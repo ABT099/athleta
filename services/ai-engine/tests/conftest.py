@@ -11,7 +11,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects import sqlite
 
 # Set test database URL before importing app modules
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+# Use a named in-memory database with shared cache so all connections share the same database
+os.environ["DATABASE_URL"] = "sqlite:///file::memory:?cache=shared&uri=true"
 
 from app.database import Base
 from app.utils.constants import (
@@ -99,8 +100,15 @@ def db_session():
                             column.type = SQLiteJSON()
     
     # Create in-memory SQLite database for testing
-    # Using :memory: creates a fresh database for each connection
-    engine = create_engine("sqlite:///:memory:", echo=False)
+    # Using file::memory:?cache=shared&uri=true creates a shared in-memory database
+    # that all connections can access (unlike :memory: which is per-connection)
+    # check_same_thread=False allows the connection to be used across threads
+    # (required for FastAPI TestClient which runs in different threads)
+    engine = create_engine(
+        "sqlite:///file::memory:?cache=shared&uri=true",
+        echo=False,
+        connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(engine)
     
     TestingSessionLocal = sessionmaker(bind=engine)

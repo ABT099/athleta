@@ -5,7 +5,7 @@ Tracks RPE accuracy and adjusts RPE-to-RIR conversion based on individual athlet
 Hybrid approach: rule-based tracking with ML enhancement capability (Phase 2).
 """
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 import statistics
@@ -152,7 +152,7 @@ class RPECalibrationService:
             actual_rir=actual_rir,
             weight_used=weight_used,
             reps_completed=reps_completed,
-            session_date=datetime.utcnow(),
+            session_date=datetime.now(timezone.utc),
             calibration_accuracy=calibration_accuracy
         )
         

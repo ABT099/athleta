@@ -64,7 +64,7 @@ def get_athlete_progress(
     """
     Get athlete's training progress and analytics.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     from sqlalchemy import func
     
     athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
@@ -76,7 +76,7 @@ def get_athlete_progress(
         )
     
     # Get sessions from the period
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
     sessions = db.query(WorkoutSession).filter(
         WorkoutSession.athlete_id == athlete_id,
         WorkoutSession.session_date >= cutoff_date

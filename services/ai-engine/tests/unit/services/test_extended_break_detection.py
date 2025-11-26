@@ -5,7 +5,7 @@ Tests that the system correctly detects extended breaks (7+ days) and
 applies appropriate volume/intensity reductions to account for detraining.
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.services.progressive_overload_engine import ProgressiveOverloadEngine
 from app.models import (
     Athlete, WorkoutPlan, WorkoutDay, WorkoutSession, ExerciseSet
@@ -62,7 +62,7 @@ class TestExtendedBreakDetection:
             periodization_model=PeriodizationModel.LINEAR,
             frequency=3,
             duration_weeks=12,
-            start_date=datetime.utcnow() - timedelta(days=30)
+            start_date=datetime.now(timezone.utc) - timedelta(days=30)
         )
         db_session.add(plan)
         db_session.flush()
@@ -81,7 +81,7 @@ class TestExtendedBreakDetection:
         session = WorkoutSession(
             athlete_id=athlete.id,
             workout_day_id=workout_day.id,
-            session_date=datetime.utcnow() - timedelta(days=5)
+            session_date=datetime.now(timezone.utc) - timedelta(days=5)
         )
         db_session.add(session)
         db_session.commit()
@@ -113,7 +113,7 @@ class TestExtendedBreakDetection:
             db_session,
             athlete_id=athlete.id,
             workout_day_id=workout_day.id,
-            session_date=datetime.utcnow() - timedelta(days=days_ago)
+            session_date=datetime.now(timezone.utc) - timedelta(days=days_ago)
         )
         db_session.commit()
         
@@ -150,7 +150,7 @@ class TestBreakDetectionIntegration:
             periodization_model=PeriodizationModel.LINEAR,
             frequency=3,
             duration_weeks=12,
-            start_date=datetime.utcnow() - timedelta(days=30)
+            start_date=datetime.now(timezone.utc) - timedelta(days=30)
         )
         db_session.add(plan)
         db_session.flush()
@@ -169,7 +169,7 @@ class TestBreakDetectionIntegration:
         session = WorkoutSession(
             athlete_id=athlete.id,
             workout_day_id=workout_day.id,
-            session_date=datetime.utcnow() - timedelta(days=10)
+            session_date=datetime.now(timezone.utc) - timedelta(days=10)
         )
         db_session.add(session)
         db_session.commit()
@@ -245,7 +245,7 @@ class TestBreakDetectionIntegration:
             periodization_model=PeriodizationModel.LINEAR,
             frequency=3,
             duration_weeks=12,
-            start_date=datetime.utcnow() - timedelta(days=30)
+            start_date=datetime.now(timezone.utc) - timedelta(days=30)
         )
         db_session.add(plan)
         db_session.flush()
@@ -264,7 +264,7 @@ class TestBreakDetectionIntegration:
         session = WorkoutSession(
             athlete_id=athlete.id,
             workout_day_id=workout_day.id,
-            session_date=datetime.utcnow() - timedelta(days=25)
+            session_date=datetime.now(timezone.utc) - timedelta(days=25)
         )
         db_session.add(session)
         db_session.commit()
@@ -343,7 +343,7 @@ class TestBreakDetectionPriority:
             periodization_model=PeriodizationModel.LINEAR,
             frequency=3,
             duration_weeks=12,
-            start_date=datetime.utcnow() - timedelta(days=30)
+            start_date=datetime.now(timezone.utc) - timedelta(days=30)
         )
         db_session.add(plan)
         db_session.flush()
@@ -362,7 +362,7 @@ class TestBreakDetectionPriority:
         session = WorkoutSession(
             athlete_id=athlete.id,
             workout_day_id=workout_day.id,
-            session_date=datetime.utcnow() - timedelta(days=10)
+            session_date=datetime.now(timezone.utc) - timedelta(days=10)
         )
         db_session.add(session)
         db_session.commit()
@@ -437,7 +437,7 @@ class TestBreakDetectionPriority:
             periodization_model=PeriodizationModel.LINEAR,
             frequency=3,
             duration_weeks=12,
-            start_date=datetime.utcnow() - timedelta(days=30)
+            start_date=datetime.now(timezone.utc) - timedelta(days=30)
         )
         db_session.add(plan)
         db_session.flush()
@@ -456,7 +456,7 @@ class TestBreakDetectionPriority:
         session = WorkoutSession(
             athlete_id=athlete.id,
             workout_day_id=workout_day.id,
-            session_date=datetime.utcnow() - timedelta(days=10)
+            session_date=datetime.now(timezone.utc) - timedelta(days=10)
         )
         db_session.add(session)
         db_session.commit()
@@ -531,7 +531,7 @@ class TestBreakDetectionPriority:
             periodization_model=PeriodizationModel.LINEAR,
             frequency=3,
             duration_weeks=12,
-            start_date=datetime.utcnow() - timedelta(days=30)
+            start_date=datetime.now(timezone.utc) - timedelta(days=30)
         )
         db_session.add(plan)
         db_session.flush()
@@ -550,7 +550,7 @@ class TestBreakDetectionPriority:
         session = WorkoutSession(
             athlete_id=athlete.id,
             workout_day_id=workout_day.id,
-            session_date=datetime.utcnow() - timedelta(days=10)
+            session_date=datetime.now(timezone.utc) - timedelta(days=10)
         )
         db_session.add(session)
         db_session.commit()

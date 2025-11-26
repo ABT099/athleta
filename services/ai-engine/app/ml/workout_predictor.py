@@ -5,7 +5,7 @@ Predicts optimal volume and intensity multipliers based on athlete history.
 """
 from typing import Dict, Optional, Tuple
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 try:
@@ -132,7 +132,7 @@ class WorkoutPredictor(BaseMLModel):
             
             # Update model state
             self.is_trained = True
-            self.training_date = datetime.utcnow()
+            self.training_date = datetime.now(timezone.utc)
             self.training_samples = X.shape[0]
             self.feature_names = feature_names
             self.target_names = target_names
@@ -166,7 +166,7 @@ class WorkoutPredictor(BaseMLModel):
             
             # Update model state
             self.is_trained = True
-            self.training_date = datetime.utcnow()
+            self.training_date = datetime.now(timezone.utc)
             self.training_samples = X.shape[0]
             self.feature_names = feature_names
             self.target_names = target_names
@@ -206,6 +206,13 @@ class WorkoutPredictor(BaseMLModel):
         # Ensure 2D array
         if predictions.ndim == 1:
             predictions = predictions.reshape(-1, 1)
+        
+        # Validate prediction shape
+        if predictions.shape[1] < 2:
+            raise ValueError(
+                f"Expected 2 output columns (volume_mult, intensity_mult), "
+                f"got {predictions.shape[1]}"
+            )
         
         # Clamp predictions to reasonable ranges
         predictions[:, 0] = np.clip(predictions[:, 0], 0.7, 1.3)  # Volume: 70%-130%
@@ -347,8 +354,8 @@ class WorkoutPredictorService:
                 
                 if X is None:
                     # Fallback to LightGBM if sequential data insufficient
+                    # Preserve n_ensemble_models from model_selector config
                     model_type = "lightgbm"
-                    n_ensemble_models = 10
                     X, y, feature_names, target_names = self.feature_engineer.prepare_training_dataset(
                         athlete_id, min_sessions
                     )
@@ -356,6 +363,11 @@ class WorkoutPredictorService:
                     # Train sequential model
                     predictor = SequentialPredictor()
                     metrics = predictor.train(X, y, feature_names, target_names)
+                    
+                    # Attach scaler from feature engineer to model for persistence
+                    scaler = self.sequential_feature_engineer.get_scaler(athlete_id)
+                    if scaler:
+                        predictor.scaler = scaler
                     
                     # Save model
                     model_path = self.model_manager.save_model(predictor, athlete_id=athlete_id)
@@ -367,8 +379,8 @@ class WorkoutPredictorService:
                     return True, metrics, None
             except Exception as e:
                 # Fallback to LightGBM on error
+                # Preserve n_ensemble_models from model_selector config
                 model_type = "lightgbm"
-                n_ensemble_models = 10
         
         # Train LightGBM model (default or fallback)
         if model_type == "lightgbm":
@@ -439,6 +451,10 @@ class WorkoutPredictorService:
         
         # Extract features based on model type
         if actual_model_type == "sequential":
+            # Restore scaler to feature engineer if model has one
+            if hasattr(model, 'scaler') and model.scaler is not None:
+                self.sequential_feature_engineer.set_scaler(athlete_id, model.scaler)
+            
             # Extract sequential features
             sequence, feature_names = self.sequential_feature_engineer.extract_sequence_features(
                 athlete_id, sequence_length=config.get("sequence_length", 15)
@@ -526,7 +542,7 @@ class WorkoutPredictorService:
             return True
         
         # Check if model is old (>90 days)
-        days_since_training = (datetime.utcnow() - training_date).days
+        days_since_training = (datetime.now(timezone.utc) - training_date).days
         if days_since_training > 90:
             return True
         

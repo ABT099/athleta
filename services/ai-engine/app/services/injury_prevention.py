@@ -5,7 +5,7 @@ Monitors training load, volume spikes, intensity limits, and joint stress.
 Based on ACWR and evidence-based guidelines.
 """
 from typing import Dict, List, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -119,7 +119,7 @@ class InjuryPreventionService:
         max_increase = progression_data["max_weekly_volume_increase"]
         
         # Get recent weekly volumes
-        cutoff_date = datetime.utcnow() - timedelta(weeks=weeks_to_compare)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(weeks=weeks_to_compare)
         
         recent_sessions = (
             self.db.query(WorkoutSession)
@@ -136,7 +136,7 @@ class InjuryPreventionService:
         # Calculate average weekly volume
         total_volume = sum(s.total_volume or 0 for s in recent_sessions)
         weeks_elapsed = min(weeks_to_compare, 
-                          (datetime.utcnow() - recent_sessions[-1].session_date).days / 7)
+                          (datetime.now(timezone.utc) - recent_sessions[-1].session_date).days / 7)
         avg_weekly_volume = total_volume / max(weeks_elapsed, 1)
         
         if avg_weekly_volume == 0:
@@ -181,7 +181,7 @@ class InjuryPreventionService:
             Dict with ACWR status
         """
         # Get loads for last 7 days (acute)
-        acute_cutoff = datetime.utcnow() - timedelta(days=7)
+        acute_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         acute_sessions = (
             self.db.query(WorkoutSession)
             .filter(
@@ -192,7 +192,7 @@ class InjuryPreventionService:
         )
         
         # Get loads for last 28 days (chronic)
-        chronic_cutoff = datetime.utcnow() - timedelta(days=28)
+        chronic_cutoff = datetime.now(timezone.utc) - timedelta(days=28)
         chronic_sessions = (
             self.db.query(WorkoutSession)
             .filter(
@@ -270,7 +270,7 @@ class InjuryPreventionService:
         Returns:
             Dict with monotony status
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         sessions = (
             self.db.query(WorkoutSession)
@@ -355,7 +355,7 @@ class InjuryPreventionService:
             high_risk = True
         
         # Check for joint stress concentration
-        cutoff_date = datetime.utcnow() - timedelta(days=days_lookback)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
         
         recent_sets = (
             self.db.query(ExerciseSet, Exercise)

@@ -103,12 +103,16 @@ class BayesianEnsemble:
         # Calculate R2
         ss_res = np.sum((y - mean_pred) ** 2)
         ss_tot = np.sum((y - np.mean(y, axis=0)) ** 2)
-        r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+        if ss_tot > 0:
+            r2 = 1 - (ss_res / ss_tot)
+        else:
+            # All targets are constant - R2 is undefined
+            r2 = np.nan
         
         return {
             "ensemble_size": self.n_models,
             "mse": float(mse),
-            "r2": float(r2),
+            "r2": float(r2) if not np.isnan(r2) else None,
             "training_samples": X.shape[0]
         }
     
@@ -162,6 +166,7 @@ class BayesianEnsemble:
         """
         Calculate confidence score based on prediction variance.
         
+        Uses continuous sigmoid transformation instead of discretized buckets.
         Lower variance = higher confidence.
         
         Args:
@@ -178,17 +183,11 @@ class BayesianEnsemble:
         # Average std across all predictions
         avg_std = np.mean(std_pred)
         
-        # Convert std to confidence
-        # Lower std = higher confidence
-        # Assume std of 0.05 is very confident, std of 0.2 is low confidence
-        if avg_std < 0.05:
-            confidence = 0.9
-        elif avg_std < 0.1:
-            confidence = 0.7
-        elif avg_std < 0.15:
-            confidence = 0.5
-        else:
-            confidence = 0.3
+        # Continuous sigmoid transformation
+        # Calibrated so std=0.05 -> ~0.9, std=0.1 -> ~0.7, std=0.2 -> ~0.3
+        # Formula: 1 / (1 + k * avg_std)
+        # k=10 gives good calibration for typical std ranges
+        confidence = 1.0 / (1.0 + 10.0 * avg_std)
         
         return round(float(confidence), 3)
     
@@ -206,13 +205,24 @@ class BayesianEnsemble:
         importances_list = []
         for model in self.models:
             # Handle MultiOutputRegressor wrapper
-            actual_model = model.estimators_[0] if hasattr(model, 'estimators_') else model
-            
-            if hasattr(actual_model, 'feature_importances_'):
-                importances_list.append(actual_model.feature_importances_)
-            elif hasattr(actual_model, 'get_feature_importance'):
-                imp_dict = actual_model.get_feature_importance()
-                importances_list.append([imp_dict.get(name, 0.0) for name in self.feature_names])
+            if hasattr(model, 'estimators_'):
+                # MultiOutputRegressor - average across ALL output estimators
+                all_importances = []
+                for estimator in model.estimators_:
+                    if hasattr(estimator, 'feature_importances_'):
+                        all_importances.append(estimator.feature_importances_)
+                
+                if all_importances:
+                    # Average across all outputs (volume and intensity)
+                    avg_importance = np.mean(all_importances, axis=0)
+                    importances_list.append(avg_importance)
+            else:
+                # Single model
+                if hasattr(model, 'feature_importances_'):
+                    importances_list.append(model.feature_importances_)
+                elif hasattr(model, 'get_feature_importance'):
+                    imp_dict = model.get_feature_importance()
+                    importances_list.append([imp_dict.get(name, 0.0) for name in self.feature_names])
         
         if not importances_list:
             return {}

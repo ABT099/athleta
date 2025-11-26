@@ -44,7 +44,7 @@ class TestModelSelector:
         assert config == {}
     
     def test_select_model_lightgbm_5(self):
-        """Test selection for 10-19 sessions."""
+        """Test selection for 10-29 sessions."""
         db = Mock(spec=Session)
         mock_query = Mock()
         mock_query.filter.return_value.count.return_value = 15
@@ -54,16 +54,17 @@ class TestModelSelector:
         selector = ModelSelector(db)
         model_type, n_models, config = selector.select_model_type(athlete_id=1)
         
+        # Should return lightgbm for 15 sessions (< 20, so no sequential)
         assert model_type == "lightgbm"
         assert n_models == 5
-        assert config["min_sessions"] == 10
+        assert config["min_sessions"] == 11  # 11 (not 10) to ensure 5 samples with 6 overhead
         assert config["use_ensemble"] is True
     
     def test_select_model_lightgbm_10(self):
-        """Test selection for 20+ sessions."""
+        """Test selection for 30+ sessions."""
         db = Mock(spec=Session)
         mock_query = Mock()
-        mock_query.filter.return_value.count.return_value = 25
+        mock_query.filter.return_value.count.return_value = 35  # 30+ sessions
         
         db.query.return_value = mock_query
         
@@ -72,13 +73,12 @@ class TestModelSelector:
         
         # Should return either sequential (if TensorFlow available) or lightgbm (fallback)
         assert model_type in ["lightgbm", "sequential"]
-        assert config["min_sessions"] == 20
+        assert config["min_sessions"] == 30
         assert config["use_ensemble"] is True
         
-        if model_type == "lightgbm":
-            assert n_models == 10
-        elif model_type == "sequential":
-            assert n_models == 5
+        # Both models should use 10 ensemble models for 30+ sessions
+        assert n_models == 10
+        if model_type == "sequential":
             assert "sequence_length" in config
     
     def test_get_model_config(self):

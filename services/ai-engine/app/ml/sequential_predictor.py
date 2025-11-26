@@ -5,15 +5,16 @@ Uses temporal patterns in workout sequences to predict optimal parameters.
 """
 from typing import Dict, List, Optional, Tuple
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     import tensorflow as tf
     from tensorflow import keras
     from tensorflow.keras import layers
     TENSORFLOW_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError):
     TENSORFLOW_AVAILABLE = False
+    tf = None
     keras = None
     layers = None
 
@@ -45,7 +46,7 @@ class SequentialPredictor(BaseMLModel):
         self,
         sequence_length: int,
         n_features: int
-    ) -> keras.Model:
+    ):
         """
         Build 1D CNN model architecture.
         
@@ -59,27 +60,31 @@ class SequentialPredictor(BaseMLModel):
         model = keras.Sequential([
             layers.Input(shape=(sequence_length, n_features)),
             
-            # First convolutional layer
+            # First convolutional layer with causal padding for temporal causality
             layers.Conv1D(
                 filters=64,
                 kernel_size=3,
                 activation='relu',
-                padding='same'
+                padding='causal'  # Only use past information
             ),
+            layers.BatchNormalization(),  # Stabilize training
             
             # Second convolutional layer
             layers.Conv1D(
                 filters=32,
                 kernel_size=3,
                 activation='relu',
-                padding='same'
+                padding='causal'  # Only use past information
             ),
+            layers.BatchNormalization(),  # Stabilize training
             
-            # Global max pooling
-            layers.GlobalMaxPooling1D(),
+            # Global average pooling (better than max for preserving temporal patterns)
+            # Max pooling discards temporal ordering, average preserves it
+            layers.GlobalAveragePooling1D(),
             
             # Dense layers
             layers.Dense(16, activation='relu'),
+            layers.BatchNormalization(),  # Stabilize training
             layers.Dropout(0.3),
             layers.Dense(2)  # volume_mult, intensity_mult
         ])
@@ -162,7 +167,7 @@ class SequentialPredictor(BaseMLModel):
         
         # Update model state
         self.is_trained = True
-        self.training_date = datetime.utcnow()
+        self.training_date = datetime.now(timezone.utc)
         self.training_samples = X.shape[0]
         self.feature_names = feature_names
         self.target_names = target_names
@@ -199,6 +204,13 @@ class SequentialPredictor(BaseMLModel):
             X = X.reshape(1, X.shape[0], X.shape[1])
         
         predictions = self.model.predict(X, verbose=0)
+        
+        # Validate prediction shape
+        if predictions.shape[1] < 2:
+            raise ValueError(
+                f"Expected 2 output columns (volume_mult, intensity_mult), "
+                f"got {predictions.shape[1]}"
+            )
         
         # Clamp predictions to reasonable ranges
         predictions[:, 0] = np.clip(predictions[:, 0], 0.7, 1.3)  # Volume: 70%-130%
@@ -317,7 +329,7 @@ class SequentialPredictorWithEnsemble(BaseMLModel):
         # Store the trained model
         self.model = base_predictor.model
         self.is_trained = True
-        self.training_date = datetime.utcnow()
+        self.training_date = datetime.now(timezone.utc)
         self.training_samples = X.shape[0]
         self.feature_names = feature_names
         self.target_names = target_names
@@ -336,6 +348,14 @@ class SequentialPredictorWithEnsemble(BaseMLModel):
             X = X.reshape(1, X.shape[0], X.shape[1])
         
         predictions = self.model.predict(X, verbose=0)
+        
+        # Validate prediction shape
+        if predictions.shape[1] < 2:
+            raise ValueError(
+                f"Expected 2 output columns (volume_mult, intensity_mult), "
+                f"got {predictions.shape[1]}"
+            )
+        
         predictions[:, 0] = np.clip(predictions[:, 0], 0.7, 1.3)
         predictions[:, 1] = np.clip(predictions[:, 1], 0.8, 1.15)
         

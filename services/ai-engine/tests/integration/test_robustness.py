@@ -3,7 +3,7 @@ Tests for edge cases and robustness of current AI engine implementation.
 """
 import json
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.services.injury_prevention import InjuryPreventionService
 from app.models import (
     Athlete, Exercise, WorkoutSession, ExerciseSet
@@ -39,7 +39,7 @@ class TestInjuryPreventionRobustness:
         session = WorkoutSession(
             athlete_id=athlete.id,
             workout_day_id=1,
-            session_date=datetime.utcnow()
+            session_date=datetime.now(timezone.utc)
         )
         db_session.add(session)
         db_session.flush()
