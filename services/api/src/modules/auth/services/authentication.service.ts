@@ -1,19 +1,29 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { UsersService } from '../../users/users.service';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { TokenManagementService } from './token-management.service';
 import { compare } from 'bcrypt';
+import { DRIZZLE, type DrizzleDB } from 'src/modules/database/database.provider';
+import { usersTable } from 'src/db/schema';
+import { eq } from 'drizzle-orm';
 
 @Injectable()
 export class AuthenticationService {
   constructor(
-    private readonly usersService: UsersService,
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly jwtService: JwtService,
     private readonly tokenManagementService: TokenManagementService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<number | null> {
-    const user = await this.usersService.findOne(email);
+    const user = await this.db
+      .select({
+        id: usersTable.id,
+        password: usersTable.password,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.email, email))
+      .limit(1)
+      .then(rows => rows[0]);
 
     if (!user) {
       throw new NotFoundException();

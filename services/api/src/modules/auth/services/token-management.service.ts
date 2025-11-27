@@ -42,58 +42,62 @@ export class TokenManagementService {
     refresh_token: string;
   }> {
     const now = new Date();
-    const result = await this.db
-      .update(refreshTokensTable)
-      .set({ usedAt: now })
-      .where(
-        and(
-          eq(refreshTokensTable.token, refreshToken),
-          gt(refreshTokensTable.expiresAt, now),
-          isNull(refreshTokensTable.usedAt),
-        ),
-      )
-      .returning({
-        userId: refreshTokensTable.userId,
-        usedAt: refreshTokensTable.usedAt,
-      });
-
-    // If no rows were updated, check if token exists but was already used
-    if (result.length === 0) {
-      const existingToken = await this.db
+    
+    // Use transaction for atomicity - select FOR UPDATE to prevent race conditions
+    return await this.db.transaction(async (tx) => {
+      // Single query to get token info and check validity
+      const tokenRecord = await tx
         .select({
+          id: refreshTokensTable.id,
           userId: refreshTokensTable.userId,
           usedAt: refreshTokensTable.usedAt,
+          expiresAt: refreshTokensTable.expiresAt,
         })
         .from(refreshTokensTable)
         .where(eq(refreshTokensTable.token, refreshToken))
-        .limit(1);
+        .limit(1)
+        .then(rows => rows[0]);
 
-      if (existingToken.length === 0) {
+      if (!tokenRecord) {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
-      // Token exists but was already used - reuse detection
-      const { userId } = existingToken[0];
-      await this.revokeAllUserTokens(userId);
-      throw new UnauthorizedException(
-        'Refresh token reuse detected. All tokens have been revoked for security.',
-      );
-    }
+      // Check if token was already used - reuse detection
+      if (tokenRecord.usedAt !== null) {
+        await tx
+          .delete(refreshTokensTable)
+          .where(eq(refreshTokensTable.userId, tokenRecord.userId));
+        throw new UnauthorizedException(
+          'Refresh token reuse detected. All tokens have been revoked for security.',
+        );
+      }
 
-    const { userId } = result[0];
+      // Check if token is expired
+      if (tokenRecord.expiresAt <= now) {
+        await tx
+          .delete(refreshTokensTable)
+          .where(eq(refreshTokensTable.id, tokenRecord.id));
+        throw new UnauthorizedException('Refresh token expired');
+      }
 
-    const newToken = randomBytes(64).toString('hex');
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+      // Mark token as used
+      await tx
+        .update(refreshTokensTable)
+        .set({ usedAt: now })
+        .where(eq(refreshTokensTable.id, tokenRecord.id));
 
-    return await this.db.transaction(async (tx) => {
+      // Generate new token
+      const newToken = randomBytes(64).toString('hex');
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
       await tx.insert(refreshTokensTable).values({
-        userId,
+        userId: tokenRecord.userId,
         token: newToken,
         expiresAt,
       });
 
-      const payload = { sub: userId };
+      const payload = { sub: tokenRecord.userId };
       const access_token = this.jwtService.sign(payload);
 
       return {

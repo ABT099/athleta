@@ -1,13 +1,17 @@
 import { Controller, Get, Post, Request, UseGuards, Body, Query, Res, UseInterceptors } from '@nestjs/common';
 import { AuthenticationService } from './services/authentication.service';
 import { TokenManagementService } from './services/token-management.service';
-import { OAuthProvider, OAuthService } from './services/oauth.service';
+import { OAuthService } from './services/oauth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { AllowAnonymous } from './guards/allow-anonymous';
 import type { Response } from 'express';
 import { NoFilesInterceptor } from '@nestjs/platform-express';
 import { OauthTokenDto } from './dto/oauth-token.dto';
+import { ForgotPasswordDto } from './dto/forgot-passwod.dto';
+import { ForgotPasswordService } from './services/forgot-password.service';
+import { VerifyResetPasswordCodeDto } from './dto/verify-reset-password-code.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -15,6 +19,7 @@ export class AuthController {
     private readonly authenticationService: AuthenticationService,
     private readonly tokenManagementService: TokenManagementService,
     private readonly oauthService: OAuthService,
+    private readonly forgotPasswordService: ForgotPasswordService,
   ) {}
 
   @UseGuards(LocalAuthGuard)
@@ -67,5 +72,35 @@ export class AuthController {
       refreshTokenDto.refresh_token,
     );
     return { message: 'Logged out successfully' };
+  }
+
+  @AllowAnonymous()
+  @Post('forgot-password')
+  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+    await this.forgotPasswordService.sendResetPasswordEmail(
+      forgotPasswordDto.email,
+    );
+    return { message: 'Reset password email sent' };
+  }
+
+  @AllowAnonymous()
+  @Post('forgot-password/verify')
+  async verifyResetPasswordCode(
+    @Body() verifyResetPasswordCodeDto: VerifyResetPasswordCodeDto,
+  ) {
+    await this.forgotPasswordService.verifyResetPasswordCode(
+      verifyResetPasswordCodeDto.code,
+    );
+    return { message: 'Reset password code verified' };
+  }
+
+  @AllowAnonymous()
+  @Post('forgot-password/reset')
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+    await this.forgotPasswordService.resetPassword(
+      resetPasswordDto.userId,
+      resetPasswordDto.password,
+    );
+    return { message: 'Password reset successfully' };
   }
 }

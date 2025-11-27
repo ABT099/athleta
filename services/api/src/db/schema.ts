@@ -1,4 +1,4 @@
-import { jsonb, real } from 'drizzle-orm/pg-core';
+import { jsonb, real, index } from 'drizzle-orm/pg-core';
 import { serial } from 'drizzle-orm/pg-core';
 import { boolean, integer, pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
 
@@ -13,6 +13,17 @@ export const usersTable = pgTable('users', {
   appleId: varchar({ length: 255 }).unique(),
   createdAt: timestamp().notNull().defaultNow(),
 });
+
+export const passwordResetTokensTable = pgTable('password_reset_tokens', {
+  id: serial().primaryKey(),
+  userId: integer().references(() => usersTable.id).notNull().unique(),
+  code: text().notNull().unique(),
+  verified: boolean().notNull().default(false),
+  expiresAt: timestamp().notNull(),
+  createdAt: timestamp().notNull().defaultNow(),
+}, (table) => [
+  index('password_reset_tokens_expires_at_idx').on(table.expiresAt),
+]);
 
 export const athletesTable = pgTable('athletes', {
   id: serial().primaryKey(),
@@ -101,4 +112,7 @@ export const refreshTokensTable = pgTable('refresh_tokens', {
   expiresAt: timestamp().notNull(),
   createdAt: timestamp().notNull().defaultNow(),
   usedAt: timestamp(),
-});
+}, (table) => [
+  index('refresh_tokens_user_id_idx').on(table.userId),
+  index('refresh_tokens_expires_at_idx').on(table.expiresAt),
+]);

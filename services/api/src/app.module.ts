@@ -6,6 +6,7 @@ import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+import { EmailModule } from './modules/common/email/email.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
     ExerciseModule,
     WorkoutsModule,
     AuthModule,
+    EmailModule,
   ],
   providers: [
     {

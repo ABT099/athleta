@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { AuthController } from './auth.controller';
-import { UsersModule } from '../users/users.module';
 import { JwtModule } from '@nestjs/jwt';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -9,10 +8,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthenticationService } from './services/authentication.service';
 import { TokenManagementService } from './services/token-management.service';
 import { OAuthService } from './services/oauth.service';
+import { AppleAuthService } from './services/apple-auth.service';
+import { GoogleAuthService } from './services/google-auth.service';
+import { ForgotPasswordService } from './services/forgot-password.service';
 
 @Module({
   imports: [
-    UsersModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -24,6 +25,9 @@ import { OAuthService } from './services/oauth.service';
     }),
   ],
   providers: [
+    AppleAuthService,
+    GoogleAuthService,
+    ForgotPasswordService,
     AuthenticationService,
     TokenManagementService,
     OAuthService,

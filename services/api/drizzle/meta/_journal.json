@@ -8,6 +8,13 @@
       "when": 1763841244566,
       "tag": "0000_init_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1764239165537,
+      "tag": "0001_add_forgot_password",
+      "breakpoints": true
     }
   ]
 }
