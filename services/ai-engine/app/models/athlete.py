@@ -4,7 +4,7 @@ Athlete model and related data.
 Optimized for AI engine - only contains fields used by AI calculations.
 CRUD fields (name, email, injury_history, timestamps) are handled by NestJS API.
 """
-from sqlalchemy import Column, Integer, Enum, Float
+from sqlalchemy import Column, Integer, Enum, Float, JSON
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -29,6 +29,8 @@ class Athlete(Base):
     gender = Column(Enum(Gender), nullable=False)
     training_experience = Column(Enum(TrainingExperience), nullable=False)
     rpe_calibration_factor = Column(Float, nullable=False, default=1.0)
+    focus_areas = Column(JSON, nullable=True)  # e.g., ["chest", "arms"]
+    body_weight_kg = Column(Float, nullable=True)
     
     # Relationships - explicitly lazy to avoid accidental loads
     workout_plans = relationship("WorkoutPlan", back_populates="athlete", cascade="all, delete-orphan", lazy="noload")

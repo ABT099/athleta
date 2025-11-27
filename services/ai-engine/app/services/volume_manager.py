@@ -4,7 +4,7 @@ Volume Landmarks Management System.
 Tracks volume per muscle group and provides MEV/MAV/MRV-based recommendations.
 Based on Renaissance Periodization volume landmarks research.
 """
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
@@ -14,7 +14,7 @@ from app.models import (
 )
 from app.utils.constants import (
     TrainingExperience, MuscleGroup, MuscleSize, MUSCLE_SIZE_MAP,
-    MEV_SETS_PER_WEEK, MRV_SETS_PER_WEEK
+    MEV_SETS_PER_WEEK, MRV_SETS_PER_WEEK, FocusArea, FOCUS_AREA_TO_MUSCLE_GROUPS
 )
 from app.services.training_calculations import TrainingCalculations
 
@@ -72,6 +72,54 @@ class VolumeManager:
             "mav": mav,
             "mrv": mrv,
         }
+
+    def get_volume_target_for_muscle(
+        self,
+        experience: TrainingExperience,
+        muscle_group: MuscleGroup,
+        focus_areas: Optional[List[str]] = None
+    ) -> Dict[str, int | str]:
+        """
+        Determine the weekly set target for a muscle group based on focus areas.
+
+        - Focus muscles: aim for MAV (upper adaptive range) without exceeding MRV.
+        - Maintenance muscles: hold MEV to preserve adaptations with minimal fatigue.
+        """
+        landmarks = self.get_volume_landmarks(experience, muscle_group)
+        prioritized_muscles = self._expand_focus_areas(focus_areas or [])
+
+        is_focus = muscle_group in prioritized_muscles
+        if is_focus:
+            target_sets = min(landmarks["mav"], landmarks["mrv"])
+            upper_bound = landmarks["mrv"]
+            focus_state = "focus"
+        else:
+            target_sets = landmarks["mev"]
+            upper_bound = landmarks["mav"]
+            focus_state = "maintenance"
+
+        return {
+            "muscle_group": muscle_group.value,
+            "target_sets": target_sets,
+            "upper_bound": upper_bound,
+            "focus_state": focus_state,
+            "mev": landmarks["mev"],
+            "mav": landmarks["mav"],
+            "mrv": landmarks["mrv"],
+        }
+
+    @staticmethod
+    def _expand_focus_areas(focus_areas: List[str]) -> Set[MuscleGroup]:
+        """Convert simplified focus areas into the underlying muscle groups."""
+        prioritized = set()
+        for area in focus_areas:
+            try:
+                focus_area_enum = FocusArea(area)
+            except ValueError:
+                continue
+            for muscle in FOCUS_AREA_TO_MUSCLE_GROUPS.get(focus_area_enum, []):
+                prioritized.add(muscle)
+        return prioritized
     
     def calculate_current_volume(
         self,

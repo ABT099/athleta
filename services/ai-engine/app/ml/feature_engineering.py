@@ -11,10 +11,10 @@ from sqlalchemy import desc
 
 from app.models import (
     Athlete, WorkoutSession, ExerciseSet, RecoveryMetrics,
-    PerformanceTrend, ExerciseProgressionTracking
+    PerformanceTrend, ExerciseProgressionTracking, ExercisePersonalRecord
 )
 from app.models.workout import PlanEntry, WorkoutPlan
-from app.utils.constants import Gender, TrainingExperience, TrainingType
+from app.utils.constants import Gender, TrainingExperience, TrainingType, FocusArea
 
 
 class FeatureEngineer:
@@ -105,6 +105,21 @@ class FeatureEngineer:
         
         features.append(athlete.rpe_calibration_factor)
         feature_names.append("rpe_calibration_factor")
+
+        # Body weight (used for relative strength + volume normalization)
+        body_weight = float(athlete.body_weight_kg) if athlete.body_weight_kg else 0.0
+        features.append(body_weight)
+        feature_names.append("body_weight_kg")
+
+        relative_strength = self._calculate_relative_strength_score(athlete_id, body_weight)
+        features.append(relative_strength if relative_strength is not None else 0.0)
+        feature_names.append("relative_strength_score")
+
+        # Focus area preferences (one-hot encoding)
+        focus_area_set = {area.lower() for area in (athlete.focus_areas or [])}
+        for area in FocusArea:
+            features.append(1.0 if area.value in focus_area_set else 0.0)
+            feature_names.append(f"focus_{area.value}")
         
         # 2. Recent performance metrics (last 5 sessions)
         for i, trend in enumerate(recent_trends[:5]):
@@ -387,6 +402,54 @@ class FeatureEngineer:
         outcome_score = weighted_sum / total_weight if total_weight > 0 else 0.5
         
         return float(np.clip(outcome_score, 0.0, 1.0))
+
+    def _calculate_relative_strength_score(
+        self,
+        athlete_id: int,
+        body_weight_kg: float
+    ) -> Optional[float]:
+        """
+        Estimate relative strength using the best available rep-max PR divided by body weight.
+
+        Uses Epley-style conversion: 1RM ≈ weight × (1 + reps / 30).
+        """
+        if body_weight_kg <= 0:
+            return None
+
+        rep_fields = [
+            ("one_rep_max", 1),
+            ("three_rep_max", 3),
+            ("five_rep_max", 5),
+            ("eight_rep_max", 8),
+            ("ten_rep_max", 10),
+            ("twelve_rep_max", 12),
+        ]
+
+        pr_records = (
+            self.db.query(ExercisePersonalRecord)
+            .filter(ExercisePersonalRecord.athlete_id == athlete_id)
+            .all()
+        )
+
+        if not pr_records:
+            return None
+
+        best_estimated_1rm = 0.0
+        for record in pr_records:
+            for field_name, reps in rep_fields:
+                value = getattr(record, field_name, None)
+                if value:
+                    if reps == 1:
+                        estimated_1rm = value
+                    else:
+                        estimated_1rm = value * (1.0 + reps / 30.0)
+                    if estimated_1rm > best_estimated_1rm:
+                        best_estimated_1rm = estimated_1rm
+
+        if best_estimated_1rm <= 0:
+            return None
+
+        return round(best_estimated_1rm / body_weight_kg, 3)
     
     def prepare_training_dataset(
         self,

@@ -32,6 +32,8 @@ export const athletesTable = pgTable('athletes', {
   gender: varchar({ length: 10 }).notNull().$type<('male' | 'female')>(),
   trainingExperience: varchar({ length: 12 }).notNull().$type<('beginner' | 'intermediate' | 'advanced')>(),
   rpeCalibrationFactor: real().notNull().$default(() => 1.0),
+  focusAreas: jsonb().$type<Array<'chest' | 'back' | 'shoulders' | 'arms' | 'legs' | 'core'>>(),
+  bodyWeightKg: real(),
 });
 
 export const exercisesTable = pgTable('exercises', {

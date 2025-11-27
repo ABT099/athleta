@@ -2,7 +2,7 @@
 Training constants and reference data.
 """
 from enum import Enum
-from typing import Dict
+from typing import Dict, List
 
 
 class TrainingExperience(str, Enum):
@@ -61,6 +61,26 @@ class MuscleGroup(str, Enum):
     CALVES = "calves"
     ABS = "abs"
     LOWER_BACK = "lower_back"
+
+
+class FocusArea(str, Enum):
+    """Simplified focus areas for athlete preferences."""
+    CHEST = "chest"
+    BACK = "back"
+    SHOULDERS = "shoulders"
+    ARMS = "arms"
+    LEGS = "legs"
+    CORE = "core"
+
+
+FOCUS_AREA_TO_MUSCLE_GROUPS: Dict[FocusArea, List[MuscleGroup]] = {
+    FocusArea.CHEST: [MuscleGroup.CHEST],
+    FocusArea.BACK: [MuscleGroup.BACK],
+    FocusArea.SHOULDERS: [MuscleGroup.SHOULDERS],
+    FocusArea.ARMS: [MuscleGroup.BICEPS, MuscleGroup.TRICEPS, MuscleGroup.FOREARMS],
+    FocusArea.LEGS: [MuscleGroup.QUADRICEPS, MuscleGroup.HAMSTRINGS, MuscleGroup.GLUTES],
+    FocusArea.CORE: [MuscleGroup.ABS, MuscleGroup.LOWER_BACK],
+}
 
 
 class MuscleSize(str, Enum):
