@@ -12,6 +12,7 @@ import { ForgotPasswordDto } from './dto/forgot-passwod.dto';
 import { ForgotPasswordService } from './services/forgot-password.service';
 import { VerifyResetPasswordCodeDto } from './dto/verify-reset-password-code.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { CurrentUser } from 'src/decorators/user.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -98,7 +99,7 @@ export class AuthController {
   @Post('forgot-password/reset')
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     await this.forgotPasswordService.resetPassword(
-      resetPasswordDto.userId,
+      resetPasswordDto.email,
       resetPasswordDto.password,
     );
     return { message: 'Password reset successfully' };

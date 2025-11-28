@@ -26,6 +26,7 @@ class WorkoutPlan(Base):
     # Plan characteristics - eagerly loaded (used by AI)
     training_type = Column(Enum(TrainingType), nullable=False)
     periodization_model = Column(Enum(PeriodizationModel), nullable=False)
+    focus_areas = Column(JSON, nullable=True)  # e.g., ["chest", "arms", "legs"]
     
     # Schedule
     frequency = Column(Integer, nullable=False)  # workouts per week

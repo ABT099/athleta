@@ -77,17 +77,17 @@ export class ForgotPasswordService {
     return { userId: result.userId };
   }
 
-  async resetPassword(userId: number, password: string) {
+  async resetPassword(email: string, password: string) {
     // Single query to verify user exists and has a verified reset token
     const result = await this.db
       .select({
         tokenId: passwordResetTokensTable.id,
-        userId: usersTable.id,
+        email: usersTable.email,
       })
       .from(passwordResetTokensTable)
       .innerJoin(usersTable, eq(passwordResetTokensTable.userId, usersTable.id))
       .where(and(
-        eq(passwordResetTokensTable.userId, userId),
+        eq(usersTable.email, email),
         eq(passwordResetTokensTable.verified, true)
       ))
       .limit(1)
@@ -103,7 +103,7 @@ export class ForgotPasswordService {
     await this.db.transaction(async (tx) => {
       await tx.update(usersTable)
         .set({ password: hashedPassword })
-        .where(eq(usersTable.id, result.userId));
+        .where(eq(usersTable.email, result.email));
 
       await tx.delete(passwordResetTokensTable)
         .where(eq(passwordResetTokensTable.id, result.tokenId));

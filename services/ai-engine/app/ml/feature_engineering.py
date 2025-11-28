@@ -115,8 +115,9 @@ class FeatureEngineer:
         features.append(relative_strength if relative_strength is not None else 0.0)
         feature_names.append("relative_strength_score")
 
-        # Focus area preferences (one-hot encoding)
-        focus_area_set = {area.lower() for area in (athlete.focus_areas or [])}
+        # Focus area preferences (one-hot encoding) - from active workout plan
+        focus_areas = self._get_active_plan_focus_areas(athlete_id)
+        focus_area_set = {area.lower() for area in (focus_areas or [])}
         for area in FocusArea:
             features.append(1.0 if area.value in focus_area_set else 0.0)
             feature_names.append(f"focus_{area.value}")
@@ -450,6 +451,14 @@ class FeatureEngineer:
             return None
 
         return round(best_estimated_1rm / body_weight_kg, 3)
+    
+    def _get_active_plan_focus_areas(self, athlete_id: int) -> Optional[List[str]]:
+        """Get focus areas from the athlete's active workout plan."""
+        plan = self.db.query(WorkoutPlan).filter(
+            WorkoutPlan.athlete_id == athlete_id,
+            WorkoutPlan.is_active == 1
+        ).first()
+        return plan.focus_areas if plan else None
     
     def prepare_training_dataset(
         self,

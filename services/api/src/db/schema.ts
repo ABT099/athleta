@@ -32,7 +32,6 @@ export const athletesTable = pgTable('athletes', {
   gender: varchar({ length: 10 }).notNull().$type<('male' | 'female')>(),
   trainingExperience: varchar({ length: 12 }).notNull().$type<('beginner' | 'intermediate' | 'advanced')>(),
   rpeCalibrationFactor: real().notNull().$default(() => 1.0),
-  focusAreas: jsonb().$type<Array<'chest' | 'back' | 'shoulders' | 'arms' | 'legs' | 'core'>>(),
   bodyWeightKg: real(),
 });
 
@@ -55,9 +54,13 @@ export const workoutPlansTable = pgTable('workout_plans', {
   athleteId: integer().references(() => athletesTable.id).notNull(),
   name: varchar({ length: 255 }).notNull(),
   description: text().notNull(),
-  trainingType: varchar({ length: 50 }).notNull().$type<('hypertrophy' | 'strength' | 'hybrid')>(),
+  trainingType: varchar({ length: 50 }).notNull().$type<'hypertrophy' | 'strength' | 'hybrid'>(),
   // will be determined by the AI engine (send the data to it)
-  periodizationModel: varchar({ length: 50 }).notNull().$type<('linear' | 'undulating' | 'block')>(),
+  periodizationModel: varchar({ length: 50 }).notNull().$type<'linear' | 'undulating' | 'block'>(),
+  focusAreas:
+    jsonb().$type<
+      Array<'chest' | 'back' | 'shoulders' | 'arms' | 'legs' | 'core'>
+    >(),
   frequency: integer().notNull(),
   durationWeeks: integer().notNull(),
   startDate: timestamp(),
