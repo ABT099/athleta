@@ -237,3 +237,19 @@ class PeriodizationResponse(BaseModel):
     """Schema for periodization recommendation response."""
     periodization_model: PeriodizationModel
 
+
+# ============ Plan Configuration Schemas ============
+
+class PlanConfigRequest(BaseModel):
+    """Schema for workout plan configuration recommendation request."""
+    training_type: TrainingType
+    experience: TrainingExperience
+    training_frequency: int = Field(..., ge=1, le=7, description="Workouts per week")
+
+
+class PlanConfigResponse(BaseModel):
+    """Schema for workout plan configuration recommendation response."""
+    periodization_model: PeriodizationModel
+    duration_weeks_recommended: int = Field(..., ge=1, le=52, description="Recommended duration in weeks")
+    reasoning: str = Field(..., description="Explanation of the recommendations")
+

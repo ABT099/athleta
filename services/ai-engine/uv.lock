@@ -73,7 +73,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = "==1.13.1" },
     { name = "black", marker = "extra == 'dev'", specifier = "==23.12.1" },
-    { name = "fastapi", specifier = "==0.109.0" },
+    { name = "fastapi", extras = ["standard"], specifier = "==0.109.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = "==0.26.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "==1.8.0" },
     { name = "numpy", specifier = "==1.26.3" },

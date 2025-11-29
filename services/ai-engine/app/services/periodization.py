@@ -246,31 +246,127 @@ class PeriodizationService:
         return False, None
     
     @staticmethod
+    def recommend_plan_duration(
+        training_type: TrainingType,
+        experience: TrainingExperience,
+        periodization_model: PeriodizationModel,
+        frequency: int
+    ) -> Tuple[int, int]:
+        """
+        Recommend workout plan duration range in weeks based on athlete characteristics.
+        
+        Scientific rationale:
+        - Beginners: 8-12 weeks (allows adaptation, skill development, habit formation)
+        - Intermediate: 10-16 weeks (longer mesocycles for complex periodization)
+        - Advanced: 12-20 weeks (supports block periodization and peaking phases)
+        
+        Duration is adjusted based on:
+        - Training type (strength needs longer cycles)
+        - Periodization model (block needs longer cycles)
+        - Training frequency (more frequent = can handle longer cycles)
+        
+        References:
+        - Schoenfeld et al. (2017): Volume landmarks and mesocycle length
+        - Issurin (2010): Block periodization duration
+        - Kiely (2012): Periodization theory
+        
+        Args:
+            training_type: Training goal (hypertrophy, strength, hybrid)
+            experience: Training experience level
+            periodization_model: Recommended periodization model
+            frequency: Workouts per week
+            
+        Returns:
+            Tuple of (min_weeks, max_weeks)
+        """
+        # Base duration ranges by experience level
+        base_ranges = {
+            TrainingExperience.BEGINNER: (8, 12),
+            TrainingExperience.INTERMEDIATE: (10, 16),
+            TrainingExperience.ADVANCED: (12, 20)
+        }
+        min_weeks, max_weeks = base_ranges[experience]
+        
+        # Adjust for training type
+        if training_type == TrainingType.STRENGTH:
+            min_weeks += 2  # Strength needs longer cycles for intensity progression
+            max_weeks += 4
+        elif training_type == TrainingType.HYBRID:
+            min_weeks += 1
+            max_weeks += 2
+        # Hypertrophy stays at base range
+        
+        # Adjust for periodization model
+        if periodization_model == PeriodizationModel.BLOCK:
+            # Block periodization needs at least 12 weeks (2 full blocks)
+            min_weeks = max(min_weeks, 12)
+            max_weeks = max(max_weeks, 20)
+        elif periodization_model == PeriodizationModel.UNDULATING:
+            # DUP can handle longer cycles due to weekly variation
+            min_weeks = max(min_weeks, 10)
+            max_weeks = max(max_weeks, 16)
+        # Linear stays at base range
+        
+        # Adjust for frequency (more frequent = can handle longer cycles)
+        if frequency >= 4:
+            max_weeks += 2
+        
+        return (min_weeks, max_weeks)
+    
+    @staticmethod
     def calculate_optimal_periodization(
         training_type: TrainingType,
         experience: TrainingExperience,
-        training_frequency: int
+        training_frequency: int,
+        training_age_years: Optional[int] = None
     ) -> PeriodizationModel:
         """
         Recommend optimal periodization model based on athlete characteristics.
+        
+        Enhanced with training age consideration:
+        - Advanced athletes with 10+ training years → prefer Block periodization for strength
+        - Intermediate with 5+ years → can handle Undulating periodization better
         
         Args:
             training_type: Training goal
             experience: Training experience level
             training_frequency: Workouts per week
+            training_age_years: Optional years of consistent training (if None, uses experience estimate)
             
         Returns:
             Recommended periodization model
         """
+        # Use training age if provided, otherwise estimate from experience
+        # Training age estimates from RecoveryAnalyzer:
+        # BEGINNER: 0 (0-1 years)
+        # INTERMEDIATE: 2 (2-4 years)
+        # ADVANCED: 5 (5+ years)
+        if training_age_years is None:
+            from app.services.recovery_analyzer import RecoveryAnalyzer
+            training_age_years = RecoveryAnalyzer.estimate_training_age_from_experience(experience)
+        
+        # Block periodization for advanced athletes with extensive training age
+        if experience == TrainingExperience.ADVANCED:
+            if training_type == TrainingType.STRENGTH:
+                # Advanced strength athletes (estimated 5+ years, but explicit >= 10 years preferred)
+                # If explicit training_age_years >= 10, strongly prefer block
+                # Otherwise, still prefer block for advanced strength (estimated 5+ years)
+                if training_age_years >= 10:
+                    return PeriodizationModel.BLOCK
+                return PeriodizationModel.BLOCK  # Still prefer block for advanced strength
+        
         # DUP works well for intermediate/advanced with frequent training
         if experience in [TrainingExperience.INTERMEDIATE, TrainingExperience.ADVANCED]:
             if training_frequency >= 3:
-                return PeriodizationModel.UNDULATING
-        
-        # Block periodization for advanced athletes or specific goals
-        if experience == TrainingExperience.ADVANCED:
-            if training_type == TrainingType.STRENGTH:
-                return PeriodizationModel.BLOCK
+                # Intermediate with explicit training age >= 5 years (beyond the 2-4 estimate range)
+                # can better handle undulating periodization
+                # Note: Using estimate gives 2 years, so >= 5 only applies when explicitly provided
+                if experience == TrainingExperience.INTERMEDIATE and training_age_years >= 5:
+                    return PeriodizationModel.UNDULATING
+                elif experience == TrainingExperience.ADVANCED:
+                    # Advanced athletes (estimated 5+ years) can use undulating if not strength-focused
+                    if training_type != TrainingType.STRENGTH:
+                        return PeriodizationModel.UNDULATING
         
         # Linear periodization for beginners or less frequent training
         return PeriodizationModel.LINEAR
