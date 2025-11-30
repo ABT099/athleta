@@ -1,11 +1,11 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "src/modules/database/database.provider";
 import type { DrizzleDB } from "src/modules/database/database.provider";
 import { ConfigService } from "@nestjs/config";
 import { OAuthUserProfile } from "./oauth.service";
 import { jwtDecode } from "jwt-decode";
 import axios from "axios";
-import { usersTable } from "src/db/schema";
+import { athletesTable, usersTable } from "src/db/schema";
 import { eq, or } from "drizzle-orm";
 
 @Injectable()
@@ -23,15 +23,46 @@ export class GoogleAuthService {
         this.oAuthRedirectUri = this.configService.getOrThrow<string>('OAUTH_REDIRECT_URI');    
     }
 
-    async validateOrCreateGoogleUser(code: string) {
+    async validateGoogleUser(code: string) {
       const profile = await this.authenticateWithGoogle(code);
 
+      const googleId = profile.id;
+      const email = profile.emails?.[0]?.value || profile.email;
+      
+      const existingUser = await this.db
+        .select({
+          id: usersTable.id,
+          googleId: usersTable.googleId,
+        })
+        .from(usersTable)
+        .where(or(eq(usersTable.googleId, googleId), eq(usersTable.email, email)))
+        .limit(1)
+        .then(rows => rows[0]);
+
+      if (!existingUser) {
+        throw new NotFoundException('User not found');
+      }
+
+      if (existingUser.googleId === googleId) {
+        return existingUser.id;
+      }
+
+      await this.db
+        .update(usersTable)
+        .set({ googleId })
+        .where(eq(usersTable.id, existingUser.id));
+
+      return existingUser.id;
+    }
+
+
+    async registerWithGoogle(code: string, athlete) {
+      const profile = await this.authenticateWithGoogle(code);
       const googleId = profile.id;
       const email = profile.emails?.[0]?.value || profile.email;
       const firstName = profile.name?.givenName || '';
       const lastName = profile.name?.familyName || '';
 
-      // Single query to find user by googleId OR email
       const existingUser = await this.db
         .select({
           id: usersTable.id,
@@ -43,34 +74,71 @@ export class GoogleAuthService {
         .then(rows => rows[0]);
 
       if (existingUser) {
-        // User found by googleId - already linked
-        if (existingUser.googleId === googleId) {
-          return existingUser.id;
-        }
-        
-        // User found by email - link Google ID
-        await this.db
-          .update(usersTable)
-          .set({ googleId })
-          .where(eq(usersTable.id, existingUser.id));
+        return await this.db.transaction(async (tx) => {
+          if (existingUser.googleId !== googleId) {
+            await tx.update(usersTable)
+              .set({
+                googleId,
+              })
+              .where(eq(usersTable.id, existingUser.id));
+          }
+          
+          // Check if athlete record exists
+          const existingAthlete = await tx
+            .select({ id: athletesTable.id })
+            .from(athletesTable)
+            .where(eq(athletesTable.userId, existingUser.id))
+            .limit(1)
+            .then(rows => rows[0]);
 
-        return existingUser.id;
+          if (existingAthlete) {
+            // Update existing athlete record
+            await tx.update(athletesTable)
+              .set({
+                age: athlete.age,
+                gender: athlete.gender,
+                trainingExperience: athlete.trainingExperience,
+                bodyWeightKg: athlete.weight,
+              })
+              .where(eq(athletesTable.userId, existingUser.id));
+          } else {
+            // Insert new athlete record
+            await tx.insert(athletesTable)
+              .values({
+                userId: existingUser.id,
+                age: athlete.age,
+                gender: athlete.gender,
+                trainingExperience: athlete.trainingExperience,
+                bodyWeightKg: athlete.weight,
+              });
+          }
+          
+          return existingUser.id;
+        });
       }
 
-      // Create new user
-      const newUser = await this.db
-        .insert(usersTable)
-        .values({
-          email,
-          firstName,
-          lastName,
-          role: 'user',
-          googleId,
-        })
-        .returning({ id: usersTable.id })
-        .then(rows => rows[0]);
+      return await this.db.transaction(async (tx) => {
+        const newUserId = await tx.insert(usersTable)
+          .values({
+            email,
+            firstName,
+            lastName,
+            role: 'user',
+            googleId,
+          })
+          .returning({ id: usersTable.id })
+          .then(rows => rows[0].id);
 
-      return newUser.id;
+        await tx.insert(athletesTable).values({
+          userId: newUserId,
+          age: athlete.age,
+          gender: athlete.gender,
+          trainingExperience: athlete.trainingExperience,
+          bodyWeightKg: athlete.weight,
+        });
+
+        return newUserId;
+      });
     }
 
     private async authenticateWithGoogle(code: string) {

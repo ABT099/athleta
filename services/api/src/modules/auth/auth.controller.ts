@@ -12,7 +12,8 @@ import { ForgotPasswordDto } from './dto/forgot-passwod.dto';
 import { ForgotPasswordService } from './services/forgot-password.service';
 import { VerifyResetPasswordCodeDto } from './dto/verify-reset-password-code.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { CurrentUser } from 'src/decorators/user.decorator';
+import { OauthRegisterDto } from './dto/oauth-register.dto';
+import { RegisterDto } from './dto/register.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -27,6 +28,22 @@ export class AuthController {
   @Post('login')
   async login(@Request() req) {
     return this.authenticationService.login(req.user);
+  }
+
+  @AllowAnonymous()
+  @Post('register')
+  async register(@Body() registerDto: RegisterDto) {
+    return this.authenticationService.register({
+      firstName: registerDto.firstName,
+      lastName: registerDto.lastName,
+      email: registerDto.email,
+      password: registerDto.password,
+    }, {  
+      age: registerDto.age,
+      gender: registerDto.gender,
+      weight: registerDto.weight,
+      trainingExperience: registerDto.trainingExperience,
+    });
   }
 
   @AllowAnonymous()
@@ -55,6 +72,22 @@ export class AuthController {
     const token = await this.oauthService.getOAuthToken(
       oauthTokenDto.provider,
       oauthTokenDto.code ?? oauthTokenDto.idToken!,
+    );
+    return token;
+  }
+
+  @AllowAnonymous()
+  @Post('oauth/register')
+  async oauthRegister(@Body() oauthRegisterDto: OauthRegisterDto) {
+    const token = await this.oauthService.registerOAuth(
+      oauthRegisterDto.token.provider,
+      oauthRegisterDto.token.code ?? oauthRegisterDto.token.idToken!,
+      {
+        age: oauthRegisterDto.age,
+        gender: oauthRegisterDto.gender,
+        weight: oauthRegisterDto.weight,
+        trainingExperience: oauthRegisterDto.trainingExperience,
+      },
     );
     return token;
   }

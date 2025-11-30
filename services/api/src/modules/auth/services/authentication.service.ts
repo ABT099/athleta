@@ -1,9 +1,9 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { TokenManagementService } from './token-management.service';
-import { compare } from 'bcrypt';
+import { compare, hash } from 'bcrypt';
 import { DRIZZLE, type DrizzleDB } from 'src/modules/database/database.provider';
-import { usersTable } from 'src/db/schema';
+import { athletesTable, usersTable } from 'src/db/schema';
 import { eq } from 'drizzle-orm';
 
 @Injectable()
@@ -54,5 +54,57 @@ export class AuthenticationService {
       refresh_token,
     };
   }
-}
 
+  async register(user: {
+    firstName: string,
+    lastName: string,
+    email: string,
+    password: string,
+  }, athlete: {
+    age: number,
+    gender: 'male' | 'female',
+    weight: number,
+    trainingExperience: 'beginner' | 'intermediate' | 'advanced',
+  }) {
+    const existingUser = await this.db
+    .select({
+      id: usersTable.id,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.email, user.email))
+    .limit(1)
+    .then(rows => rows[0]);
+
+    if (existingUser) {
+      throw new BadRequestException('User already exists');
+    }
+
+    const passwordHash = await hash(user.password, 10);
+    
+    const newUserId = await this.db.transaction(async (tx) => {
+      const userId = await tx.insert(usersTable)
+        .values({
+          email: user.email,
+          password: passwordHash,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: 'user',
+        })
+        .returning({ id: usersTable.id })
+        .then(rows => rows[0].id);
+
+        await tx.insert(athletesTable)
+        .values({
+          userId: userId,
+          age: athlete.age,
+          gender: athlete.gender,
+          trainingExperience: athlete.trainingExperience,
+          bodyWeightKg: athlete.weight,
+        });
+
+        return userId;
+    });
+
+    return this.login({ id: newUserId });
+  }
+}

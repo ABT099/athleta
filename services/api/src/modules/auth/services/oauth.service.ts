@@ -120,13 +120,35 @@ export class OAuthService {
     let userId: number | null = null;
 
     if (provider == OAuthProvider.GOOGLE) {
-      userId = await this.googleAuthService.validateOrCreateGoogleUser(identifier);
+      userId = await this.googleAuthService.validateGoogleUser(identifier);
     } else if (provider == OAuthProvider.APPLE) {
-      userId = await this.appleAuthService.validateOrCreateAppleUser(identifier);
+      userId = await this.appleAuthService.validateAppleUser(identifier);
     }
 
     if (!userId) {
       throw new BadRequestException('Failed to validate or create user');
+    }
+
+    return await this.authenticationService.login( { id: userId });
+  }
+
+  async registerOAuth(provider: OAuthProvider, identifier: string, athlete: {
+    age: number,
+    gender: 'male' | 'female',
+    weight: number,
+    trainingExperience: 'beginner' | 'intermediate' | 'advanced',
+  }) {
+
+    let userId: number | null = null;
+
+    if (provider == OAuthProvider.GOOGLE) {
+      userId = await this.googleAuthService.registerWithGoogle(identifier, athlete);
+    } else if (provider == OAuthProvider.APPLE) {
+      userId = await this.appleAuthService.registerWithApple(identifier, athlete);
+    }
+
+    if (!userId) {
+      throw new BadRequestException('Failed to register user');
     }
 
     return await this.authenticationService.login( { id: userId });

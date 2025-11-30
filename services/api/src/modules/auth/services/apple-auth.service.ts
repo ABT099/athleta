@@ -1,8 +1,8 @@
-import { BadRequestException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { DRIZZLE } from "src/modules/database/database.provider";
 import type { DrizzleDB } from "src/modules/database/database.provider";
 import type { OAuthUserProfile } from "./oauth.service";
-import { usersTable } from "src/db/schema";
+import { athletesTable, usersTable } from "src/db/schema";
 import { eq, or } from "drizzle-orm";
 import * as jwt from 'jsonwebtoken';
 import * as jwksClient from 'jwks-rsa';
@@ -26,16 +26,13 @@ export class AppleAuthService {
     });
   }
 
-  async validateOrCreateAppleUser(idToken: string) {
+  async validateAppleUser(idToken: string) {
     const profile = await this.verifyAppleIdToken(idToken);
 
     // Apple user ID is in the idToken.sub field
     const appleId = profile.id;
     const email = profile.email;
-    const firstName = profile.name?.firstName || profile.name?.givenName || '';
-    const lastName = profile.name?.lastName || profile.name?.familyName || '';
 
-    // Single query to find user by appleId OR email (if email exists)
     const existingUser = await this.db
       .select({
         id: usersTable.id,
@@ -43,49 +40,117 @@ export class AppleAuthService {
       })
       .from(usersTable)
       .where(
-        email 
+        email
           ? or(eq(usersTable.appleId, appleId), eq(usersTable.email, email))
-          : eq(usersTable.appleId, appleId)
+          : eq(usersTable.appleId, appleId),
       )
       .limit(1)
-      .then(rows => rows[0]);
+      .then((rows) => rows[0]);
 
-    if (existingUser) {
-      // User found by appleId - already linked
-      if (existingUser.appleId === appleId) {
-        return existingUser.id;
-      }
-      
-      // User found by email - link Apple ID
-      await this.db
-        .update(usersTable)
-        .set({ appleId })
-        .where(eq(usersTable.id, existingUser.id));
+    if (!existingUser) {
+      throw new NotFoundException('User not found');
+    }
 
+    if (existingUser.appleId === appleId) {
       return existingUser.id;
     }
 
-    // Only create new user if we have an email
-    // Apple should always provide email on first sign-in
-    if (!email) {
-      throw new BadRequestException(
-        'Email is required for new Apple sign-in. Please sign in again.',
-      );
+    await this.db
+      .update(usersTable)
+      .set({ appleId })
+      .where(eq(usersTable.id, existingUser.id));
+
+    return existingUser.id;
+  }
+
+  async registerWithApple(identifier: string, athlete: {
+    age: number,
+    gender: 'male' | 'female',
+    weight: number,
+    trainingExperience: 'beginner' | 'intermediate' | 'advanced',
+  }) {
+    const profile = await this.verifyAppleIdToken(identifier);
+    const appleId = profile.id;
+    const email = profile.email;
+    const firstName = profile.name?.firstName || profile.name?.givenName || '';
+    const lastName = profile.name?.lastName || profile.name?.familyName || '';
+
+    const existingUser = await this.db
+      .select({
+        id: usersTable.id,
+        appleId: usersTable.appleId,
+      })
+      .from(usersTable)
+      .where(or(eq(usersTable.appleId, appleId), eq(usersTable.email, email)))
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    if (existingUser) {
+      return await this.db.transaction(async (tx) => {
+        if (existingUser.appleId !== appleId) {
+          await tx.update(usersTable)
+            .set({
+              appleId,
+            })
+            .where(eq(usersTable.id, existingUser.id));
+        }
+
+        // Check if athlete record exists
+        const existingAthlete = await tx
+          .select({ id: athletesTable.id })
+          .from(athletesTable)
+          .where(eq(athletesTable.userId, existingUser.id))
+          .limit(1)
+          .then((rows) => rows[0]);
+
+        if (existingAthlete) {
+          // Update existing athlete record
+          await tx.update(athletesTable)
+            .set({
+              age: athlete.age,
+              gender: athlete.gender,
+              trainingExperience: athlete.trainingExperience,
+              bodyWeightKg: athlete.weight,
+            })
+            .where(eq(athletesTable.userId, existingUser.id));
+        } else {
+          // Insert new athlete record
+          await tx.insert(athletesTable)
+            .values({
+              userId: existingUser.id,
+              age: athlete.age,
+              gender: athlete.gender,
+              trainingExperience: athlete.trainingExperience,
+              bodyWeightKg: athlete.weight,
+            });
+        }
+
+        return existingUser.id;
+      });
     }
 
-    const newUser = await this.db
-      .insert(usersTable)
-      .values({
-        email,
-        firstName,
-        lastName,
-        role: 'user',
-        appleId,
-      })
-      .returning({ id: usersTable.id })
-      .then(rows => rows[0]);
+    return await this.db.transaction(async (tx) => {
+      const newUserId = await tx.insert(usersTable)
+        .values({
+          email,
+          firstName,
+          lastName,
+          role: 'user',
+          appleId,
+        })
+        .returning({ id: usersTable.id })
+        .then((rows) => rows[0].id);
 
-    return newUser.id;
+      await tx.insert(athletesTable).values({
+        userId: newUserId,
+        age: athlete.age,
+        gender: athlete.gender,
+        trainingExperience: athlete.trainingExperience,
+        bodyWeightKg: athlete.weight,
+      });
+
+      return newUserId;
+    });
   }
 
   private async verifyAppleIdToken(idToken: string): Promise<OAuthUserProfile> {
