@@ -237,6 +237,9 @@ class PlanUpdaterService:
                     )
                     warmup_sets = [WarmupSetSchema(**warmup) for warmup in warmup_data]
             
+            # Get intensity technique recommendations from AI adjustments
+            intensity_technique = ex_adj.get("intensity_technique", {})
+            
             # Create adjusted exercise response
             adjusted_ex = WorkoutDayExerciseResponse(
                 id=prescribed.id,
@@ -261,7 +264,13 @@ class PlanUpdaterService:
                 adjustment_reason=ex_adj.get("reason", ai_adjustments.get("reasoning", "Standard progression")),
                 warm_up_sets=prescribed.warm_up_sets,
                 auto_generate_warmups=bool(prescribed.auto_generate_warmups),
-                warmup_sets=warmup_sets
+                warmup_sets=warmup_sets,
+                # Include intensity techniques from AI recommendations or prescribed values
+                # Use explicit None checks to preserve empty dicts (which are falsy but valid)
+                set_type=intensity_technique.get("set_type") if intensity_technique.get("set_type") is not None else prescribed.set_type,
+                rep_style=intensity_technique.get("rep_style") if intensity_technique.get("rep_style") is not None else prescribed.rep_style,
+                set_type_params=intensity_technique.get("set_type_params") if "set_type_params" in intensity_technique else prescribed.set_type_params,
+                rep_style_params=intensity_technique.get("rep_style_params") if "rep_style_params" in intensity_technique else prescribed.rep_style_params
             )
             
             adjusted_exercises.append(adjusted_ex)
@@ -467,7 +476,8 @@ class PlanUpdaterService:
                 "workouts_this_week": 0,
                 "total_volume": 0,
                 "average_rpe": None,
-                "trend": "starting"
+                "trend": "starting",
+                "volume_vs_last_week": "N/A"
             }
         
         # Calculate metrics
@@ -488,21 +498,30 @@ class PlanUpdaterService:
         )
         
         trend = "stable"
+        last_week_volume = 0
+        volume_vs_last_week = "N/A"
+        
         if last_week_sessions:
             last_week_volume = sum(s.total_volume or 0 for s in last_week_sessions)
             if last_week_volume > 0:
                 volume_change = (total_volume - last_week_volume) / last_week_volume
+                volume_vs_last_week = f"{volume_change * 100:+.1f}%"
+                
                 if volume_change > 0.05:
                     trend = "increasing"
                 elif volume_change < -0.05:
                     trend = "decreasing"
+            elif total_volume > 0:
+                # Last week 0, this week > 0
+                trend = "increasing"
+                volume_vs_last_week = "+100.0%"  # Technically infinite, but show +100% or similar
         
         return {
             "workouts_this_week": len(weekly_sessions),
             "total_volume": round(total_volume, 1),
             "average_rpe": round(avg_rpe, 1) if avg_rpe else None,
             "trend": trend,
-            "volume_vs_last_week": f"{((total_volume / sum(s.total_volume or 0 for s in last_week_sessions or [1])) - 1) * 100:+.1f}%" if last_week_sessions else "N/A"
+            "volume_vs_last_week": volume_vs_last_week
         }
     
     def create_plan_entry_for_week(

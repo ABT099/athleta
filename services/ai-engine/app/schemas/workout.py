@@ -9,7 +9,9 @@ from app.utils.constants import (
     TrainingType, 
     TrainingExperience,
     PeriodizationModel,
-    SleepQuality
+    SleepQuality,
+    SetType,
+    RepStyle
 )
 
 
@@ -49,6 +51,9 @@ class ExerciseSetData(BaseModel):
     rpe: Optional[float] = Field(None, ge=1, le=10)
     rir: Optional[int] = Field(None, ge=0, le=10)
     form_quality: Optional[str] = None  # "excellent", "good", "fair", "poor"
+    set_type_used: Optional[SetType] = None  # Intensity technique actually performed
+    rep_style_used: Optional[RepStyle] = None
+    technique_details: Optional[Dict] = None  # Execution details for ML analytics
     notes: Optional[str] = None
 
 
@@ -149,6 +154,10 @@ class WorkoutDayExerciseBase(BaseModel):
     progression_scheme: Optional[str] = None
     warm_up_sets: int = Field(0, ge=0, le=4)  # Number of warm-up sets (0-4)
     auto_generate_warmups: bool = True  # Auto-generate warm-up weights/reps
+    set_type: Optional[SetType] = SetType.STRAIGHT  # Intensity technique set type
+    rep_style: Optional[RepStyle] = RepStyle.NORMAL  # Intensity technique rep style
+    set_type_params: Optional[Dict] = None  # Technique-specific parameters
+    rep_style_params: Optional[Dict] = None  # Rep style-specific parameters
     
     @model_validator(mode='after')
     def validate_set_range(self):

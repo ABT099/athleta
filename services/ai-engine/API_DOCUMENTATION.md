@@ -14,7 +14,18 @@ Currently no authentication is required (to be implemented).
 
 ## What's New (November 2025)
 
-The AI engine has been significantly enhanced with new scientific capabilities. **No API changes required** - all improvements are internal and fully backward compatible:
+The AI engine has been significantly enhanced with new scientific capabilities.
+
+### Automatic Intensity Techniques (NEW)
+- **Set Types**: Drop Set, Rest-Pause, Myo-Reps, Cluster Set, Superset, Pre-Exhaust
+- **Rep Styles**: Lengthened Partials, Tempo Eccentric, Tempo Paused, Eccentric Overload
+- **Trigger-Based**: AI defaults to straight sets and only adds techniques when needed:
+  - Plateau detected (stalled progress)
+  - Struggling performance (high RPE, no gains)
+  - Volume ceiling (at MRV)
+  - Late accumulation phase
+- **Composable**: Set types and rep styles can be combined
+- **Tracked**: Execution details stored for ML analytics
 
 ### Enhanced Intelligence
 - **Smarter Age & Gender Adjustments**: Now considers training age alongside chronological age, with more nuanced gender-based fatigue resistance modeling
@@ -22,8 +33,10 @@ The AI engine has been significantly enhanced with new scientific capabilities. 
 - **Advanced Fatigue Detection**: ACWR and Session RPE monitoring for proactive injury prevention
 - **Six Independent Deload Triggers**: Comprehensive autoregulation based on performance, recovery, workload ratios, and session load
 
-### API Compatibility
-All existing API calls work exactly as before. The AI simply makes smarter decisions using the same input data.
+### API Changes
+- **New optional fields** in workout completion request for tracking intensity techniques
+- **New fields** in next workout response with AI-recommended techniques
+- All changes are backward compatible - existing clients work without modification
 
 ---
 
@@ -215,7 +228,10 @@ Submit completed workout and receive AI-generated next workout with progressive 
       "rpe": 8.0,      // Rate of Perceived Exertion (1-10)
       "rir": 2,        // Reps in Reserve
       "form_quality": "good",  // "excellent", "good", "fair", "poor"
-      "notes": "Felt strong"    // Optional
+      "set_type_used": "straight",  // Optional: what technique was used
+      "rep_style_used": "normal",   // Optional: what rep style was used
+      "technique_details": null,    // Optional: execution details for ML
+      "notes": "Felt strong"        // Optional
     },
     {
       "exercise_id": 1,
@@ -224,7 +240,10 @@ Submit completed workout and receive AI-generated next workout with progressive 
       "reps": 5,
       "rpe": 8.5,
       "rir": 1,
-      "form_quality": "good"
+      "form_quality": "good",
+      "set_type_used": "drop_set",  // Example: drop set was performed
+      "rep_style_used": "normal",
+      "technique_details": {"drop_percentage": 0.20, "drops_count": 1}
     },
     {
       "exercise_id": 2,
@@ -295,7 +314,11 @@ Submit completed workout and receive AI-generated next workout with progressive 
           "adjusted_sets": 3,
           "adjusted_reps_min": 4,
           "adjusted_reps_max": 6,
-          "adjustment_reason": "Performance on target - progressive increase"
+          "adjustment_reason": "Performance on target - progressive increase",
+          "set_type": "straight",       // AI-recommended set type
+          "rep_style": "normal",        // AI-recommended rep style
+          "set_type_params": {},        // Technique-specific parameters
+          "rep_style_params": {}        // Rep style parameters
         }
       ]
     },
@@ -338,6 +361,37 @@ Submit completed workout and receive AI-generated next workout with progressive 
   "ai_insights": [
     "✅ Recovery is excellent. Your body is adapting well to training.",
     "📈 Progressive overload applied. Continue pushing forward!"
+  ]
+}
+```
+
+**Example with Intensity Technique Recommendation:**
+
+When the AI detects a trigger (e.g., plateau), it recommends an intensity technique:
+
+```json
+{
+  "next_workout": {
+    "workout_day": {
+      "exercises": [
+        {
+          "exercise_id": 5,
+          "adjusted_weight": 80.0,
+          "set_type": "drop_set",
+          "rep_style": "normal",
+          "set_type_params": {
+            "drop_percentage": 0.20,
+            "drops_count": 1
+          },
+          "rep_style_params": {},
+          "adjustment_reason": "Plateau detected - adding intensity technique to break through | Drop Set recommended"
+        }
+      ]
+    }
+  },
+  "ai_insights": [
+    "🔄 Plateau detected on Lateral Raises - Drop Sets recommended to break through",
+    "💪 Volume ceiling reached for shoulders - using intensity technique to maximize stimulus"
   ]
 }
 ```
@@ -874,6 +928,22 @@ Currently no rate limits (to be implemented).
 - `fair`
 - `poor`
 
+### Set Type (Intensity Techniques)
+- `straight` - Standard sets (default)
+- `drop_set` - Reduce weight, continue reps
+- `rest_pause` - Brief rest (10-20s), continue to failure
+- `myo_reps` - Activation set + mini-sets
+- `cluster_set` - Intra-set rest between rep clusters
+- `superset_antagonist` - Paired with antagonist exercise
+- `pre_exhaust` - Isolation before compound
+
+### Rep Style (Intensity Techniques)
+- `normal` - Standard full ROM reps (default)
+- `lengthened_partials` - Partials in stretched position
+- `tempo_eccentric` - Slow eccentric (3-5 sec)
+- `tempo_paused` - 1-2 sec pause at stretched position
+- `eccentric_overload` - Supramaximal eccentric loading
+
 ---
 
 ## Webhooks
@@ -884,12 +954,21 @@ Not currently implemented.
 
 ## Versioning
 
-**API Version**: 1.0.0  
-**AI Engine Version**: 1.2.0 (ML Enhancements, November 2025)
+**API Version**: 1.1.0  
+**AI Engine Version**: 1.3.0 (Intensity Techniques, November 2025)
 
 Current API does not use versioning in the URL. Future versions may use `/v1/`, `/v2/` prefixes.
 
 ### Version History
+
+**v1.3.0 (November 2025)** - Automatic Intensity Techniques
+- Added Set Types: drop_set, rest_pause, myo_reps, cluster_set, superset_antagonist, pre_exhaust
+- Added Rep Styles: lengthened_partials, tempo_eccentric, tempo_paused, eccentric_overload
+- Trigger-based AI recommendations (plateau, struggling, volume ceiling, phase)
+- Execution tracking for ML analytics
+- New optional fields in exercise_sets for technique tracking
+- New fields in next workout response for AI-recommended techniques
+- *Backward compatible - all fields optional*
 
 **v1.2.0 (November 2025)** - ML Model Enhancements
 - LightGBM with Bayesian ensembles (production model)

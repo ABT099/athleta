@@ -326,3 +326,193 @@ class ProgressionState(str, Enum):
     DELOADING = "deloading"                  # Reducing load
 
 
+# ==============================
+# INTENSITY TECHNIQUES
+# ==============================
+
+class SetType(str, Enum):
+    """How the set is structured - defines rest/weight changes within a set."""
+    STRAIGHT = "straight"              # Standard sets (default)
+    DROP_SET = "drop_set"            # Reduce weight, continue reps
+    REST_PAUSE = "rest_pause"        # Brief rest (10-20s), continue to failure
+    MYO_REPS = "myo_reps"            # Activation set + mini-sets (3-5 reps)
+    CLUSTER_SET = "cluster_set"      # Intra-set rest (15-30s between clusters)
+    SUPERSET_ANTAGONIST = "superset_antagonist"  # Paired with antagonist exercise
+    PRE_EXHAUST = "pre_exhaust"      # Isolation before compound (same muscle)
+
+
+class RepStyle(str, Enum):
+    """How individual reps are performed - tempo/ROM modifications."""
+    NORMAL = "normal"                        # Standard full ROM reps (default)
+    LENGTHENED_PARTIALS = "lengthened_partials"  # Partials in stretched position
+    TEMPO_ECCENTRIC = "tempo_eccentric"      # Slow eccentric (3-5 sec)
+    TEMPO_PAUSED = "tempo_paused"            # 1-2 sec pause at stretched position
+    ECCENTRIC_OVERLOAD = "eccentric_overload"  # Supramaximal eccentric loading
+
+
+# Set Type Configuration
+# Defines when and how each set type should be used
+SET_TYPE_CONFIG: Dict[SetType, Dict] = {
+    SetType.STRAIGHT: {
+        "applicable_training_types": [TrainingType.HYPERTROPHY, TrainingType.STRENGTH, TrainingType.HYBRID],
+        "applicable_exercise_types": [ExerciseType.COMPOUND, ExerciseType.ISOLATION],
+        "min_experience": TrainingExperience.BEGINNER,
+        "applicable_phases": [TrainingPhase.ACCUMULATION, TrainingPhase.INTENSIFICATION, TrainingPhase.REALIZATION],
+        "volume_multiplier": 1.0,
+        "fatigue_multiplier": 1.0,
+        "default_params": {},
+    },
+    SetType.DROP_SET: {
+        "applicable_training_types": [TrainingType.HYPERTROPHY, TrainingType.HYBRID],
+        "applicable_exercise_types": [ExerciseType.ISOLATION],  # Safer on isolation
+        "min_experience": TrainingExperience.INTERMEDIATE,
+        "applicable_phases": [TrainingPhase.ACCUMULATION],
+        "volume_multiplier": 1.3,  # Increases effective volume
+        "fatigue_multiplier": 1.2,
+        "default_params": {
+            "drop_percentage": 0.20,  # 20% weight reduction
+            "drops_count": 1,  # Single drop (can be 1-2)
+        },
+    },
+    SetType.REST_PAUSE: {
+        "applicable_training_types": [TrainingType.HYPERTROPHY, TrainingType.STRENGTH, TrainingType.HYBRID],
+        "applicable_exercise_types": [ExerciseType.COMPOUND, ExerciseType.ISOLATION],
+        "min_experience": TrainingExperience.INTERMEDIATE,
+        "applicable_phases": [TrainingPhase.ACCUMULATION, TrainingPhase.INTENSIFICATION],
+        "volume_multiplier": 1.25,
+        "fatigue_multiplier": 1.15,
+        "default_params": {
+            "rest_seconds": 15,  # 15-20 seconds
+            "mini_sets_count": 2,  # 2-3 mini-sets after initial set
+        },
+    },
+    SetType.MYO_REPS: {
+        "applicable_training_types": [TrainingType.HYPERTROPHY],
+        "applicable_exercise_types": [ExerciseType.ISOLATION],
+        "min_experience": TrainingExperience.INTERMEDIATE,
+        "applicable_phases": [TrainingPhase.ACCUMULATION],
+        "volume_multiplier": 1.4,  # Very efficient volume accumulation
+        "fatigue_multiplier": 1.1,  # Lower fatigue per rep than straight sets
+        "default_params": {
+            "activation_reps": 5,  # Initial activation set
+            "rest_seconds": 5,  # Very brief rest
+            "mini_sets_reps": 3,  # 3-5 reps per mini-set
+            "target_total_reps": 20,  # Total reps across all mini-sets
+        },
+    },
+    SetType.CLUSTER_SET: {
+        "applicable_training_types": [TrainingType.STRENGTH, TrainingType.HYBRID],
+        "applicable_exercise_types": [ExerciseType.COMPOUND],
+        "min_experience": TrainingExperience.ADVANCED,
+        "applicable_phases": [TrainingPhase.INTENSIFICATION, TrainingPhase.REALIZATION],
+        "volume_multiplier": 1.0,  # Same volume, better quality
+        "fatigue_multiplier": 0.9,  # Less fatigue due to intra-set rest
+        "default_params": {
+            "reps_per_cluster": 3,  # 2-5 reps per cluster
+            "rest_seconds": 20,  # 15-30 seconds between clusters
+            "clusters_count": 3,  # 3-5 clusters per set
+        },
+    },
+    SetType.SUPERSET_ANTAGONIST: {
+        "applicable_training_types": [TrainingType.HYPERTROPHY, TrainingType.HYBRID],
+        "applicable_exercise_types": [ExerciseType.COMPOUND, ExerciseType.ISOLATION],
+        "min_experience": TrainingExperience.BEGINNER,
+        "applicable_phases": [TrainingPhase.ACCUMULATION],
+        "volume_multiplier": 1.0,  # Same volume, time-efficient
+        "fatigue_multiplier": 1.05,
+        "default_params": {
+            "rest_between_exercises": 0,  # No rest between exercises
+            "rest_after_pair": 60,  # Rest after completing both exercises
+        },
+    },
+    SetType.PRE_EXHAUST: {
+        "applicable_training_types": [TrainingType.HYPERTROPHY],
+        "applicable_exercise_types": [ExerciseType.ISOLATION],  # First exercise is isolation
+        "min_experience": TrainingExperience.INTERMEDIATE,
+        "applicable_phases": [TrainingPhase.ACCUMULATION],
+        "volume_multiplier": 1.1,
+        "fatigue_multiplier": 1.15,
+        "default_params": {
+            "isolation_sets": 1,  # 1-2 sets of isolation first
+            "rest_between": 30,  # Short rest before compound
+        },
+    },
+}
+
+# Rep Style Configuration
+# Defines when and how each rep style should be used
+REP_STYLE_CONFIG: Dict[RepStyle, Dict] = {
+    RepStyle.NORMAL: {
+        "applicable_training_types": [TrainingType.HYPERTROPHY, TrainingType.STRENGTH, TrainingType.HYBRID],
+        "applicable_exercise_types": [ExerciseType.COMPOUND, ExerciseType.ISOLATION],
+        "min_experience": TrainingExperience.BEGINNER,
+        "applicable_phases": [TrainingPhase.ACCUMULATION, TrainingPhase.INTENSIFICATION, TrainingPhase.REALIZATION],
+        "volume_multiplier": 1.0,
+        "fatigue_multiplier": 1.0,
+        "default_params": {},
+    },
+    RepStyle.LENGTHENED_PARTIALS: {
+        "applicable_training_types": [TrainingType.HYPERTROPHY],
+        "applicable_exercise_types": [ExerciseType.ISOLATION],
+        "min_experience": TrainingExperience.INTERMEDIATE,
+        "applicable_phases": [TrainingPhase.ACCUMULATION],
+        "volume_multiplier": 1.15,  # Slightly more volume due to time under tension
+        "fatigue_multiplier": 1.1,
+        "default_params": {
+            "partial_rom_percent": 0.5,  # 50% ROM in stretched position
+            "full_rom_reps": 0,  # 0 = all partials, or mix with full ROM
+        },
+    },
+    RepStyle.TEMPO_ECCENTRIC: {
+        "applicable_training_types": [TrainingType.HYPERTROPHY, TrainingType.HYBRID],
+        "applicable_exercise_types": [ExerciseType.COMPOUND, ExerciseType.ISOLATION],
+        "min_experience": TrainingExperience.BEGINNER,
+        "applicable_phases": [TrainingPhase.ACCUMULATION],
+        "volume_multiplier": 1.1,
+        "fatigue_multiplier": 1.15,  # Higher fatigue due to time under tension
+        "default_params": {
+            "eccentric_seconds": 3,  # 3-5 seconds
+            "concentric_seconds": 1,  # Normal speed
+            "pause_bottom": 0,  # Optional pause
+        },
+    },
+    RepStyle.TEMPO_PAUSED: {
+        "applicable_training_types": [TrainingType.HYPERTROPHY, TrainingType.HYBRID],
+        "applicable_exercise_types": [ExerciseType.COMPOUND, ExerciseType.ISOLATION],
+        "min_experience": TrainingExperience.BEGINNER,
+        "applicable_phases": [TrainingPhase.ACCUMULATION],
+        "volume_multiplier": 1.05,
+        "fatigue_multiplier": 1.1,
+        "default_params": {
+            "pause_seconds": 1,  # 1-2 seconds at stretched position
+            "pause_position": "stretched",  # "stretched" or "mid"
+        },
+    },
+    RepStyle.ECCENTRIC_OVERLOAD: {
+        "applicable_training_types": [TrainingType.STRENGTH, TrainingType.HYBRID],
+        "applicable_exercise_types": [ExerciseType.COMPOUND],
+        "min_experience": TrainingExperience.ADVANCED,
+        "applicable_phases": [TrainingPhase.INTENSIFICATION, TrainingPhase.REALIZATION],
+        "volume_multiplier": 0.9,  # Lower volume due to intensity
+        "fatigue_multiplier": 1.3,  # High fatigue
+        "default_params": {
+            "overload_percentage": 0.10,  # 10% above concentric max
+            "eccentric_seconds": 3,  # 3-5 seconds
+            "assisted_concentric": True,  # Need assistance for concentric
+        },
+    },
+}
+
+# Valid combinations of Set Types and Rep Styles
+# Some combinations don't make sense or are unsafe
+VALID_TECHNIQUE_COMBINATIONS: Dict[SetType, List[RepStyle]] = {
+    SetType.STRAIGHT: [RepStyle.NORMAL, RepStyle.LENGTHENED_PARTIALS, RepStyle.TEMPO_ECCENTRIC, RepStyle.TEMPO_PAUSED, RepStyle.ECCENTRIC_OVERLOAD],
+    SetType.DROP_SET: [RepStyle.NORMAL, RepStyle.LENGTHENED_PARTIALS, RepStyle.TEMPO_ECCENTRIC],  # No eccentric overload on drops
+    SetType.REST_PAUSE: [RepStyle.NORMAL, RepStyle.TEMPO_ECCENTRIC],  # Keep it simple
+    SetType.MYO_REPS: [RepStyle.NORMAL],  # Myo-reps work best with normal tempo
+    SetType.CLUSTER_SET: [RepStyle.NORMAL, RepStyle.TEMPO_ECCENTRIC, RepStyle.ECCENTRIC_OVERLOAD],  # Power/strength focus
+    SetType.SUPERSET_ANTAGONIST: [RepStyle.NORMAL, RepStyle.TEMPO_ECCENTRIC, RepStyle.TEMPO_PAUSED],
+    SetType.PRE_EXHAUST: [RepStyle.NORMAL, RepStyle.TEMPO_ECCENTRIC],  # Keep compound movement clean
+}
+
+

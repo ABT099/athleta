@@ -24,8 +24,9 @@ from app.services.periodization import PeriodizationService
 from app.services.rpe_calibration import RPECalibrationService
 from app.services.volume_manager import VolumeManager
 from app.services.form_quality_service import FormQualityService
+from app.services.intensity_technique_service import IntensityTechniqueService
 from app.utils.constants import (
-    TrainingType, TrainingPhase, TrainingExperience,
+    TrainingType, TrainingPhase, TrainingExperience, ExerciseType,
     PROGRESSION_RATES, REP_RANGES, INTENSITY_ZONES, DELOAD_THRESHOLDS
 )
 
@@ -53,6 +54,7 @@ class ProgressiveOverloadEngine:
         self.rpe_calibration = RPECalibrationService(db)
         self.volume_manager = VolumeManager(db)
         self.form_service = FormQualityService(db)
+        self.intensity_technique = IntensityTechniqueService(db)
         
         # ML services (optional)
         if ML_AVAILABLE:
@@ -962,12 +964,16 @@ class ProgressiveOverloadEngine:
         
         # Calculate exercise-specific adjustments
         exercise_adjustments = self._calculate_exercise_specific_adjustments(
+            athlete.id,
             performance.get("exercise_analyses", []),
             intensity_adjustment,
             volume_adjustment,
             athlete.training_experience,
             training_type,
-            form_quality_gates
+            form_quality_gates,
+            plan_context,
+            recovery,
+            performance_level
         )
         
         # Generate reasoning
@@ -991,27 +997,41 @@ class ProgressiveOverloadEngine:
     
     def _calculate_exercise_specific_adjustments(
         self,
+        athlete_id: int,
         exercise_analyses: List[Dict],
         base_intensity_adj: float,
         base_volume_adj: float,
         experience: TrainingExperience,
         training_type: TrainingType,
-        form_quality_gates: Optional[Dict] = None
+        form_quality_gates: Optional[Dict] = None,
+        plan_context: Optional[Dict] = None,
+        recovery: Optional[Dict] = None,
+        performance_level: Optional[str] = None
     ) -> Dict:
         """
-        Calculate adjustments for each specific exercise.
+        Calculate adjustments for each specific exercise, including intensity technique recommendations.
         
         Args:
+            athlete_id: Athlete ID for intensity technique analysis
             exercise_analyses: List of exercise performance analyses
             base_intensity_adj: Base intensity adjustment
             base_volume_adj: Base volume adjustment
             experience: Training experience
             training_type: Training type
+            form_quality_gates: Form quality gate information
+            plan_context: Plan context with training phase
+            recovery: Recovery status with readiness score
+            performance_level: Overall performance level ("exceeding", "on_target", "struggling", "failed")
             
         Returns:
             Dict mapping exercise_id to adjustments
         """
         adjustments = {}
+        
+        # Get context for intensity technique recommendations
+        training_phase = plan_context.get("current_phase", TrainingPhase.ACCUMULATION) if plan_context else TrainingPhase.ACCUMULATION
+        readiness_score = recovery.get("readiness_score", 0.7) if recovery else 0.7
+        week_number = plan_context.get("week_number") if plan_context else None
         
         for analysis in exercise_analyses:
             ex_id = analysis["exercise_id"]
@@ -1051,13 +1071,60 @@ class ProgressiveOverloadEngine:
                     volume_adj = min(volume_adj, 0.95)
                     form_gate_reason = gate.get("reason")
             
-            # Calculate actual weight suggestion
-            # (Would need current weight from database in real implementation)
+            # Get exercise details for intensity technique recommendation
+            exercise = self.db.query(Exercise).filter(Exercise.id == ex_id).first()
+            exercise_type = ExerciseType.COMPOUND if exercise and exercise.exercise_type == "compound" else ExerciseType.ISOLATION
+            
+            # Get primary muscle group for volume ceiling check
+            muscle_group = None
+            if exercise and exercise.primary_muscles:
+                from app.utils.constants import MuscleGroup
+                try:
+                    muscle_group = MuscleGroup(exercise.primary_muscles[0])
+                except (ValueError, IndexError):
+                    pass
+            
+            # Recommend intensity techniques (only if triggers detected)
+            technique_recommendation = self.intensity_technique.recommend_techniques(
+                athlete_id=athlete_id,
+                exercise_id=ex_id,
+                training_type=training_type,
+                training_phase=training_phase,
+                exercise_type=exercise_type,
+                experience=experience,
+                readiness_score=readiness_score,
+                is_primary=analysis.get("is_primary", True),
+                order_in_workout=analysis.get("order_in_workout", 1),
+                performance_level=performance_level,
+                week_number=week_number,
+                muscle_group=muscle_group
+            )
+            
+            # Calculate fatigue impact of technique
+            base_vol = analysis.get("volume", 0) or 1000  # Fallback if volume not available
+            fatigue_impact = self.intensity_technique.calculate_fatigue_impact(
+                technique_recommendation["set_type"],
+                technique_recommendation["rep_style"],
+                base_vol
+            )
+            
+            # Adjust volume/fatigue multipliers based on technique
+            volume_adj *= fatigue_impact["volume_multiplier"]
+            # Note: Fatigue multiplier could be used for recovery calculations
             
             adjustments[ex_id] = {
                 "intensity_multiplier": round(intensity_adj, 3),
                 "volume_multiplier": round(volume_adj, 3),
-                "reason": self._get_exercise_adjustment_reason(rpe_diff)
+                "reason": self._get_exercise_adjustment_reason(rpe_diff),
+                "intensity_technique": {
+                    "set_type": technique_recommendation["set_type"].value,
+                    "rep_style": technique_recommendation["rep_style"].value,
+                    "set_type_params": technique_recommendation["set_type_params"],
+                    "rep_style_params": technique_recommendation["rep_style_params"],
+                    "reasoning": technique_recommendation["reasoning"],
+                    "fatigue_impact": fatigue_impact,
+                    "triggers": technique_recommendation.get("triggers", {})
+                }
             }
             
             if form_gate_reason:

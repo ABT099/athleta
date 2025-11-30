@@ -135,6 +135,11 @@ class ExerciseFactory:
         """Create a compound exercise."""
         if primary_muscles is None:
             primary_muscles = ["chest", "shoulders", "triceps"]
+            
+        # Set default movement pattern if not provided
+        if "movement_pattern" not in kwargs:
+            kwargs["movement_pattern"] = "push"
+            
         return ExerciseFactory.create(
             db,
             name=name,
@@ -142,7 +147,6 @@ class ExerciseFactory:
             exercise_type="compound",
             complexity_score=1.2,
             injury_risk_level=0.5,
-            movement_pattern="push",
             **kwargs
         )
     
@@ -156,6 +160,11 @@ class ExerciseFactory:
         """Create an isolation exercise."""
         if primary_muscles is None:
             primary_muscles = ["biceps"]
+            
+        # Set default movement pattern if not provided
+        if "movement_pattern" not in kwargs:
+            kwargs["movement_pattern"] = "pull"
+            
         return ExerciseFactory.create(
             db,
             name=name,
@@ -163,7 +172,6 @@ class ExerciseFactory:
             exercise_type="isolation",
             complexity_score=0.7,
             injury_risk_level=0.2,
-            movement_pattern="pull",
             **kwargs
         )
 

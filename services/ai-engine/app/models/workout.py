@@ -163,6 +163,12 @@ class WorkoutDayExercise(Base):
     warm_up_sets = Column(Integer, default=0, nullable=False)  # 0-4 warm-up sets
     auto_generate_warmups = Column(Integer, default=1, nullable=False)  # 1 = auto-generate, 0 = manual
     
+    # Intensity techniques
+    set_type = Column(Enum("straight", "drop_set", "rest_pause", "myo_reps", "cluster_set", "superset_antagonist", "pre_exhaust", name="set_type_enum"), default="straight", nullable=False)
+    rep_style = Column(Enum("normal", "lengthened_partials", "tempo_eccentric", "tempo_paused", "eccentric_overload", name="rep_style_enum"), default="normal", nullable=False)
+    set_type_params = Column(JSON, nullable=True)  # Technique-specific parameters
+    rep_style_params = Column(JSON, nullable=True)  # Rep style-specific parameters
+    
     # Relationships
     workout_day = relationship("WorkoutDay", back_populates="exercises")
     exercise = relationship("Exercise", back_populates="workout_day_exercises")
@@ -229,6 +235,11 @@ class ExerciseSet(Base):
     
     # Form and execution
     form_quality = Column(String(50), nullable=True)  # "excellent", "good", "fair", "poor"
+    
+    # Intensity technique tracking (what was actually performed)
+    set_type_used = Column(Enum("straight", "drop_set", "rest_pause", "myo_reps", "cluster_set", "superset_antagonist", "pre_exhaust", name="set_type_enum"), nullable=True)
+    rep_style_used = Column(Enum("normal", "lengthened_partials", "tempo_eccentric", "tempo_paused", "eccentric_overload", name="rep_style_enum"), nullable=True)
+    technique_details = Column(JSON, nullable=True)  # Execution details for ML analytics
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     notes = deferred(Column(Text, nullable=True))

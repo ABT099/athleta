@@ -11,11 +11,12 @@ This document explains the scientific principles and research backing the Athlet
 1. [Progressive Overload](#progressive-overload)
 2. [Gender & Age-Based Adjustments](#gender--age-based-adjustments)
 3. [Exercise-Specific Progression](#exercise-specific-progression)
-4. [Autoregulated Deloads](#autoregulated-deloads)
-5. [Periodization Models](#periodization-models)
-6. [RPE Calibration](#rpe-calibration)
-7. [Machine Learning Integration](#machine-learning-integration)
-8. [Scientific References](#scientific-references)
+4. [Intensity Techniques](#intensity-techniques)
+5. [Autoregulated Deloads](#autoregulated-deloads)
+6. [Periodization Models](#periodization-models)
+7. [RPE Calibration](#rpe-calibration)
+8. [Machine Learning Integration](#machine-learning-integration)
+9. [Scientific References](#scientific-references)
 
 ---
 
@@ -172,6 +173,137 @@ Week 8: 105kg × 6 reps × 3 sets (weight increased, reps reset)
 **References:**
 - Krieger (2010): Volume and hypertrophy dose-response
 - Schoenfeld (2010): Mechanisms of hypertrophy
+
+---
+
+## Intensity Techniques
+
+### Overview
+
+Intensity techniques are advanced training methods that modify how sets or reps are performed to increase training stimulus without adding more volume. The AI engine uses a **trigger-based system** to automatically recommend techniques only when needed.
+
+### Two Categories: Set Types & Rep Styles
+
+The system uses two composable categories that can be combined:
+
+#### Set Types (How the set is structured)
+
+| Set Type | Description | Best For | Min. Experience |
+|----------|-------------|----------|-----------------|
+| **STRAIGHT** | Standard sets (default) | All goals | Beginner |
+| **DROP_SET** | Reduce weight 20%, continue reps | Hypertrophy | Intermediate |
+| **REST_PAUSE** | 15-20s rest, continue to failure | Hypertrophy/Strength | Intermediate |
+| **MYO_REPS** | Activation set + mini-sets (3-5 reps) | Hypertrophy | Intermediate |
+| **CLUSTER_SET** | Intra-set rest (15-30s between clusters) | Strength | Advanced |
+| **SUPERSET_ANTAGONIST** | Paired with antagonist exercise | Time efficiency | Beginner |
+| **PRE_EXHAUST** | Isolation before compound | Hypertrophy | Intermediate |
+
+#### Rep Styles (How individual reps are performed)
+
+| Rep Style | Description | Best For | Min. Experience |
+|-----------|-------------|----------|-----------------|
+| **NORMAL** | Standard full ROM reps (default) | All goals | Beginner |
+| **LENGTHENED_PARTIALS** | Partials in stretched position | Hypertrophy | Intermediate |
+| **TEMPO_ECCENTRIC** | Slow eccentric (3-5 seconds) | Hypertrophy | Beginner |
+| **TEMPO_PAUSED** | 1-2 sec pause at stretched position | Hypertrophy | Beginner |
+| **ECCENTRIC_OVERLOAD** | Supramaximal eccentric loading | Strength | Advanced |
+
+### Composability
+
+Set types and rep styles can be combined for targeted effects:
+
+```
+Cluster Set + Tempo Eccentric → Strength-hypertrophy hybrid
+Drop Set + Lengthened Partials → Maximum hypertrophy stimulus
+Myo-Reps + Normal → Time-efficient hypertrophy
+Straight Set + Tempo Paused → Beginner-friendly technique exposure
+```
+
+**Invalid Combinations:**
+- Myo-Reps only work with Normal rep style (requires fast execution)
+- Eccentric Overload doesn't combine with Drop Sets (safety)
+
+### Trigger-Based Automatic Recommendation
+
+The AI **defaults to straight sets with normal tempo** and only recommends intensity techniques when specific triggers are detected:
+
+#### 1. Plateau Detection
+- Performance stalled for 2-3 consecutive sessions
+- No weight or rep increase despite consistent effort
+- **Response**: Drop sets, myo-reps, or rest-pause to break through
+
+#### 2. Struggling Performance
+- High RPE (8+) with no progression
+- Athlete putting in effort but not advancing
+- **Response**: Technique to maximize stimulus from existing load
+
+#### 3. Volume Ceiling
+- Athlete at 90%+ of MRV for a muscle group
+- Can't add more sets without overtraining
+- **Response**: Myo-reps or drop sets to increase stimulus without more sets
+
+#### 4. Phase-Based
+- Late accumulation phase (week 3-4 of mesocycle)
+- Optimal time to push intensity before deload
+- **Response**: Appropriate technique based on training type
+
+### Implementation
+
+```python
+# Only recommend technique if triggers detected
+if not triggers["any_triggered"]:
+    return SetType.STRAIGHT, RepStyle.NORMAL
+
+# Select based on which trigger fired
+if triggers["plateau_detected"]:
+    if exercise_type == ISOLATION:
+        return SetType.DROP_SET or SetType.MYO_REPS
+    else:
+        return SetType.REST_PAUSE or SetType.CLUSTER_SET
+
+if triggers["volume_ceiling_detected"]:
+    return SetType.MYO_REPS  # More stimulus, no extra sets
+```
+
+### Fatigue & Volume Impact
+
+Each technique has multipliers that affect fatigue calculations:
+
+| Technique | Volume Multiplier | Fatigue Multiplier |
+|-----------|------------------|-------------------|
+| Drop Set | 1.3× | 1.2× |
+| Myo-Reps | 1.4× | 1.1× |
+| Rest-Pause | 1.25× | 1.15× |
+| Cluster Set | 1.0× | 0.9× |
+| Tempo Eccentric | 1.1× | 1.15× |
+| Lengthened Partials | 1.15× | 1.1× |
+
+These multipliers are used to:
+- Adjust volume calculations for weekly tracking
+- Factor into fatigue accumulation and deload triggers
+- Inform recovery recommendations
+
+### Scientific Basis
+
+**Drop Sets:**
+- Schoenfeld et al. (2018): Drop sets produce similar hypertrophy to traditional sets with less time
+- Effective for metabolic stress and muscle fiber recruitment
+
+**Rest-Pause / Myo-Reps:**
+- Prestes et al. (2019): Rest-pause produces comparable strength gains with time efficiency
+- Borges et al. (2017): Effective for increasing training volume within time constraints
+
+**Cluster Sets:**
+- Haff et al. (2003): Maintains power output and movement quality
+- Ideal for strength/power development with reduced fatigue
+
+**Lengthened Partials:**
+- Pedrosa et al. (2023): Training at long muscle lengths produces superior hypertrophy
+- Stretched position provides greater mechanical tension
+
+**Tempo Manipulation:**
+- Schoenfeld et al. (2015): Time under tension contributes to hypertrophy
+- Slow eccentrics increase muscle damage and mechanical tension
 
 ---
 
@@ -735,6 +867,14 @@ LightGBM provides feature importance scores that can be accessed via API:
 22. **Claudino et al. (2019)**: "Current approaches to the use of AI for injury risk assessment"
 23. **Carey et al. (2018)**: "Predictive modelling of training loads and injury in Australian football"
 
+### Intensity Techniques
+24. **Schoenfeld et al. (2018)**: "Effects of drop sets on muscular hypertrophy"
+25. **Prestes et al. (2019)**: "Effects of rest-pause training on muscular strength and hypertrophy"
+26. **Borges et al. (2017)**: "Rest-pause training for muscle hypertrophy"
+27. **Haff et al. (2003)**: "Cluster training: A novel method for introducing training variability"
+28. **Pedrosa et al. (2023)**: "Training at long muscle lengths induces greater hypertrophy"
+29. **Schoenfeld et al. (2015)**: "Effect of repetition duration during resistance training on muscle hypertrophy"
+
 ---
 
 ## Implementation Summary
@@ -758,8 +898,22 @@ LightGBM provides feature importance scores that can be accessed via API:
 - **Hybrid ML predictions** (confidence-based weighting)
 - **Individual RPE calibration** (learns your patterns)
 - **Multiple periodization models** (DUP, Block, Linear)
+- **Automatic intensity techniques** (trigger-based set types and rep styles)
 
 ### Recent Updates (November 2025)
+
+**Automatic Intensity Techniques (NEW):**
+- Added Set Types: Drop Set, Rest-Pause, Myo-Reps, Cluster Set, Superset, Pre-Exhaust
+- Added Rep Styles: Lengthened Partials, Tempo Eccentric, Tempo Paused, Eccentric Overload
+- Composable system: Set types and rep styles can be combined
+- Trigger-based recommendations (defaults to straight sets unless needed):
+  - Plateau detection (stalled progress for 2-3 sessions)
+  - Struggling performance (high RPE, no progression)
+  - Volume ceiling (at MRV, need more stimulus)
+  - Phase-based (late accumulation phase)
+- Experience-gated: Advanced techniques require Intermediate/Advanced experience
+- Fatigue multipliers integrated into recovery calculations
+- Full execution tracking for ML analytics
 
 **Enhanced Gender & Age Science:**
 - Refined gender modifier from 10% to 8% to reflect "fatigue resistance" more accurately
@@ -781,5 +935,5 @@ LightGBM provides feature importance scores that can be accessed via API:
 
 ---
 
-*Last Updated: November 11, 2025*
+*Last Updated: November 30, 2025*
 

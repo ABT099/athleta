@@ -278,7 +278,12 @@ class RecoveryAnalyzer:
         # (Simplified - in production would need to check workout_day target muscles)
         if recent_sessions:
             last_workout = recent_sessions[0]
-            days_since_workout = (datetime.now(timezone.utc) - last_workout.session_date).days
+            current_time = datetime.now(timezone.utc)
+            session_time = last_workout.session_date
+            if session_time.tzinfo is None:
+                session_time = session_time.replace(tzinfo=timezone.utc)
+            
+            days_since_workout = (current_time - session_time).days
         else:
             days_since_workout = 7  # No recent workout
         
@@ -407,7 +412,12 @@ class RecoveryAnalyzer:
         days_ago = []
         
         for session in sessions:
-            days_since = (datetime.now(timezone.utc) - session.session_date).days
+            current_time = datetime.now(timezone.utc)
+            session_time = session.session_date
+            if session_time.tzinfo is None:
+                session_time = session_time.replace(tzinfo=timezone.utc)
+            
+            days_since = (current_time - session_time).days
             load = 0
             
             if session.total_volume and session.overall_rpe:

@@ -90,6 +90,9 @@ def complete_workout(
             rpe=set_data.rpe,
             rir=set_data.rir,
             form_quality=set_data.form_quality,
+            set_type_used=set_data.set_type_used,
+            rep_style_used=set_data.rep_style_used,
+            technique_details=set_data.technique_details,
             notes=set_data.notes
         )
         db.add(exercise_set)
