@@ -38,6 +38,11 @@ class Exercise(Base):
     movement_pattern = Column(String(100), nullable=True)  # squat, hinge, push, pull, carry, etc.
     exercise_type = Column(String(50), nullable=False, default='compound')  # compound, isolation
     complexity_score = Column(Float, nullable=False, default=1.0)  # 0.0-1.0, affects familiarity progression
+    intensity_category = Column(
+        Enum("compound_heavy", "compound_moderate", "isolation", name="intensity_category_enum"),
+        nullable=False,
+        default="isolation"
+    )  # CNS demand category for prescription generation
     
     # Relationships
     workout_day_exercises = relationship("WorkoutDayExercise", back_populates="exercise")

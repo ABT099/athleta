@@ -33,6 +33,7 @@ export class GoogleAuthService {
         .select({
           id: usersTable.id,
           googleId: usersTable.googleId,
+          hasInitialPlan: usersTable.hasInitialPlan,
         })
         .from(usersTable)
         .where(or(eq(usersTable.googleId, googleId), eq(usersTable.email, email)))
@@ -44,7 +45,7 @@ export class GoogleAuthService {
       }
 
       if (existingUser.googleId === googleId) {
-        return existingUser.id;
+        return { id: existingUser.id, hasInitialPlan: existingUser.hasInitialPlan };
       }
 
       await this.db
@@ -52,7 +53,7 @@ export class GoogleAuthService {
         .set({ googleId })
         .where(eq(usersTable.id, existingUser.id));
 
-      return existingUser.id;
+      return { id: existingUser.id, hasInitialPlan: existingUser.hasInitialPlan };
     }
 
 
@@ -67,6 +68,7 @@ export class GoogleAuthService {
         .select({
           id: usersTable.id,
           googleId: usersTable.googleId,
+          hasInitialPlan: usersTable.hasInitialPlan,
         })
         .from(usersTable)
         .where(or(eq(usersTable.googleId, googleId), eq(usersTable.email, email)))
@@ -113,7 +115,7 @@ export class GoogleAuthService {
               });
           }
           
-          return existingUser.id;
+          return { id: existingUser.id, hasInitialPlan: existingUser.hasInitialPlan };
         });
       }
 
@@ -137,7 +139,7 @@ export class GoogleAuthService {
           bodyWeightKg: athlete.weight,
         });
 
-        return newUserId;
+        return { id: newUserId, hasInitialPlan: false };
       });
     }
 

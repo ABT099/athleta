@@ -3,7 +3,7 @@ import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
 import { exercisesTable } from '../../db/schema';
 import { eq, ne, lte, inArray, and } from 'drizzle-orm';
 import { MuscleSimilarityUtil } from './utils/muscle-similarity.util';
-import { AIEngineIntegration } from './integrations/ai-engine.integration';
+import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
 import {
   SubstitutionResultDto,
   ExerciseDto,

@@ -515,4 +515,86 @@ VALID_TECHNIQUE_COMBINATIONS: Dict[SetType, List[RepStyle]] = {
     SetType.PRE_EXHAUST: [RepStyle.NORMAL, RepStyle.TEMPO_ECCENTRIC],  # Keep compound movement clean
 }
 
+# ==============================
+# PRESCRIPTION GENERATION
+# ==============================
+
+class ExerciseIntensityCategory(str, Enum):
+    """Categorizes exercises by CNS demand - stored in database."""
+    COMPOUND_HEAVY = "compound_heavy"      # Squats, Deadlifts, Bench Press
+    COMPOUND_MODERATE = "compound_moderate" # Rows, Lunges, OHP
+    ISOLATION = "isolation"                # Curls, Extensions, Raises
+
+# Base RPE ranges by training type and exercise category
+# References: Zourdos et al. (2016), Schoenfeld et al. (2016)
+BASE_RPE_RANGES: Dict[TrainingType, Dict[ExerciseIntensityCategory, Dict[str, float]]] = {
+    TrainingType.STRENGTH: {
+        ExerciseIntensityCategory.COMPOUND_HEAVY: {"min": 7.0, "max": 8.0},
+        ExerciseIntensityCategory.COMPOUND_MODERATE: {"min": 7.0, "max": 9.0},
+        ExerciseIntensityCategory.ISOLATION: {"min": 8.0, "max": 9.0},
+    },
+    TrainingType.HYPERTROPHY: {
+        ExerciseIntensityCategory.COMPOUND_HEAVY: {"min": 7.0, "max": 8.0},
+        ExerciseIntensityCategory.COMPOUND_MODERATE: {"min": 7.0, "max": 9.0},
+        ExerciseIntensityCategory.ISOLATION: {"min": 8.0, "max": 10.0},
+    },
+    TrainingType.HYBRID: {
+        # Hybrid: compounds use strength rules, isolations use hypertrophy rules
+        ExerciseIntensityCategory.COMPOUND_HEAVY: {"min": 7.0, "max": 8.0},
+        ExerciseIntensityCategory.COMPOUND_MODERATE: {"min": 7.0, "max": 9.0},
+        ExerciseIntensityCategory.ISOLATION: {"min": 8.0, "max": 10.0},
+    },
+}
+
+# Rest periods in seconds
+# References: Grgic et al. (2018), Schoenfeld et al. (2016)
+BASE_REST_PERIODS: Dict[TrainingType, Dict[ExerciseIntensityCategory, Dict[str, int]]] = {
+    TrainingType.STRENGTH: {
+        ExerciseIntensityCategory.COMPOUND_HEAVY: {"min": 180, "max": 300},
+        ExerciseIntensityCategory.COMPOUND_MODERATE: {"min": 150, "max": 240},
+        ExerciseIntensityCategory.ISOLATION: {"min": 90, "max": 120},
+    },
+    TrainingType.HYPERTROPHY: {
+        ExerciseIntensityCategory.COMPOUND_HEAVY: {"min": 120, "max": 180},
+        ExerciseIntensityCategory.COMPOUND_MODERATE: {"min": 90, "max": 150},
+        ExerciseIntensityCategory.ISOLATION: {"min": 60, "max": 90},
+    },
+    TrainingType.HYBRID: {
+        # Hybrid: compounds use strength rest, isolations use hypertrophy rest
+        ExerciseIntensityCategory.COMPOUND_HEAVY: {"min": 180, "max": 300},
+        ExerciseIntensityCategory.COMPOUND_MODERATE: {"min": 150, "max": 240},
+        ExerciseIntensityCategory.ISOLATION: {"min": 60, "max": 90},
+    },
+}
+
+# For hybrid training: route to appropriate base type based on exercise category
+# Compounds follow strength rules, isolations follow hypertrophy rules
+HYBRID_CATEGORY_MAPPING: Dict[ExerciseIntensityCategory, TrainingType] = {
+    ExerciseIntensityCategory.COMPOUND_HEAVY: TrainingType.STRENGTH,
+    ExerciseIntensityCategory.COMPOUND_MODERATE: TrainingType.STRENGTH,
+    ExerciseIntensityCategory.ISOLATION: TrainingType.HYPERTROPHY,
+}
+
+# Phase-based modifiers (RPE adjustment, rest multiplier)
+PHASE_MODIFIERS: Dict[str, Dict[str, float]] = {
+    "accumulation": {"rpe": -0.5, "rest": 0.9},
+    "intensification": {"rpe": 0.5, "rest": 1.0},
+    "realization": {"rpe": 1.0, "rest": 1.1},
+    "deload": {"rpe": -2.0, "rest": 0.75},  # Critical safety phase
+}
+
+# Week-in-phase progressive overload modifiers
+MICROCYCLE_RPE_MODIFIERS: Dict[int, float] = {
+    1: -0.5,   # Ramp-up week
+    2: 0.0,    # Baseline
+    3: 0.25,   # Building
+    4: 0.5,    # Peak (typically before deload)
+}
+
+# Safety constants
+COMPOUND_RPE_SAFETY_CAP = 9.0   # Max RPE for any compound movement (CNS Tax Rule)
+DELOAD_RPE_FLOOR = 5.0          # Min RPE during deload (maintains training stimulus)
+ABSOLUTE_RPE_FLOOR = 5.0        # Never prescribe below this
+ABSOLUTE_RPE_CEILING = 10.0     # Never prescribe above this
+
 

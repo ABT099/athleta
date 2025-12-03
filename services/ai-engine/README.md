@@ -5,6 +5,7 @@ An AI-powered training system that implements scientific progressive overload pr
 ## Features
 
 - **Intelligent Progressive Overload**: Automatically adjusts training parameters based on performance and recovery
+- **Automatic Prescription Generation**: Scientifically-validated target RPE, RIR, and rest period generation based on exercise type, training goal, and phase
 - **Plan-Context Awareness**: Respects periodization models and training phases
 - **Recovery Integration**: Considers sleep quality, soreness, stress, and energy levels
 - **Injury Prevention**: Monitors volume spikes, intensity limits, and movement patterns
@@ -91,17 +92,20 @@ API documentation: `http://localhost:8000/docs`
 
 ### AI Engine Components
 
-1. **Plan Context Analyzer**: Understands current training phase and periodization
-2. **Performance Analyzer**: Compares actual vs. prescribed performance
-3. **Recovery Assessor**: Evaluates readiness based on sleep and recovery markers
-4. **Injury Prevention**: Monitors training load and flags risk factors
-5. **Progression Calculator**: Determines optimal adjustments for next workout
+1. **Prescription Generator**: Generates scientifically-validated target RPE, RIR, and rest periods
+2. **Plan Context Analyzer**: Understands current training phase and periodization
+3. **Performance Analyzer**: Compares actual vs. prescribed performance
+4. **Recovery Assessor**: Evaluates readiness based on sleep and recovery markers
+5. **Injury Prevention**: Monitors training load and flags risk factors
+6. **Progression Calculator**: Determines optimal adjustments for next workout
 
 ## API Endpoints
 
 ### Core Endpoints
 
 - `POST /api/workouts/complete`: Submit completed workout and receive next workout adjustments
+- `POST /api/prescriptions/generate`: Generate target RPE, RIR, and rest period for an exercise
+- `POST /api/prescriptions/generate-batch`: Generate prescriptions for multiple exercises
 - `GET /api/athletes/{id}/current-plan`: Get current weekly training plan
 - `GET /api/athletes/{id}/next-workout`: Get next scheduled workout with updated parameters
 - `POST /api/athletes`: Create new athlete profile
@@ -112,6 +116,12 @@ API documentation: `http://localhost:8000/docs`
 The system implements evidence-based training principles:
 
 - **Progressive Overload**: Systematic increase in training stress
+- **Prescription Generation**: Automatic RPE/RIR/rest period generation based on:
+  - CNS Tax Rule: Compound exercises capped at RPE 9.0 for safety
+  - Inverse RPE/RIR Law: Strictly enforced as RIR = 10 - RPE
+  - Hybrid Training Logic: Compounds follow strength rules, isolations follow hypertrophy rules
+  - Phase-Aware Adjustments: Accumulation, intensification, realization, and deload phases
+  - Microcycle Progression: Week-in-phase progressive overload
 - **Periodization**: Structured variation in volume and intensity
 - **Autoregulation**: RPE/RIR-based adjustments (Zourdos et al., 2016)
 - **Recovery Management**: Fatigue-fitness model integration

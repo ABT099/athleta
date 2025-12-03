@@ -65,5 +65,40 @@ export class AIEngineIntegration {
       return [];
     }
   }
+
+  async generatePrescription(
+    intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation',
+    trainingType: 'strength' | 'hypertrophy' | 'hybrid',
+    trainingPhase: 'accumulation' | 'intensification' | 'realization' | 'deload',
+    weekInPhase: number,
+    isPrimary: boolean = true,
+  ): Promise<{
+    target_rpe: number;
+    target_rir: number;
+    rest_period_seconds: number;
+  }> {
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post<{
+          target_rpe: number;
+          target_rir: number;
+          rest_period_seconds: number;
+        }>(`${this.baseURL}/api/prescriptions/generate`, {
+          intensity_category: intensityCategory,
+          training_type: trainingType,
+          training_phase: trainingPhase,
+          week_in_phase: weekInPhase,
+          is_primary: isPrimary,
+        }),
+      );
+      return data;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to generate prescription: ${errorMessage}`,
+      );
+      throw error;
+    }
+  }
 }
 

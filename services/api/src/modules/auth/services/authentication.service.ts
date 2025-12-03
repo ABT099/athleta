@@ -40,11 +40,11 @@ export class AuthenticationService {
     return user.id;
   }
 
-  async login(user: { id: number }): Promise<{
+  async login(user: { id: number, hasInitialPlan: boolean }): Promise<{
     access_token: string;
     refresh_token: string;
   }> {
-    const payload = { sub: user.id };
+    const payload = { sub: user.id, hasInitialPlan: user.hasInitialPlan };
     const access_token = this.jwtService.sign(payload);
     const refresh_token =
       await this.tokenManagementService.generateRefreshToken(user.id);
@@ -82,7 +82,7 @@ export class AuthenticationService {
     const passwordHash = await hash(user.password, 10);
     
     const newUserId = await this.db.transaction(async (tx) => {
-      const userId = await tx.insert(usersTable)
+      const userInfo = await tx.insert(usersTable)
         .values({
           email: user.email,
           password: passwordHash,
@@ -90,21 +90,21 @@ export class AuthenticationService {
           lastName: user.lastName,
           role: 'user',
         })
-        .returning({ id: usersTable.id })
-        .then(rows => rows[0].id);
+        .returning({ id: usersTable.id, hasInitialPlan: usersTable.hasInitialPlan })
+        .then(rows => rows[0]);
 
         await tx.insert(athletesTable)
         .values({
-          userId: userId,
+          userId: userInfo.id,
           age: athlete.age,
           gender: athlete.gender,
           trainingExperience: athlete.trainingExperience,
           bodyWeightKg: athlete.weight,
         });
 
-        return userId;
+        return userInfo;
     });
 
-    return this.login({ id: newUserId });
+    return this.login(newUserId);
   }
 }

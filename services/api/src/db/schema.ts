@@ -11,6 +11,7 @@ export const usersTable = pgTable('users', {
   role: varchar({ length: 10 }).notNull().$type<'admin' | 'user'>(),
   googleId: varchar( { length: 255 }).unique(),
   appleId: varchar({ length: 255 }).unique(),
+  hasInitialPlan: boolean().notNull().default(false),
   createdAt: timestamp().notNull().defaultNow(),
 });
 
@@ -47,6 +48,7 @@ export const exercisesTable = pgTable('exercises', {
   movementPattern: varchar({ length: 100 }).notNull(),
   exerciseType: varchar({ length: 50 }).notNull().$type<'compound' | 'isolation'>(),
   complexityScore: real().notNull().$default(() => 1.0),
+  intensityCategory: varchar({ length: 20 }).notNull().$type<'compound_heavy' | 'compound_moderate' | 'isolation'>().$default(() => 'isolation'),
 });
 
 export const workoutPlansTable = pgTable('workout_plans', {

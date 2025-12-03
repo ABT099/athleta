@@ -3,7 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { ExerciseController } from './exercise.controller';
 import { ExerciseService } from './exercise.service';
-import { AIEngineIntegration } from './integrations/ai-engine.integration';
+import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
 
 @Module({
   imports: [HttpModule, ConfigModule],

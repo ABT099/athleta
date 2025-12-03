@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { DRIZZLE } from "src/modules/database/database.provider";
 import type { DrizzleDB } from "src/modules/database/database.provider";
 import type { OAuthUserProfile } from "./oauth.service";
@@ -37,6 +37,7 @@ export class AppleAuthService {
       .select({
         id: usersTable.id,
         appleId: usersTable.appleId,
+        hasInitialPlan: usersTable.hasInitialPlan,
       })
       .from(usersTable)
       .where(
@@ -52,15 +53,17 @@ export class AppleAuthService {
     }
 
     if (existingUser.appleId === appleId) {
-      return existingUser.id;
+      return { id: existingUser.id, hasInitialPlan: existingUser.hasInitialPlan };
     }
 
     await this.db
       .update(usersTable)
       .set({ appleId })
-      .where(eq(usersTable.id, existingUser.id));
+      .where(eq(usersTable.id, existingUser.id))
+      .returning({ id: usersTable.id, hasInitialPlan: usersTable.hasInitialPlan })
+      .then((rows) => rows[0]);
 
-    return existingUser.id;
+    return { id: existingUser.id, hasInitialPlan: existingUser.hasInitialPlan };
   }
 
   async registerWithApple(identifier: string, athlete: {
@@ -79,6 +82,7 @@ export class AppleAuthService {
       .select({
         id: usersTable.id,
         appleId: usersTable.appleId,
+        hasInitialPlan: usersTable.hasInitialPlan,
       })
       .from(usersTable)
       .where(or(eq(usersTable.appleId, appleId), eq(usersTable.email, email)))
@@ -125,7 +129,7 @@ export class AppleAuthService {
             });
         }
 
-        return existingUser.id;
+        return { id: existingUser.id, hasInitialPlan: existingUser.hasInitialPlan };
       });
     }
 
@@ -149,7 +153,7 @@ export class AppleAuthService {
         bodyWeightKg: athlete.weight,
       });
 
-      return newUserId;
+      return { id: newUserId, hasInitialPlan: false };
     });
   }
 

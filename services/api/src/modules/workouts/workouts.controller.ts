@@ -1,18 +1,31 @@
 import {
   Controller,
+  Post,
   Put,
   Param,
   ParseIntPipe,
   Body,
+  ParseBoolPipe,
+  Query,
 } from '@nestjs/common';
 import { WorkoutsService } from './workouts.service';
 import { SubstituteExerciseDto } from './dto/substitute-exercise.dto';
+import { CreateWorkoutDto } from './dto/create-workout.dto';
 
-@Controller('workout-days')
+@Controller('workouts')
 export class WorkoutsController {
   constructor(private readonly workoutsService: WorkoutsService) {}
 
-  @Put(':workoutDayId/exercises/:exerciseId/substitute')
+  @Post()
+  async createWorkout(
+    @Body() dto: CreateWorkoutDto,
+    @Query('initialPlan', ParseBoolPipe) initialPlan: boolean,
+  ): Promise<{ message: string }> {
+    await this.workoutsService.createWorkout();
+    return { message: 'Workout created successfully' };
+  }
+
+  @Put('days/:workoutDayId/exercises/:exerciseId/substitute')
   async substituteExercise(
     @Param('workoutDayId', ParseIntPipe) workoutDayId: number,
     @Param('exerciseId', ParseIntPipe) exerciseId: number,

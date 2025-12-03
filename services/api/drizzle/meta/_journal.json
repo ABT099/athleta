@@ -29,6 +29,13 @@
       "when": 1764351204306,
       "tag": "0003_move_focus_areas",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1764758375759,
+      "tag": "0004_add_intensity_category_and_initial_plan",
+      "breakpoints": true
     }
   ]
 }

@@ -117,19 +117,19 @@ export class OAuthService {
     identifier: string
   ) {
 
-    let userId: number | null = null;
+    let userInfo: { id: number, hasInitialPlan: boolean } | null = null;
 
     if (provider == OAuthProvider.GOOGLE) {
-      userId = await this.googleAuthService.validateGoogleUser(identifier);
+      userInfo = await this.googleAuthService.validateGoogleUser(identifier);
     } else if (provider == OAuthProvider.APPLE) {
-      userId = await this.appleAuthService.validateAppleUser(identifier);
+      userInfo = await this.appleAuthService.validateAppleUser(identifier);
     }
 
-    if (!userId) {
+    if (!userInfo) {
       throw new BadRequestException('Failed to validate or create user');
     }
 
-    return await this.authenticationService.login( { id: userId });
+    return await this.authenticationService.login(userInfo);
   }
 
   async registerOAuth(provider: OAuthProvider, identifier: string, athlete: {
@@ -139,18 +139,18 @@ export class OAuthService {
     trainingExperience: 'beginner' | 'intermediate' | 'advanced',
   }) {
 
-    let userId: number | null = null;
+    let userInfo: { id: number, hasInitialPlan: boolean } | null = null;
 
     if (provider == OAuthProvider.GOOGLE) {
-      userId = await this.googleAuthService.registerWithGoogle(identifier, athlete);
+      userInfo = await this.googleAuthService.registerWithGoogle(identifier, athlete);
     } else if (provider == OAuthProvider.APPLE) {
-      userId = await this.appleAuthService.registerWithApple(identifier, athlete);
+      userInfo = await this.appleAuthService.registerWithApple(identifier, athlete);
     }
 
-    if (!userId) {
+    if (!userInfo) {
       throw new BadRequestException('Failed to register user');
     }
 
-    return await this.authenticationService.login( { id: userId });
+    return await this.authenticationService.login(userInfo);
   }
 }

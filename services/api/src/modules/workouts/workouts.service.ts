@@ -7,6 +7,12 @@ import { eq, and } from 'drizzle-orm';
 export class WorkoutsService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
 
+  async createWorkout({
+    
+  } initialPlan: boolean): Promise<void> {
+
+  }
+
   async substituteExercise(
     workoutDayId: number,
     exerciseId: number,

@@ -12,11 +12,25 @@ Currently no authentication is required (to be implemented).
 
 ---
 
-## What's New (November 2025)
+## What's New (January 2025)
 
 The AI engine has been significantly enhanced with new scientific capabilities.
 
-### Automatic Intensity Techniques (NEW)
+### Automatic Prescription Generation (NEW)
+- **Scientifically-Validated Parameters**: Automatically generates target RPE, RIR, and rest periods based on:
+  - Exercise intensity category (compound_heavy, compound_moderate, isolation)
+  - Training goal (strength, hypertrophy, hybrid)
+  - Training phase (accumulation, intensification, realization, deload)
+  - Week-in-phase (microcycle progression)
+- **Safety Rules Enforced**:
+  - **CNS Tax Rule**: All compound exercises capped at RPE 9.0 maximum
+  - **Inverse RPE/RIR Law**: Strictly enforced as RIR = 10 - RPE
+  - **Deload Safety**: Aggressive intensity reduction (-2.0 RPE, floor at 5.0)
+- **Hybrid Training Logic**: Compounds follow strength rules, isolations follow hypertrophy rules
+- **Phase-Aware**: Adjusts prescriptions based on accumulation/intensification/realization/deload
+- **Microcycle Progression**: Week 1-4 progressive overload within each phase
+
+### Automatic Intensity Techniques
 - **Set Types**: Drop Set, Rest-Pause, Myo-Reps, Cluster Set, Superset, Pre-Exhaust
 - **Rep Styles**: Lengthened Partials, Tempo Eccentric, Tempo Paused, Eccentric Overload
 - **Trigger-Based**: AI defaults to straight sets and only adds techniques when needed:
@@ -34,6 +48,7 @@ The AI engine has been significantly enhanced with new scientific capabilities.
 - **Six Independent Deload Triggers**: Comprehensive autoregulation based on performance, recovery, workload ratios, and session load
 
 ### API Changes
+- **New endpoints**: `POST /api/prescriptions/generate` and `POST /api/prescriptions/generate-batch`
 - **New optional fields** in workout completion request for tracking intensity techniques
 - **New fields** in next workout response with AI-recommended techniques
 - All changes are backward compatible - existing clients work without modification
@@ -696,6 +711,105 @@ Generate synthetic workout data for testing and validation.
 
 ---
 
+## Prescription Generation Endpoints
+
+### Generate Prescription
+
+Generate scientifically-validated target RPE, RIR, and rest period for a single exercise.
+
+**Endpoint:** `POST /api/prescriptions/generate`
+
+**Request Body:**
+```json
+{
+  "intensity_category": "compound_heavy",  // "compound_heavy", "compound_moderate", or "isolation"
+  "training_type": "hybrid",              // "strength", "hypertrophy", or "hybrid"
+  "training_phase": "accumulation",       // "accumulation", "intensification", "realization", or "deload"
+  "week_in_phase": 2,                     // Week number within phase (1-4 typically)
+  "is_primary": true                      // Whether this is a primary exercise (affects rest period)
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "target_rpe": 7.5,              // Target Rate of Perceived Exertion (5.0-10.0)
+  "target_rir": 2,                // Target Reps in Reserve (0-5)
+  "rest_period_seconds": 180      // Rest period between sets in seconds
+}
+```
+
+**Scientific Rules Applied:**
+- **CNS Tax Rule**: Compound exercises capped at RPE 9.0 maximum
+- **Inverse RPE/RIR Law**: Strictly enforced as RIR = 10 - RPE
+- **Deload Safety**: Aggressive intensity reduction (-2.0 RPE modifier, floor at 5.0)
+- **Hybrid Logic**: Compounds follow strength rules, isolations follow hypertrophy rules
+- **Microcycle Progression**: Week 1-4 progressive overload within each phase
+
+**Example Prescriptions:**
+
+| Exercise Category | Training Type | Phase | Week | RPE | RIR | Rest (s) |
+|-------------------|---------------|-------|------|-----|-----|----------|
+| Compound Heavy | Strength | Accumulation | 2 | 7.5 | 2 | 270 |
+| Compound Moderate | Hypertrophy | Intensification | 3 | 8.75 | 1 | 135 |
+| Isolation | Hybrid | Realization | 4 | 9.5 | 0 | 68 |
+| Compound Heavy | Strength | Deload | 1 | 6.0 | 4 | 202 |
+
+---
+
+### Generate Batch Prescriptions
+
+Generate prescriptions for multiple exercises at once. Useful for initial workout plan creation.
+
+**Endpoint:** `POST /api/prescriptions/generate-batch`
+
+**Request Body:**
+```json
+{
+  "prescriptions": [
+    {
+      "intensity_category": "compound_heavy",
+      "training_type": "hybrid",
+      "training_phase": "accumulation",
+      "week_in_phase": 2,
+      "is_primary": true
+    },
+    {
+      "intensity_category": "isolation",
+      "training_type": "hybrid",
+      "training_phase": "accumulation",
+      "week_in_phase": 2,
+      "is_primary": false
+    }
+  ]
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "prescriptions": [
+    {
+      "target_rpe": 7.5,
+      "target_rir": 2,
+      "rest_period_seconds": 270
+    },
+    {
+      "target_rpe": 8.5,
+      "target_rir": 1,
+      "rest_period_seconds": 68
+    }
+  ]
+}
+```
+
+**Notes:**
+- Maximum 50 prescriptions per batch request
+- All prescriptions use the same training phase and week_in_phase
+- Each exercise can have different intensity_category and is_primary status
+
+---
+
 ## Additional Athlete Endpoints
 
 ### Get RPE Calibration Status
@@ -912,9 +1026,15 @@ Currently no rate limits (to be implemented).
 - `block`: Block periodization with distinct phases
 
 ### Training Phase
-- `accumulation`: Volume focus
-- `intensification`: Intensity focus
-- `realization`: Peaking phase
+- `accumulation`: Volume focus (RPE modifier: -0.5)
+- `intensification`: Intensity focus (RPE modifier: +0.5)
+- `realization`: Peaking phase (RPE modifier: +1.0, capped at 9.0 for compounds)
+- `deload`: Active recovery (RPE modifier: -2.0, floor at 5.0)
+
+### Exercise Intensity Category
+- `compound_heavy`: High CNS demand exercises (Squats, Deadlifts, Bench Press)
+- `compound_moderate`: Moderate CNS demand (Rows, Lunges, OHP)
+- `isolation`: Low CNS demand (Curls, Extensions, Raises)
 
 ### Sleep Quality
 - `poor`

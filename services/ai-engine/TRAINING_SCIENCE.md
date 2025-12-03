@@ -9,14 +9,15 @@ This document explains the scientific principles and research backing the Athlet
 ## Table of Contents
 
 1. [Progressive Overload](#progressive-overload)
-2. [Gender & Age-Based Adjustments](#gender--age-based-adjustments)
-3. [Exercise-Specific Progression](#exercise-specific-progression)
-4. [Intensity Techniques](#intensity-techniques)
-5. [Autoregulated Deloads](#autoregulated-deloads)
-6. [Periodization Models](#periodization-models)
-7. [RPE Calibration](#rpe-calibration)
-8. [Machine Learning Integration](#machine-learning-integration)
-9. [Scientific References](#scientific-references)
+2. [Prescription Generation](#prescription-generation)
+3. [Gender & Age-Based Adjustments](#gender--age-based-adjustments)
+4. [Exercise-Specific Progression](#exercise-specific-progression)
+5. [Intensity Techniques](#intensity-techniques)
+6. [Autoregulated Deloads](#autoregulated-deloads)
+7. [Periodization Models](#periodization-models)
+8. [RPE Calibration](#rpe-calibration)
+9. [Machine Learning Integration](#machine-learning-integration)
+10. [Scientific References](#scientific-references)
 
 ---
 
@@ -44,6 +45,129 @@ Progressive overload is the gradual increase of stress placed on the body during
 **References:**
 - NSCA Guidelines (2008)
 - Schoenfeld et al. (2017): Volume landmarks for hypertrophy
+
+---
+
+## Prescription Generation
+
+### Overview
+
+The system automatically generates scientifically-validated training prescriptions for target RPE, RIR, and rest periods based on exercise characteristics, training goals, and training phase.
+
+### Exercise Intensity Categories
+
+Exercises are categorized by CNS (Central Nervous System) demand:
+
+| Category | Examples | CNS Demand |
+|----------|----------|------------|
+| **Compound Heavy** | Squats, Deadlifts, Bench Press | Very High |
+| **Compound Moderate** | Rows, Lunges, Overhead Press | Moderate |
+| **Isolation** | Bicep Curls, Tricep Extensions, Lateral Raises | Low |
+
+This categorization is stored in the database (`intensity_category` column) to avoid brittle string matching.
+
+### Base Prescription Ranges
+
+#### Strength Training
+
+| Exercise Category | RPE Range | Rest Period |
+|-------------------|-----------|-------------|
+| Compound Heavy | 7.0 - 8.0 | 180 - 300s |
+| Compound Moderate | 7.0 - 9.0 | 150 - 240s |
+| Isolation | 8.0 - 9.0 | 90 - 120s |
+
+#### Hypertrophy Training
+
+| Exercise Category | RPE Range | Rest Period |
+|-------------------|-----------|-------------|
+| Compound Heavy | 7.0 - 8.0 | 120 - 180s |
+| Compound Moderate | 7.0 - 9.0 | 90 - 150s |
+| Isolation | 8.0 - 10.0 | 60 - 90s |
+
+#### Hybrid Training
+
+Hybrid training uses **context-aware routing** rather than averaging:
+
+| Exercise Category | Follows | RPE Range | Rest Period |
+|-------------------|---------|-----------|-------------|
+| Compound Heavy | Strength | 7.0 - 8.0 | 180 - 300s |
+| Compound Moderate | Strength | 7.0 - 9.0 | 150 - 240s |
+| Isolation | Hypertrophy | 8.0 - 10.0 | 60 - 90s |
+
+**Rationale**: Compounds build strength (need CNS recovery), isolations maximize metabolic stress for growth.
+
+### Phase Modifiers
+
+| Phase | RPE Modifier | Rest Modifier | Rationale |
+|-------|-------------|---------------|-----------|
+| Accumulation | -0.5 | 0.9x | High volume, moderate intensity |
+| Intensification | +0.5 | 1.0x | Building toward peak |
+| Realization | +1.0 | 1.1x | Peaking (capped at 9.0 for compounds) |
+| **Deload** | **-2.0** | **0.75x** | **Active recovery, injury prevention** |
+
+**Deload Safety**: The deload phase aggressively reduces intensity to prevent injury and allow recovery. RPE never drops below 5.0 to maintain training stimulus.
+
+### Microcycle Progression
+
+Within each phase, difficulty increases week-by-week:
+
+| Week | RPE Modifier | Rationale |
+|------|-------------|-----------|
+| 1 | -0.5 | Ramp-up week |
+| 2 | 0.0 | Baseline |
+| 3 | +0.25 | Building |
+| 4+ | +0.5 | Peak of phase |
+
+This ensures Week 4 is harder than Week 1, even within the same phase, implementing progressive overload.
+
+### Safety Rules
+
+#### CNS Tax Rule
+
+**All compound exercises are capped at RPE 9.0 maximum**, regardless of training phase or week. This prevents form breakdown and injury risk from excessive CNS fatigue.
+
+**Rationale**: Heavy compound movements place significant stress on the central nervous system. Training at RPE 10 (true failure) on compounds increases injury risk and reduces training quality.
+
+#### Inverse RPE/RIR Law
+
+**Strictly enforced**: `RIR = 10 - RPE`
+
+This relationship must always hold. The system calculates RIR directly from RPE to ensure consistency.
+
+**Example**:
+- RPE 8.0 → RIR 2
+- RPE 9.5 → RIR 0 (or 1, depending on rounding)
+- RPE 7.0 → RIR 3
+
+#### Deload Floor
+
+During deload phases, RPE never drops below 5.0. This maintains a minimal training stimulus while allowing recovery.
+
+### Implementation
+
+```python
+# Example: Generate prescription for compound heavy exercise in hybrid training
+prescription = service.generate_prescription(
+    intensity_category=ExerciseIntensityCategory.COMPOUND_HEAVY,
+    training_type=TrainingType.HYBRID,
+    training_phase="accumulation",
+    week_in_phase=2,
+    is_primary=True
+)
+
+# Result:
+# {
+#   "target_rpe": 7.5,  # Base 8.0 - 0.5 (accumulation) + 0.0 (week 2)
+#   "target_rir": 2,    # 10 - 7.5 = 2.5 → rounded to 2
+#   "rest_period_seconds": 270  # Strength rest (180-300s), primary = max, phase = 0.9x
+# }
+```
+
+### Scientific References
+
+- **Zourdos et al. (2016)**: Novel Resistance Training-Specific Rating of Perceived Exertion Scale
+- **Schoenfeld et al. (2016)**: Effects of rest interval length on training adaptations
+- **Grgic et al. (2018)**: Rest interval between sets in resistance training: A systematic review
 
 ---
 
@@ -900,9 +1024,20 @@ LightGBM provides feature importance scores that can be accessed via API:
 - **Multiple periodization models** (DUP, Block, Linear)
 - **Automatic intensity techniques** (trigger-based set types and rep styles)
 
-### Recent Updates (November 2025)
+### Recent Updates (January 2025)
 
-**Automatic Intensity Techniques (NEW):**
+**Automatic Prescription Generation (NEW):**
+- Scientifically-validated automatic generation of target RPE, RIR, and rest periods
+- Exercise intensity categories stored in database (compound_heavy, compound_moderate, isolation)
+- CNS Tax Rule: All compound exercises capped at RPE 9.0 for safety
+- Inverse RPE/RIR Law: Strictly enforced as RIR = 10 - RPE
+- Hybrid training logic: Compounds follow strength rules, isolations follow hypertrophy rules
+- Phase-aware adjustments: Accumulation, intensification, realization, and deload
+- Microcycle progression: Week 1-4 progressive overload within each phase
+- Deload safety: Aggressive intensity reduction (-2.0 RPE modifier, floor at 5.0)
+- Database-driven: No brittle string matching, intensity category stored per exercise
+
+**Automatic Intensity Techniques:**
 - Added Set Types: Drop Set, Rest-Pause, Myo-Reps, Cluster Set, Superset, Pre-Exhaust
 - Added Rep Styles: Lengthened Partials, Tempo Eccentric, Tempo Paused, Eccentric Overload
 - Composable system: Set types and rep styles can be combined
@@ -935,5 +1070,5 @@ LightGBM provides feature importance scores that can be accessed via API:
 
 ---
 
-*Last Updated: November 30, 2025*
+*Last Updated: January 21, 2025*
 
