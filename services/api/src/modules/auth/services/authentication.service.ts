@@ -14,11 +14,12 @@ export class AuthenticationService {
     private readonly tokenManagementService: TokenManagementService,
   ) {}
 
-  async validateUser(email: string, password: string): Promise<number | null> {
+  async validateUser(email: string, password: string): Promise<{ id: number, hasInitialPlan: boolean } | null> {
     const user = await this.db
       .select({
         id: usersTable.id,
         password: usersTable.password,
+        hasInitialPlan: usersTable.hasInitialPlan,
       })
       .from(usersTable)
       .where(eq(usersTable.email, email))
@@ -37,7 +38,7 @@ export class AuthenticationService {
       return null;
     }
 
-    return user.id;
+    return { id: user.id, hasInitialPlan: user.hasInitialPlan };
   }
 
   async login(user: { id: number, hasInitialPlan: boolean }): Promise<{
