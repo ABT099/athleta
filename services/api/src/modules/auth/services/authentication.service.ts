@@ -43,8 +43,9 @@ export class AuthenticationService {
   async login(user: { id: number, hasInitialPlan: boolean }): Promise<{
     access_token: string;
     refresh_token: string;
+    hasInitialPlan: boolean;
   }> {
-    const payload = { sub: user.id, hasInitialPlan: user.hasInitialPlan };
+    const payload = { sub: user.id};
     const access_token = this.jwtService.sign(payload);
     const refresh_token =
       await this.tokenManagementService.generateRefreshToken(user.id);
@@ -52,6 +53,7 @@ export class AuthenticationService {
     return {
       access_token,
       refresh_token,
+      hasInitialPlan: user.hasInitialPlan,
     };
   }
 
