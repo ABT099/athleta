@@ -246,6 +246,60 @@ class PeriodizationService:
         return False, None
     
     @staticmethod
+    def should_adjust_periodization_on_plateau(
+        current_phase: TrainingPhase,
+        weeks_in_phase: int,
+        plateau_count: int,
+        periodization_model: PeriodizationModel
+    ) -> Tuple[bool, Optional[Dict]]:
+        """
+        Determine if periodization should be adjusted due to plateaus.
+        
+        Args:
+            current_phase: Current training phase
+            weeks_in_phase: Weeks in current phase
+            plateau_count: Number of plateaus detected in recent sessions
+            periodization_model: Current periodization model
+            
+        Returns:
+            Tuple of (should_adjust, adjustment_dict)
+        """
+        adjustment = None
+        
+        # If multiple plateaus, consider switching periodization model
+        if plateau_count >= 2 and periodization_model == PeriodizationModel.LINEAR:
+            # Switch to undulating (DUP) for more variation
+            adjustment = {
+                "action": "switch_periodization",
+                "from": PeriodizationModel.LINEAR.value,
+                "to": PeriodizationModel.UNDULATING.value,
+                "reason": "Multiple plateaus detected - switching to undulating periodization for more variation"
+            }
+            return True, adjustment
+        
+        # Early phase transition if plateau in current phase
+        if plateau_count >= 1 and weeks_in_phase >= 2:
+            if current_phase == TrainingPhase.ACCUMULATION:
+                adjustment = {
+                    "action": "early_phase_transition",
+                    "from": TrainingPhase.ACCUMULATION.value,
+                    "to": TrainingPhase.INTENSIFICATION.value,
+                    "reason": "Plateau detected - transitioning early to intensification phase"
+                }
+                return True, adjustment
+            
+            elif current_phase == TrainingPhase.INTENSIFICATION:
+                adjustment = {
+                    "action": "early_phase_transition",
+                    "from": TrainingPhase.INTENSIFICATION.value,
+                    "to": TrainingPhase.REALIZATION.value,
+                    "reason": "Plateau detected - transitioning early to realization phase"
+                }
+                return True, adjustment
+        
+        return False, None
+    
+    @staticmethod
     def recommend_plan_duration(
         training_type: TrainingType,
         experience: TrainingExperience,

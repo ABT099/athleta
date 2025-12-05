@@ -241,6 +241,90 @@ class VolumeManager:
         
         return effective_count
     
+    def calculate_overreach_volume(
+        self,
+        experience: TrainingExperience,
+        muscle_group: MuscleGroup,
+        current_volume: float,
+        focus_areas: Optional[List[str]] = None
+    ) -> Dict[str, float]:
+        """
+        Calculate overreach volume for volume cycling intervention.
+        
+        Overreach = 110-120% of MRV to force adaptation.
+        Used for breaking metabolic plateaus.
+        
+        Args:
+            experience: Training experience
+            muscle_group: Muscle group
+            current_volume: Current weekly volume (effective sets)
+            focus_areas: Optional focus areas
+            
+        Returns:
+            Dict with overreach volume and duration
+        """
+        landmarks = self.get_volume_landmarks(experience, muscle_group)
+        mrv = landmarks["mrv"]
+        
+        # Overreach is 110-120% of MRV
+        overreach_volume = mrv * 1.15  # 115% of MRV
+        
+        # Duration: 1-2 weeks depending on experience
+        duration_weeks = 2 if experience == TrainingExperience.ADVANCED else 1
+        
+        return {
+            "overreach_volume": round(overreach_volume, 1),
+            "current_volume": round(current_volume, 1),
+            "volume_increase": round((overreach_volume - current_volume) / current_volume * 100, 1) if current_volume > 0 else 0,
+            "duration_weeks": duration_weeks,
+            "mrv": mrv,
+            "note": "Overreach volume for breaking metabolic plateaus. Follow with deload week."
+        }
+    
+    def get_volume_cycle_phase(
+        self,
+        athlete_id: int,
+        muscle_group: MuscleGroup,
+        lookback_weeks: int = 4
+    ) -> Optional[str]:
+        """
+        Determine current volume cycle phase (overreach, deload, normal).
+        
+        Args:
+            athlete_id: Athlete ID
+            muscle_group: Muscle group to check
+            lookback_weeks: Weeks to look back
+            
+        Returns:
+            "overreach", "deload", or None (normal)
+        """
+        # Get current volume
+        current_volume = self.calculate_current_volume(
+            athlete_id, muscle_group, days_lookback=lookback_weeks * 7
+        )
+        
+        # Get athlete experience
+        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if not athlete:
+            return None
+        
+        landmarks = self.get_volume_landmarks(athlete.experience, muscle_group)
+        mrv = landmarks["mrv"]
+        mev = landmarks["mev"]
+        
+        total_sets = current_volume.get("total_sets", 0)
+        
+        # Overreach: >110% of MRV
+        if total_sets > mrv * 1.1:
+            return "overreach"
+        
+        # Deload: <MEV (intentional reduction)
+        if total_sets < mev * 0.9:
+            return "deload"
+        
+        # Normal: MEV to MRV range
+        return None
+    
     def _get_set_effectiveness(self, rir: Optional[int]) -> float:
         """
         Get effectiveness multiplier for a single set based on RIR.

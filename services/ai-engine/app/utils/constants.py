@@ -762,4 +762,25 @@ FOCUS_TIER_BONUS = 10  # Focus exercises sort earlier within same tier
 FOCUS_AREA_RECOVERY_BONUS = 12  # Additional recovery hours for focus muscles
 FOCUS_AREA_RPE_BONUS = 0.5  # Allow +0.5 RPE for focus muscle exercises
 
+# ==============================
+# PLATEAU DETECTION CONSTANTS
+# ==============================
+
+# Plateau detection thresholds
+PLATEAU_VOLUME_IMPROVEMENT_THRESHOLD = 0.02  # <2% improvement = plateau
+PLATEAU_RPE_INCREASE_THRESHOLD = 0.5  # RPE increase >0.5 with same/lower volume = struggling
+PLATEAU_MIN_SESSIONS = 3  # Minimum sessions needed to detect plateau
+
+# Volume cycling (overreach) parameters
+OVERREACH_VOLUME_MULTIPLIER = 1.15  # 115% of MRV for overreach
+OVERREACH_DURATION_WEEKS_BEGINNER = 1
+OVERREACH_DURATION_WEEKS_ADVANCED = 2
+
+# Constraint-based optimization limits
+CONSTRAINT_ACWR_MIN = 0.8
+CONSTRAINT_ACWR_MAX = 1.3
+CONSTRAINT_CNS_FATIGUE_MAX = 0.8  # Max CNS fatigue before constraint violation
+CONSTRAINT_MIN_VOLUME_MULT = 0.7  # Minimum volume multiplier
+CONSTRAINT_MIN_INTENSITY_MULT = 0.8  # Minimum intensity multiplier
+
 

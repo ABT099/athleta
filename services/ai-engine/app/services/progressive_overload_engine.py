@@ -107,6 +107,13 @@ class ProgressiveOverloadEngine:
             athlete_id, proposed_volume, proposed_exercises
         )
         
+        # Step 4.5: Detect and intervene on plateaus (AUTOMATIC)
+        from app.services.plateau_intervention import PlateauInterventionService
+        plateau_service = PlateauInterventionService(self.db)
+        plateau_interventions = plateau_service.detect_and_intervene(
+            athlete_id, workout_day_id, session_data, performance_analysis
+        )
+        
         # Step 5: Try ML prediction first, fallback to rules
         adjustments, prediction_source = self.calculate_next_workout_parameters_hybrid(
             athlete,
@@ -116,13 +123,45 @@ class ProgressiveOverloadEngine:
             injury_risk
         )
         
+        # Step 5.5: Apply constraint-based optimization
+        from app.ml.constrained_optimizer import ConstrainedOptimizer
+        optimizer = ConstrainedOptimizer(self.db)
+        optimized_params = optimizer.optimize(
+            athlete_id,
+            adjustments.get("volume_multiplier", 1.0),
+            adjustments.get("intensity_multiplier", 1.0),
+            injury_risk,
+            recovery_status,
+            athlete.training_type,
+            athlete.experience
+        )
+        
+        # Update adjustments with optimized parameters
+        adjustments["volume_multiplier"] = optimized_params["volume_multiplier"]
+        adjustments["intensity_multiplier"] = optimized_params["intensity_multiplier"]
+        adjustments["constraints_satisfied"] = optimized_params.get("constraints_satisfied", True)
+        # Track if adjustments were made to satisfy constraints
+        adjustments_made = optimized_params.get("adjustments_made", {})
+        if adjustments_made:
+            adjustments["constraints_adjusted"] = (
+                adjustments_made.get("volume_adjusted", False) or
+                adjustments_made.get("intensity_adjusted", False)
+            )
+        
+        # Add plateau interventions to adjustments
+        if plateau_interventions.get("plateaus_detected", 0) > 0:
+            adjustments["exercise_substitutions"] = plateau_interventions.get("exercise_substitutions", {})
+            adjustments["volume_cycle_phase"] = plateau_interventions.get("volume_cycle_phase")
+            adjustments["periodization_adjustment"] = plateau_interventions.get("periodization_adjustment")
+        
         # Step 6: Generate insights and recommendations
         ai_insights = self._generate_ai_insights(
             performance_analysis,
             recovery_status,
             injury_risk,
             adjustments,
-            prediction_source
+            prediction_source,
+            plateau_interventions
         )
         
         return {
@@ -1244,7 +1283,8 @@ class ProgressiveOverloadEngine:
         recovery: Dict,
         injury_risk: Dict,
         adjustments: Dict,
-        prediction_source: str = "rules"
+        prediction_source: str = "rules",
+        plateau_interventions: Optional[Dict] = None
     ) -> List[str]:
         """Generate actionable AI insights."""
         insights = []
@@ -1257,6 +1297,24 @@ class ProgressiveOverloadEngine:
             insights.append("🤖 Using pure ML prediction (high confidence)")
         else:
             insights.append("📊 Using rule-based prediction")
+        
+        # Plateau intervention insights (AUTOMATIC)
+        if plateau_interventions and plateau_interventions.get("plateaus_detected", 0) > 0:
+            for intervention in plateau_interventions.get("interventions", []):
+                exercise_name = intervention.get("exercise_name", "Exercise")
+                intervention_type = intervention.get("intervention_type")
+                recommendation = intervention.get("recommendation", "")
+                
+                if intervention_type == "exercise_substitution":
+                    # Get substitute name from intervention dict
+                    substitute_name = intervention.get("substitute_exercise_name", "alternative exercise")
+                    insights.append(f"🔄 Plateau detected on {exercise_name} - substituting with {substitute_name} for novel stimulus")
+                elif intervention_type == "volume_cycling":
+                    insights.append(f"📈 {recommendation}")
+                elif intervention_type == "periodization_adjustment":
+                    insights.append(f"⚙️ {recommendation}")
+                else:
+                    insights.append(f"⚠️ Plateau detected on {exercise_name} - {recommendation}")
         
         # Performance insights
         perf_level = performance.get("performance_level")
@@ -1277,6 +1335,10 @@ class ProgressiveOverloadEngine:
             insights.append("🚨 High injury risk detected. Immediate deload recommended.")
         elif injury_risk["risk_level"] == "moderate":
             insights.append("⚠️ Moderate injury risk. Monitor closely and reduce volume if needed.")
+        
+        # Constraint optimization insights
+        if adjustments.get("constraints_adjusted", False):
+            insights.append("🛡️ Parameters adjusted to satisfy injury prevention constraints")
         
         # Progression insights
         volume_mult = adjustments.get("volume_multiplier", 1.0)
