@@ -18,7 +18,7 @@ from sqlalchemy import desc
 from app.utils.constants import (
     SetType, RepStyle, TrainingType, TrainingPhase, TrainingExperience,
     ExerciseType, SET_TYPE_CONFIG, REP_STYLE_CONFIG, VALID_TECHNIQUE_COMBINATIONS,
-    MRV_SETS_PER_WEEK, MuscleGroup
+    MRV_SETS_PER_WEEK, MuscleGroup, EFFECTIVE_SET_RIR_THRESHOLD
 )
 
 
@@ -307,8 +307,8 @@ class IntensityTechniqueService:
         if not exercise_ids:
             return {"at_ceiling": False}
         
-        # Count sets in last week
-        weekly_sets = (
+        # Get all sets in last week and calculate effective sets
+        sets = (
             self.db.query(ExerciseSet)
             .join(WorkoutSession)
             .filter(
@@ -316,17 +316,21 @@ class IntensityTechniqueService:
                 WorkoutSession.session_date >= week_ago,
                 ExerciseSet.exercise_id.in_(exercise_ids)
             )
-            .count()
+            .all()
         )
+        
+        # Calculate effective sets (only RIR 0-4 count toward MRV)
+        weekly_sets = self._calculate_effective_sets_from_sets(sets)
         
         # At ceiling if >= 90% of MRV
         at_ceiling = weekly_sets >= (mrv * 0.9)
         
         return {
             "at_ceiling": at_ceiling,
-            "weekly_sets": weekly_sets,
+            "weekly_sets": round(weekly_sets, 1),
             "mrv": mrv,
-            "percentage_of_mrv": round((weekly_sets / mrv) * 100, 1) if mrv > 0 else 0
+            "percentage_of_mrv": round((weekly_sets / mrv) * 100, 1) if mrv > 0 else 0,
+            "note": "Volume calculated using effective sets (RIR 0-4 count fully, RIR 5-6 count 50%, RIR 7+ count 0%)"
         }
     
     def _select_set_type_for_triggers(
@@ -550,3 +554,39 @@ class IntensityTechniqueService:
             reasons.append(f"with {rep_style.value.replace('_', ' ').title()} rep style")
         
         return " | ".join(reasons) if reasons else "Standard straight sets"
+    
+    def _calculate_effective_sets_from_sets(self, sets: List) -> float:
+        """
+        Calculate effective sets from completed workout sets.
+        
+        Only sets close to failure (RIR 0-4) count toward MEV/MRV landmarks.
+        References: Schoenfeld et al. (2017) - Volume landmarks research
+        
+        Args:
+            sets: List of ExerciseSet records from completed workouts
+            
+        Returns:
+            Effective sets count (float)
+        """
+        if not sets:
+            return 0.0
+        
+        effective_count = 0.0
+        
+        for set_record in sets:
+            rir = set_record.rir
+            
+            # If no RIR recorded, assume effective (user may not have recorded it)
+            if rir is None:
+                effective_count += 1.0
+            # RIR 0-4: Fully effective (close to failure)
+            elif rir <= EFFECTIVE_SET_RIR_THRESHOLD:
+                effective_count += 1.0
+            # RIR 5-6: Partially effective (warm-up territory, minimal hypertrophy stimulus)
+            elif rir <= 6:
+                effective_count += 0.5
+            # RIR 7+: Not effective for hypertrophy (too far from failure)
+            else:
+                effective_count += 0.0
+        
+        return effective_count

@@ -14,7 +14,8 @@ from app.models import (
 )
 from app.utils.constants import (
     TrainingExperience, MuscleGroup, MuscleSize, MUSCLE_SIZE_MAP,
-    MEV_SETS_PER_WEEK, MRV_SETS_PER_WEEK, FocusArea, FOCUS_AREA_TO_MUSCLE_GROUPS
+    MEV_SETS_PER_WEEK, MRV_SETS_PER_WEEK, FocusArea, FOCUS_AREA_TO_MUSCLE_GROUPS,
+    EFFECTIVE_SET_RIR_THRESHOLD
 )
 from app.services.training_calculations import TrainingCalculations
 
@@ -186,18 +187,78 @@ class VolumeManager:
                 
                 if targets_muscle:
                     exercises_tracked.add(ex_id)
-                    total_sets += len(sets_list)
-                    # Calculate volume load (weight × reps)
+                    # Calculate effective sets (only RIR 0-4 count toward MEV/MRV)
+                    effective_sets = self._calculate_effective_sets_from_sets(sets_list)
+                    total_sets += effective_sets
+                    # Calculate volume load (weight × reps) only for effective sets
+                    # Weight by effectiveness: RIR 0-4 = 100%, RIR 5-6 = 50%, RIR 7+ = 0%
                     for set_record in sets_list:
-                        total_volume_load += set_record.weight * set_record.reps
+                        effectiveness = self._get_set_effectiveness(set_record.rir)
+                        total_volume_load += set_record.weight * set_record.reps * effectiveness
         
         return {
             "muscle_group": muscle_group.value,
-            "total_sets": total_sets,
+            "total_sets": round(total_sets, 1),
             "total_volume_load": round(total_volume_load, 1),
             "exercises_count": len(exercises_tracked),
             "days_analyzed": days_lookback,
+            "note": "Volume calculated using effective sets (RIR 0-4 count fully, RIR 5-6 count 50%, RIR 7+ count 0%). Volume load is weighted by set effectiveness for consistency."
         }
+    
+    def _calculate_effective_sets_from_sets(self, sets_list: List[ExerciseSet]) -> float:
+        """
+        Calculate effective sets from completed workout sets.
+        
+        Only sets close to failure (RIR 0-4) count toward MEV/MRV landmarks.
+        References: Schoenfeld et al. (2017) - Volume landmarks research
+        
+        Args:
+            sets_list: List of ExerciseSet records from completed workouts
+            
+        Returns:
+            Effective sets count (float)
+        """
+        if not sets_list:
+            return 0.0
+        
+        effective_count = 0.0
+        
+        for set_record in sets_list:
+            rir = set_record.rir
+            
+            # If no RIR recorded, assume effective (user may not have recorded it)
+            if rir is None:
+                effective_count += 1.0
+            # RIR 0-4: Fully effective (close to failure)
+            elif rir <= EFFECTIVE_SET_RIR_THRESHOLD:
+                effective_count += 1.0
+            # RIR 5-6: Partially effective (warm-up territory, minimal hypertrophy stimulus)
+            elif rir <= 6:
+                effective_count += 0.5
+            # RIR 7+: Not effective for hypertrophy (too far from failure)
+            else:
+                effective_count += 0.0
+        
+        return effective_count
+    
+    def _get_set_effectiveness(self, rir: Optional[int]) -> float:
+        """
+        Get effectiveness multiplier for a single set based on RIR.
+        
+        Args:
+            rir: Reps in reserve (None, 0-10+)
+            
+        Returns:
+            Effectiveness multiplier (0.0 to 1.0)
+        """
+        if rir is None:
+            return 1.0  # Assume effective if not recorded
+        elif rir <= EFFECTIVE_SET_RIR_THRESHOLD:
+            return 1.0  # Fully effective
+        elif rir <= 6:
+            return 0.5  # Partially effective
+        else:
+            return 0.0  # Not effective
     
     def get_volume_position(
         self,

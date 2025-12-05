@@ -597,4 +597,169 @@ DELOAD_RPE_FLOOR = 5.0          # Min RPE during deload (maintains training stim
 ABSOLUTE_RPE_FLOOR = 5.0        # Never prescribe below this
 ABSOLUTE_RPE_CEILING = 10.0     # Never prescribe above this
 
+# ==============================
+# PLAN ANALYZER CONSTANTS
+# ==============================
+
+# Push/Pull muscle group mappings for balance analysis
+# References: Contreras, Helms - Push/pull balance for shoulder health
+PUSH_MUSCLE_GROUPS: List[MuscleGroup] = [
+    MuscleGroup.CHEST,
+    MuscleGroup.SHOULDERS,
+    MuscleGroup.TRICEPS,
+]
+
+PULL_MUSCLE_GROUPS: List[MuscleGroup] = [
+    MuscleGroup.BACK,
+    MuscleGroup.BICEPS,
+    MuscleGroup.FOREARMS,
+]
+
+# Upper/Lower body muscle groups
+UPPER_MUSCLE_GROUPS: List[MuscleGroup] = [
+    MuscleGroup.CHEST,
+    MuscleGroup.BACK,
+    MuscleGroup.SHOULDERS,
+    MuscleGroup.BICEPS,
+    MuscleGroup.TRICEPS,
+    MuscleGroup.FOREARMS,
+]
+
+LOWER_MUSCLE_GROUPS: List[MuscleGroup] = [
+    MuscleGroup.QUADRICEPS,
+    MuscleGroup.HAMSTRINGS,
+    MuscleGroup.GLUTES,
+    MuscleGroup.CALVES,
+]
+
+# Movement pattern priority for exercise ordering
+# Lower number = higher priority (should come first in workout)
+# References: NSCA Essentials of Strength Training and Conditioning
+MOVEMENT_PRIORITY: Dict[str, int] = {
+    "squat": 1,      # Highest priority - foundational movement
+    "hinge": 2,      # Second priority - hip dominant
+    "push": 3,       # Upper body push
+    "pull": 4,       # Upper body pull
+    "carry": 5,      # Loaded carries
+    "lunge": 6,      # Unilateral lower body
+    "curl": 7,       # Isolation - biceps
+    "extension": 8,  # Isolation - triceps
+    "raise": 9,      # Isolation - shoulders
+    "fly": 10,       # Isolation - chest
+    "crunch": 11,    # Isolation - abs
+    "hold": 12,      # Isometric holds
+}
+
+# Workout duration thresholds (minutes)
+# References: Schoenfeld (2016) - Optimal training duration
+WORKOUT_DURATION_OPTIMAL = (45, 75)      # Optimal range
+WORKOUT_DURATION_ACCEPTABLE = (30, 90)   # Acceptable but suboptimal
+WORKOUT_DURATION_EXCESSIVE = 90          # Excessive - diminishing returns
+
+# Set execution and transition times (seconds) for duration estimation
+SET_EXECUTION_SECONDS = 45  # Average time to complete a set
+TRANSITION_SECONDS = 30      # Time between exercises (setup, walk, etc.)
+
+# Balance ratio targets
+# References: Contreras, Helms - Push/pull balance for shoulder health
+PUSH_PULL_RATIO_TARGET = 1.0           # 1:1 optimal ratio
+PUSH_PULL_RATIO_TOLERANCE = 0.2       # +/- 20% acceptable
+
+# Upper/Lower ratio is context-dependent (can be adjusted for focus)
+# Default is 1:1 for balanced training
+UPPER_LOWER_RATIO_TARGET = 1.0
+UPPER_LOWER_RATIO_TOLERANCE = 0.3     # More flexible than push/pull
+
+# Antagonist muscle pairs for balance checking
+ANTAGONIST_PAIRS: Dict[MuscleGroup, MuscleGroup] = {
+    MuscleGroup.CHEST: MuscleGroup.BACK,
+    MuscleGroup.BACK: MuscleGroup.CHEST,
+    MuscleGroup.QUADRICEPS: MuscleGroup.HAMSTRINGS,
+    MuscleGroup.HAMSTRINGS: MuscleGroup.QUADRICEPS,
+    MuscleGroup.BICEPS: MuscleGroup.TRICEPS,
+    MuscleGroup.TRICEPS: MuscleGroup.BICEPS,
+}
+
+# ==============================
+# ENHANCED PLAN ANALYZER CONSTANTS
+# ==============================
+
+# Effective Sets Threshold
+# Only sets close to failure (RIR 0-4) count toward MEV/MRV landmarks
+# References: Schoenfeld et al. (2017) - Volume landmarks research
+EFFECTIVE_SET_RIR_THRESHOLD = 4  # RIR 0-4 = fully effective, RIR 5-6 = partially effective, RIR 7+ = not effective
+
+# CNS Fatigue Tracking
+# Movement patterns that cause systemic (CNS) fatigue vs local (muscular) fatigue
+# References: Zourdos et al. (2016) - CNS fatigue in resistance training
+CNS_HEAVY_PATTERNS: List[str] = ["squat", "hinge"]  # Highest CNS demand
+CNS_MODERATE_PATTERNS: List[str] = ["pull", "push"]  # Moderate CNS demand
+CNS_LIGHT_PATTERNS: List[str] = ["curl", "extension", "raise", "fly", "crunch"]  # Minimal CNS demand
+
+# CNS Recovery Requirements
+CNS_RECOVERY_HOURS_HEAVY = 72      # Minimum hours between heavy CNS-demanding sessions
+CNS_RECOVERY_HOURS_MODERATE = 48   # Minimum hours between moderate CNS-demanding sessions
+
+# Systemic Fatigue Accumulation Rates
+# These values are per set - CNS fatigue scales with volume
+CNS_FATIGUE_PER_HEAVY_COMPOUND = 0.3      # Fatigue units per set of heavy compound exercise
+CNS_FATIGUE_PER_MODERATE_COMPOUND = 0.15  # Fatigue units per set of moderate compound exercise
+CNS_FATIGUE_RECOVERY_PER_REST_DAY = 0.5   # Fatigue recovery per rest day (50% reduction)
+
+# Training-Type-Specific Exercise Ordering Rules
+# Strength: Prioritize neurological freshness (CNS-demanding exercises first)
+STRENGTH_ORDER_PRIORITY: Dict[str, int] = {
+    "power": 1,              # Explosive movements when CNS is fresh
+    "compound_heavy": 2,     # Heavy compounds early (squats, deadlifts)
+    "compound_moderate": 3,  # Moderate compounds
+    "isolation": 4,          # Isolation work at end
+}
+
+# Hypertrophy: Prioritize metabolic stress (allows pre-exhaust, metabolic finishers)
+HYPERTROPHY_ORDER_PRIORITY: Dict[str, int] = {
+    "compound": 1,           # Compounds first (still important)
+    "isolation_pre_exhaust": 2,  # Isolation before compound OK for target muscle
+    "isolation_finisher": 3,     # High-rep isolations at end for metabolic stress
+}
+
+# Pre-exhaust rules for hypertrophy (isolation before compound for same muscle)
+HYPERTROPHY_PRE_EXHAUST_ALLOWED = True  # Allows isolation before compound for same muscle group
+STRENGTH_PRE_EXHAUST_ALLOWED = False    # Strength training: compounds must come first
+
+# ==============================
+# FOCUS AREA & EXERCISE TIER CONSTANTS
+# ==============================
+
+# Maximum focus areas allowed (prevents "select all" scenarios)
+MAX_FOCUS_AREAS = 3
+
+# Tier 1: Spinal loading exercises - ALWAYS first (subset of compound_heavy)
+# These exercises cause systemic fatigue and injury risk if performed when fatigued
+TIER_1_SPINAL_PATTERNS: List[str] = [
+    "squat", "deadlift", "clean", "snatch", "jerk", "good morning"
+]
+
+# Tier 5: Core/stabilizers - ALWAYS last (subset of isolation)
+# Training core first destabilizes the spine for the rest of the workout
+# Even if core is a focus area, it should be trained last
+TIER_5_CORE_PATTERNS: List[str] = [
+    "plank", "crunch", "ab", "core", "twist", "pallof", "dead bug", "bird dog"
+]
+
+# Tier mapping from intensityCategory (when not edge case)
+# Uses existing database field: compound_heavy, compound_moderate, isolation
+INTENSITY_CATEGORY_TIER_MAP: Dict[ExerciseIntensityCategory, int] = {
+    ExerciseIntensityCategory.COMPOUND_HEAVY: 2,    # Primary compounds (unless Tier 1 pattern)
+    ExerciseIntensityCategory.COMPOUND_MODERATE: 3, # Secondary compounds
+    ExerciseIntensityCategory.ISOLATION: 4,         # Standard isolation (unless Tier 5 pattern)
+}
+
+# Focus bonus (subtracted from score for within-tier priority)
+# Lower score = earlier in workout
+FOCUS_TIER_BONUS = 10  # Focus exercises sort earlier within same tier
+
+# Focus area modifiers for recovery and prescription
+FOCUS_AREA_RECOVERY_BONUS = 12  # Additional recovery hours for focus muscles
+FOCUS_AREA_RPE_BONUS = 0.5  # Allow +0.5 RPE for focus muscle exercises
+
 

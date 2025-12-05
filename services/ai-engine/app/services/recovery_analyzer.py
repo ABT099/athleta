@@ -8,11 +8,12 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
-from app.models import RecoveryMetrics, WorkoutSession, Athlete
+from app.models import RecoveryMetrics, WorkoutSession, Athlete, ExerciseSet, Exercise
 from app.utils.constants import (
     SleepQuality, SLEEP_QUALITY_MULTIPLIERS, MuscleGroup, 
     Gender, AGE_PROGRESSION_MODIFIERS, GENDER_RECOVERY_MODIFIERS,
-    TrainingExperience
+    TrainingExperience, CNS_HEAVY_PATTERNS, CNS_MODERATE_PATTERNS,
+    CNS_FATIGUE_PER_HEAVY_COMPOUND, CNS_FATIGUE_PER_MODERATE_COMPOUND
 )
 
 
@@ -427,6 +428,13 @@ class RecoveryAnalyzer:
                 # Use RPE only if volume not available
                 load = session.overall_rpe
             
+            # Add CNS fatigue factor (systemic fatigue from heavy compounds)
+            # CNS fatigue is additive, not multiplicative, so it's always included
+            # even if base load is 0 (missing RPE/volume data)
+            cns_load = self._calculate_cns_load(session)
+            # Weight CNS load more heavily (1.5x multiplier) as it affects systemic recovery
+            load = load + (cns_load * 1.5)
+            
             training_loads.append(load)
             days_ago.append(days_since)
         
@@ -475,8 +483,71 @@ class RecoveryAnalyzer:
             "recommendation": recommendation,
             "needs_deload": needs_deload,
             "average_recovery_score": round(avg_recovery_score, 3),
-            "workouts_analyzed": len(sessions)
+            "workouts_analyzed": len(sessions),
+            "note": "Fatigue calculation includes CNS (systemic) fatigue from heavy compound exercises"
         }
+    
+    def _calculate_cns_load(self, session: WorkoutSession) -> float:
+        """
+        Calculate CNS (systemic) fatigue load from a workout session.
+        
+        CNS fatigue is caused by heavy compound movements (squats, deadlifts, heavy rows)
+        and affects systemic recovery, not just local muscle recovery.
+        
+        Args:
+            session: WorkoutSession to analyze
+            
+        Returns:
+            CNS load factor (0.0 to ~1.0+)
+        """
+        # Get all exercise sets performed in this session
+        sets = (
+            self.db.query(ExerciseSet)
+            .filter(ExerciseSet.workout_session_id == session.id)
+            .all()
+        )
+        
+        if not sets:
+            return 0.0
+        
+        # Group sets by exercise to count volume per exercise type
+        exercise_sets_map = {}
+        for set_record in sets:
+            ex_id = set_record.exercise_id
+            if ex_id not in exercise_sets_map:
+                exercise_sets_map[ex_id] = []
+            exercise_sets_map[ex_id].append(set_record)
+        
+        # Get exercise details for all unique exercises
+        exercise_ids = list(exercise_sets_map.keys())
+        exercises = (
+            self.db.query(Exercise)
+            .filter(Exercise.id.in_(exercise_ids))
+            .all()
+        )
+        
+        # Create exercise lookup
+        exercise_map = {ex.id: ex for ex in exercises}
+        
+        cns_load = 0.0
+        
+        # Calculate CNS load based on number of sets per exercise type
+        for ex_id, sets_list in exercise_sets_map.items():
+            exercise = exercise_map.get(ex_id)
+            if not exercise:
+                continue
+            
+            movement_pattern = (exercise.movement_pattern or "").lower()
+            num_sets = len(sets_list)
+            
+            # Accumulate CNS fatigue based on number of sets
+            # More sets = proportionally more CNS fatigue
+            if movement_pattern in CNS_HEAVY_PATTERNS:
+                cns_load += CNS_FATIGUE_PER_HEAVY_COMPOUND * num_sets
+            elif movement_pattern in CNS_MODERATE_PATTERNS:
+                cns_load += CNS_FATIGUE_PER_MODERATE_COMPOUND * num_sets
+        
+        return cns_load
     
     def get_recovery_recommendations(
         self,
