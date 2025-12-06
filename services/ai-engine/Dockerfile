@@ -1,5 +1,11 @@
 FROM python:3.14-slim
 
+# Install system dependencies required by LightGBM
+RUN apt-get update && \
+    apt-get install -y --no-cache-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
@@ -25,4 +31,3 @@ EXPOSE 8000
 
 # Run the application
 CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
