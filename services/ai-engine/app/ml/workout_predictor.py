@@ -50,7 +50,7 @@ class WorkoutPredictor(BaseMLModel):
         super().__init__("workout_predictor")
         
         if not LIGHTGBM_AVAILABLE:
-            raise ImportError("lightgbm is required for WorkoutPredictor. Install with: pip install lightgbm")
+            raise ImportError("lightgbm is required for WorkoutPredictor. Install with: uv sync --extra ml")
         
         self.use_ensemble = use_ensemble
         self.n_ensemble_models = n_ensemble_models

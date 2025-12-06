@@ -6,41 +6,52 @@ authors = [
     {name = "AthleteAI Team"}
 ]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 license = {text = "MIT"}
 keywords = ["fitness", "training", "ai", "progressive-overload", "strength-training"]
 
 dependencies = [
     # Core FastAPI dependencies
-    "fastapi[standard]==0.109.0",
-    "uvicorn[standard]==0.27.0",
-    "pydantic==2.5.3",
-    "pydantic-settings==2.1.0",
+    "fastapi==0.124.0",
+    "uvicorn[standard]==0.38.0",
+    "pydantic==2.12.5",
+    "pydantic-settings==2.12.0",
     # Database
-    "sqlalchemy==2.0.25",
-    "psycopg2-binary==2.9.9",
-    "alembic==1.13.1",
+    "sqlalchemy==2.0.44",
+    "psycopg2-binary==2.9.11",
+    "alembic==1.17.2",
     # Scientific computing
-    "numpy==1.26.3",
-    "scipy==1.11.4",
-    "scikit-learn==1.4.0",
+    "numpy==2.3.5",
+    "scipy==1.16.3",
+    "scikit-learn==1.7.2",
     # Utilities
-    "python-dotenv==1.0.0",
-    "python-multipart==0.0.6",
+    "python-dotenv==1.2.1",
+    "python-multipart==0.0.20",
 ]
 
 [project.optional-dependencies]
 dev = [
     # Testing
-    "pytest==7.4.4",
-    "pytest-asyncio==0.23.3",
-    "pytest-cov==4.1.0",
-    "httpx==0.26.0",
+    "pytest==9.0.1",
+    "pytest-asyncio==1.3.0",
+    "pytest-cov==7.0.0",
+    "pytest-mock==3.15.1",
+    "freezegun==1.5.5",
+    "httpx==0.28.1",
     
     # Code quality
-    "black==23.12.1",
-    "ruff==0.1.13",
-    "mypy==1.8.0",
+    "black==25.11.0",
+    "ruff==0.14.8",
+    "mypy==1.19.0",
+]
+
+ml = [
+    # ML libraries (optional - code handles gracefully if missing)
+    "lightgbm>=4.6.0",
+]
+
+all = [
+    "athletai[dev,ml]",
 ]
 
 [build-system]
@@ -72,7 +83,7 @@ markers = [
 
 [tool.black]
 line-length = 100
-target-version = ["py311"]
+target-version = ["py314"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -91,7 +102,7 @@ extend-exclude = '''
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py314"
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -112,7 +123,7 @@ ignore = [
 "tests/*" = ["E501"]      # line length in tests
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.14"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

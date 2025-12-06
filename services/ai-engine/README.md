@@ -20,9 +20,9 @@ An AI-powered training system that implements scientific progressive overload pr
 
 ## Setup
 
-### 1. Install UV (Recommended)
+### 1. Install UV
 
-UV is a blazingly fast Python package installer (10-100x faster than pip):
+UV is a blazingly fast Python package manager (10-100x faster than pip):
 
 ```bash
 # Windows
@@ -32,21 +32,23 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### 2. Create virtual environment and install dependencies
+### 2. Install dependencies
 
-**With UV (Recommended):**
 ```bash
-uv venv
-.venv\Scripts\activate  # Windows: .venv\Scripts\activate
-uv pip install -e ".[dev]"
+# Install all dependencies (dev + ml)
+uv sync --all-extras
+
+# Or install specific extras:
+uv sync --extra dev          # Dev only (testing, linting)
+uv sync --extra ml           # ML libraries (lightgbm)
+uv sync --extra dev --extra ml  # Both
+
+# Activate virtual environment
+.venv\Scripts\activate       # Windows
+source .venv/bin/activate    # macOS/Linux
 ```
 
-**Or with traditional pip:**
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
+**Note:** ML libraries (lightgbm) are optional. The system works without them but ML prediction features will be disabled.
 
 ### 3. Set up environment variables
 

@@ -37,7 +37,7 @@ class SequentialPredictor(BaseMLModel):
         super().__init__("sequential_predictor")
         
         if not TENSORFLOW_AVAILABLE:
-            raise ImportError("TensorFlow is required for SequentialPredictor. Install with: pip install tensorflow")
+            raise ImportError("TensorFlow is required for SequentialPredictor. Install with: uv add tensorflow")
         
         self.model = None
         self.history = None
