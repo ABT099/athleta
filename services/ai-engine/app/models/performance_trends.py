@@ -13,10 +13,11 @@ class PerformanceTrend(Base):
     Track performance trends for autoregulated deloads.
     """
     __tablename__ = "performance_trends"
+    __table_args__ = {'schema': 'ai_analysis'}
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("athletes.id", ondelete="CASCADE"), nullable=False, index=True)
-    workout_session_id = Column(Integer, ForeignKey("workout_sessions.id", ondelete="CASCADE"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey("public.athletes.id", ondelete="CASCADE"), nullable=False, index=True)
+    workout_session_id = Column(Integer, ForeignKey("ai_analysis.workout_sessions.id", ondelete="CASCADE"), nullable=False)
     session_date = Column(DateTime, nullable=False, index=True)
     
     # Performance metrics

@@ -16,14 +16,14 @@ import { CreateWorkoutDto } from './dto/create-workout.dto';
 export class WorkoutsController {
   constructor(private readonly workoutsService: WorkoutsService) {}
 
-  @Post()
-  async createWorkout(
-    @Body() dto: CreateWorkoutDto,
-    @Query('initialPlan', ParseBoolPipe) initialPlan: boolean,
-  ): Promise<{ message: string }> {
-    await this.workoutsService.createWorkout();
-    return { message: 'Workout created successfully' };
-  }
+  // @Post()
+  // async createWorkout(
+  //   @Body() dto: CreateWorkoutDto,
+  //   @Query('initialPlan', ParseBoolPipe) initialPlan: boolean,
+  // ): Promise<{ message: string }> {
+  //   await this.workoutsService.createWorkout();
+  //   return { message: 'Workout created successfully' };
+  // }
 
   @Put('days/:workoutDayId/exercises/:exerciseId/substitute')
   async substituteExercise(

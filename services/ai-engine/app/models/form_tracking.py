@@ -22,10 +22,11 @@ class FormQualityTrend(Base):
     - Generate form quality alerts and recommendations
     """
     __tablename__ = "form_quality_trends"
+    __table_args__ = {'schema': 'ai_analysis'}
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("athletes.id"), nullable=False)
-    exercise_id = Column(Integer, ForeignKey("exercises.id"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey("public.athletes.id"), nullable=False)
+    exercise_id = Column(Integer, ForeignKey("public.exercises.id"), nullable=False)
     date = Column(DateTime, nullable=False, index=True)
     
     # Average form score for this exercise on this date

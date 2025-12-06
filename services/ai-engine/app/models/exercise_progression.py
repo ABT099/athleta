@@ -13,11 +13,12 @@ class ExerciseProgressionTracking(Base):
     Track exercise-specific progression for double progression logic.
     """
     __tablename__ = "exercise_progression_tracking"
+    __table_args__ = {'schema': 'ai_analysis'}
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("athletes.id", ondelete="CASCADE"), nullable=False, index=True)
-    exercise_id = Column(Integer, ForeignKey("exercises.id", ondelete="CASCADE"), nullable=False, index=True)
-    workout_session_id = Column(Integer, ForeignKey("workout_sessions.id", ondelete="CASCADE"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey("public.athletes.id", ondelete="CASCADE"), nullable=False, index=True)
+    exercise_id = Column(Integer, ForeignKey("public.exercises.id", ondelete="CASCADE"), nullable=False, index=True)
+    workout_session_id = Column(Integer, ForeignKey("ai_analysis.workout_sessions.id", ondelete="CASCADE"), nullable=False)
     session_date = Column(DateTime, nullable=False)
     
     # Performance data

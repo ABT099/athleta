@@ -1,6 +1,6 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
+from sqlalchemy import engine_from_config, text as sa_text
 from sqlalchemy import pool
 
 from alembic import context
@@ -60,9 +60,14 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_schemas=True,  # Include all schemas in autogenerate
     )
 
     with context.begin_transaction():
+        # Set search_path for offline mode - this will be emitted in the SQL script
+        # This ensures cross-schema foreign keys work correctly in generated SQL
+        # Alembic requires SQL statements to be wrapped with text() from SQLAlchemy
+        context.execute(sa_text("SET search_path TO public, ai_analysis"))
         context.run_migrations()
 
 
@@ -81,10 +86,14 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=target_metadata,
+            include_schemas=True,  # Include all schemas in autogenerate
         )
 
         with context.begin_transaction():
+            # Set search_path within Alembic's transaction context
+            # This ensures the setting persists for all migration operations
+            context.execute(sa_text("SET search_path TO public, ai_analysis"))
             context.run_migrations()
 
 

@@ -53,9 +53,10 @@ class PlanEntry(Base):
     This is updated by the AI engine based on athlete performance.
     """
     __tablename__ = "plan_entries"
+    __table_args__ = {'schema': 'ai_analysis'}
     
     id = Column(Integer, primary_key=True, index=True)
-    workout_plan_id = Column(Integer, ForeignKey("workout_plans.id"), nullable=False)
+    workout_plan_id = Column(Integer, ForeignKey("public.workout_plans.id"), nullable=False)
     
     # Week tracking
     week_number = Column(Integer, nullable=False)  # week within the mesocycle
@@ -182,10 +183,11 @@ class WorkoutSession(Base):
     Completed workout session with actual performance data.
     """
     __tablename__ = "workout_sessions"
+    __table_args__ = {'schema': 'ai_analysis'}
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("athletes.id"), nullable=False)
-    workout_day_id = Column(Integer, ForeignKey("workout_days.id"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey("public.athletes.id"), nullable=False)
+    workout_day_id = Column(Integer, ForeignKey("public.workout_days.id"), nullable=False)
     
     # Session timing - eagerly loaded (used by AI)
     session_date = Column(DateTime, nullable=False)
@@ -219,10 +221,11 @@ class ExerciseSet(Base):
     Individual set data with performance metrics.
     """
     __tablename__ = "exercise_sets"
+    __table_args__ = {'schema': 'ai_analysis'}
     
     id = Column(Integer, primary_key=True, index=True)
-    workout_session_id = Column(Integer, ForeignKey("workout_sessions.id"), nullable=False)
-    exercise_id = Column(Integer, ForeignKey("exercises.id"), nullable=False)
+    workout_session_id = Column(Integer, ForeignKey("ai_analysis.workout_sessions.id"), nullable=False)
+    exercise_id = Column(Integer, ForeignKey("public.exercises.id"), nullable=False)
     
     # Set information
     set_number = Column(Integer, nullable=False)

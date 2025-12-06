@@ -2,6 +2,7 @@ import { jsonb, real, index } from 'drizzle-orm/pg-core';
 import { serial } from 'drizzle-orm/pg-core';
 import { boolean, integer, pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
 
+// Tables in public schema (default schema, no need to specify explicitly)
 export const usersTable = pgTable('users', {
   id: serial().primaryKey(),
   email: varchar({ length: 255 }).notNull().unique(),
@@ -99,17 +100,6 @@ export const workoutDayExercisesTable = pgTable('workout_day_exercises', {
   progressionScheme: varchar({ length: 50 }),
   warmUpSets: integer().notNull().$default(() => 0), // 0-4 warm-up sets
   autoGenerateWarmups: boolean().notNull().$default(() => true), // Auto-generate warm-up weights/reps
-});
-
-export const formQualityTrendsTable = pgTable('form_quality_trends', {
-  id: serial().primaryKey(),
-  athleteId: integer().references(() => athletesTable.id).notNull(),
-  exerciseId: integer().references(() => exercisesTable.id).notNull(),
-  date: timestamp().notNull(),
-  averageFormScore: real().notNull(), // 1.0=excellent, 0.75=good, 0.5=fair, 0.25=poor
-  setsAnalyzed: integer().notNull(),
-  degradationRate: real(), // Form drop across sets in session
-  highRpePoorFormCount: integer().notNull().$default(() => 0),
 });
 
 export const refreshTokensTable = pgTable('refresh_tokens', {

@@ -17,8 +17,8 @@ class ExercisePersonalRecord(Base):
     __tablename__ = "exercise_personal_records"
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("athletes.id", ondelete="CASCADE"), nullable=False, index=True)
-    exercise_id = Column(Integer, ForeignKey("exercises.id", ondelete="CASCADE"), nullable=False, index=True)
+    athlete_id = Column(Integer, ForeignKey("public.athletes.id", ondelete="CASCADE"), nullable=False, index=True)
+    exercise_id = Column(Integer, ForeignKey("public.exercises.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Rep-max PRs
     one_rep_max = Column(Float, nullable=True)
@@ -57,6 +57,7 @@ class ExercisePersonalRecord(Base):
     # Unique constraint: one record per athlete-exercise combination
     __table_args__ = (
         UniqueConstraint('athlete_id', 'exercise_id', name='uq_athlete_exercise_pr'),
+        {'schema': 'ai_analysis'}
     )
     
     # Relationships

@@ -14,9 +14,10 @@ class RecoveryMetrics(Base):
     Daily recovery and readiness metrics.
     """
     __tablename__ = "recovery_metrics"
+    __table_args__ = {'schema': 'ai_analysis'}
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("athletes.id"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey("public.athletes.id"), nullable=False)
     
     # Date of measurement
     date = Column(DateTime, nullable=False, index=True)

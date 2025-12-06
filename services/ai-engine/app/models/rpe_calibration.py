@@ -13,10 +13,11 @@ class AthleteRPECalibration(Base):
     Track RPE accuracy and calibration for each athlete-exercise combination.
     """
     __tablename__ = "athlete_rpe_calibration"
+    __table_args__ = {'schema': 'ai_analysis'}
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("athletes.id", ondelete="CASCADE"), nullable=False, index=True)
-    exercise_id = Column(Integer, ForeignKey("exercises.id", ondelete="CASCADE"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey("public.athletes.id", ondelete="CASCADE"), nullable=False, index=True)
+    exercise_id = Column(Integer, ForeignKey("public.exercises.id", ondelete="CASCADE"), nullable=False)
     
     # RPE data
     reported_rpe = Column(Float, nullable=False)
