@@ -82,7 +82,7 @@ function run(command, cwd, stepName) {
   log("🧠 Step 2: AI Schema (Alembic)", "yellow");
 
   // Detect Python Environment
-  const venvPath = path.join(CONFIG.aiDir, "venv");
+  const venvPath = path.join(CONFIG.aiDir, ".venv");
   const isWin = process.platform === "win32";
   let pythonExec = "python"; // Default fallback
 
