@@ -60,3 +60,4 @@ UPDATE muscle_groups SET antagonist_id = (SELECT id FROM muscle_groups WHERE nam
 UPDATE muscle_groups SET antagonist_id = (SELECT id FROM muscle_groups WHERE name = 'abs') WHERE name = 'erector_spinae';
 
 
+

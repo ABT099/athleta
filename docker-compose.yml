@@ -1,4 +1,3 @@
-
 services:
   db:
     container_name: athleta_db
@@ -16,6 +15,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  muscle-image-api:
+    container_name: muscle-image-api
+    build:
+      context: ./services/muscle-image
+      dockerfile: Dockerfile
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+    depends_on:
+      - db
 
 volumes:
   postgres_data:
