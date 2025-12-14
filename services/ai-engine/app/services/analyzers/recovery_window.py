@@ -7,13 +7,13 @@ References: Schoenfeld, Krieger - Recovery time requirements.
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
+from app.models import MuscleGroupModel
 from app.utils.constants import (
-    MuscleGroup, RECOVERY_TIME_HOURS, MUSCLE_SIZE_MAP,
     CNS_HEAVY_PATTERNS, CNS_MODERATE_PATTERNS,
     CNS_RECOVERY_HOURS_HEAVY, CNS_RECOVERY_HOURS_MODERATE,
     CNS_FATIGUE_PER_HEAVY_COMPOUND, CNS_FATIGUE_PER_MODERATE_COMPOUND,
     CNS_FATIGUE_RECOVERY_PER_REST_DAY, FOCUS_AREA_RECOVERY_BONUS,
-    FocusArea, FOCUS_AREA_TO_MUSCLE_GROUPS
+    FocusArea
 )
 
 
@@ -97,20 +97,21 @@ class RecoveryWindowAnalyzer:
             if len(training_days) < 2:
                 continue  # Only trained once, no recovery issue
             
-            # Get required recovery time for this muscle
-            try:
-                muscle_group = MuscleGroup(muscle_name)
-                muscle_size = MUSCLE_SIZE_MAP.get(muscle_group)
-                required_hours = RECOVERY_TIME_HOURS.get(muscle_size, 48)
-                
-                # Add recovery bonus for focus muscles
-                if muscle_group in focus_muscle_groups:
-                    required_hours += FOCUS_AREA_RECOVERY_BONUS
-                    is_focus = True
-                else:
-                    is_focus = False
-            except (ValueError, KeyError):
-                required_hours = 48  # Default
+            # Get required recovery time for this muscle from database
+            muscle = self.db.query(MuscleGroupModel).filter(
+                MuscleGroupModel.name == muscle_name
+            ).first()
+            
+            if muscle:
+                required_hours = muscle.base_recovery_hours
+            else:
+                required_hours = 48  # Default fallback
+            
+            # Add recovery bonus for focus muscles
+            if muscle_name in focus_muscle_groups:
+                required_hours += FOCUS_AREA_RECOVERY_BONUS
+                is_focus = True
+            else:
                 is_focus = False
             
             # Calculate hours between consecutive sessions using actual hours
@@ -338,15 +339,23 @@ class RecoveryWindowAnalyzer:
                 if not exercise_id:
                     continue
                 
-                # Get exercise from database
-                from app.models import Exercise
-                ex = self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
-                if not ex:
-                    continue
+                # Get muscle activations for this exercise via junction table
+                from app.models import ExerciseMuscle
+                
+                # Get primary muscles (activation >= 70%)
+                muscle_links = (
+                    self.db.query(ExerciseMuscle, MuscleGroupModel)
+                    .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
+                    .filter(
+                        ExerciseMuscle.exercise_id == exercise_id,
+                        ExerciseMuscle.activation_percent >= 70  # Primary targets
+                    )
+                    .all()
+                )
                 
                 # Add primary muscles to the day
-                primary_muscles = ex.primary_muscles or []
-                for muscle_name in primary_muscles:
+                for link, muscle in muscle_links:
+                    muscle_name = muscle.name
                     if muscle_name not in muscle_to_days:
                         muscle_to_days[muscle_name] = []
                     if day_number not in muscle_to_days[muscle_name]:
@@ -360,23 +369,39 @@ class RecoveryWindowAnalyzer:
     
     def _expand_focus_areas(self, focus_areas: List[str]) -> set:
         """
-        Expand focus areas to muscle groups.
+        Expand focus areas to muscle group names.
         
         Args:
             focus_areas: List of focus area strings (e.g., ["chest", "back"])
             
         Returns:
-            Set of MuscleGroup enums
+            Set of muscle group names
         """
         if not focus_areas:
             return set()
         
+        # Map focus areas to muscle names
+        focus_to_muscles = {
+            "chest": {"upper_chest", "mid_chest", "lower_chest"},
+            "back": {"lats", "upper_traps", "mid_back", "lower_traps"},
+            "shoulders": {"anterior_delt", "lateral_delt", "posterior_delt"},
+            "arms": {"biceps", "triceps", "forearms"},
+            "legs": {"quadriceps", "hamstrings", "glutes", "hip_flexors", "calves"},
+            "core": {"abs", "erector_spinae"},
+        }
+        
         muscle_groups = set()
         for focus_area_str in focus_areas:
             try:
-                focus_area = FocusArea(focus_area_str.lower())
-                groups = FOCUS_AREA_TO_MUSCLE_GROUPS.get(focus_area, [])
-                muscle_groups.update(groups)
+                focus_area_lower = focus_area_str.lower()
+                # Try as FocusArea enum
+                try:
+                    focus_area = FocusArea(focus_area_lower)
+                    muscles = focus_to_muscles.get(focus_area.value, set())
+                    muscle_groups.update(muscles)
+                except ValueError:
+                    # Maybe it's a direct muscle name
+                    muscle_groups.add(focus_area_lower)
             except (ValueError, KeyError):
                 continue
         

@@ -3,6 +3,7 @@ SQLAlchemy models for the application.
 """
 from app.models.athlete import Athlete
 from app.models.exercise import Exercise
+from app.models.muscle_group import MuscleGroupModel, ExerciseMuscle
 from app.models.workout import (
     WorkoutPlan,
     PlanEntry,
@@ -21,6 +22,8 @@ from app.models.personal_records import ExercisePersonalRecord
 __all__ = [
     "Athlete",
     "Exercise",
+    "MuscleGroupModel",
+    "ExerciseMuscle",
     "WorkoutPlan",
     "PlanEntry",
     "WorkoutDay",

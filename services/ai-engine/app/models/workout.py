@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKe
 from sqlalchemy.orm import relationship, deferred
 from datetime import datetime
 
-from app.database import Base
+from app.database import Base, get_schema_table_args, get_fk_reference
 from app.utils.constants import TrainingType, PeriodizationModel, TrainingPhase
 
 
@@ -20,7 +20,6 @@ class WorkoutPlan(Base):
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     name = deferred(Column(String(255), nullable=False))
-    description = deferred(Column(Text, nullable=True))
     created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
     
     # Plan characteristics - eagerly loaded (used by AI)
@@ -53,10 +52,10 @@ class PlanEntry(Base):
     This is updated by the AI engine based on athlete performance.
     """
     __tablename__ = "plan_entries"
-    __table_args__ = {'schema': 'ai_analysis'}
+    __table_args__ = get_schema_table_args("ai_analysis")
     
     id = Column(Integer, primary_key=True, index=True)
-    workout_plan_id = Column(Integer, ForeignKey("public.workout_plans.id"), nullable=False)
+    workout_plan_id = Column(Integer, ForeignKey(get_fk_reference("workout_plans.id")), nullable=False)
     
     # Week tracking
     week_number = Column(Integer, nullable=False)  # week within the mesocycle
@@ -103,7 +102,6 @@ class WorkoutDay(Base):
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     name = deferred(Column(String(255), nullable=False))  # e.g., "Push Day A", "Lower Body"
-    description = deferred(Column(Text, nullable=True))
     created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
     
     # Day of week (0=Monday, 6=Sunday) - eagerly loaded (used by AI)
@@ -183,11 +181,11 @@ class WorkoutSession(Base):
     Completed workout session with actual performance data.
     """
     __tablename__ = "workout_sessions"
-    __table_args__ = {'schema': 'ai_analysis'}
+    __table_args__ = get_schema_table_args("ai_analysis")
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("public.athletes.id"), nullable=False)
-    workout_day_id = Column(Integer, ForeignKey("public.workout_days.id"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id")), nullable=False)
+    workout_day_id = Column(Integer, ForeignKey(get_fk_reference("workout_days.id")), nullable=False)
     
     # Session timing - eagerly loaded (used by AI)
     session_date = Column(DateTime, nullable=False)
@@ -221,11 +219,11 @@ class ExerciseSet(Base):
     Individual set data with performance metrics.
     """
     __tablename__ = "exercise_sets"
-    __table_args__ = {'schema': 'ai_analysis'}
+    __table_args__ = get_schema_table_args("ai_analysis")
     
     id = Column(Integer, primary_key=True, index=True)
-    workout_session_id = Column(Integer, ForeignKey("ai_analysis.workout_sessions.id"), nullable=False)
-    exercise_id = Column(Integer, ForeignKey("public.exercises.id"), nullable=False)
+    workout_session_id = Column(Integer, ForeignKey(get_fk_reference("workout_sessions.id", "ai_analysis")), nullable=False)
+    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id")), nullable=False)
     
     # Set information
     set_number = Column(Integer, nullable=False)

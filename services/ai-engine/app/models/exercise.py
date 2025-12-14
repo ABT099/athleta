@@ -5,12 +5,13 @@ from sqlalchemy import Column, Integer, String, Enum, Float, Text, ARRAY
 from sqlalchemy.orm import relationship, deferred
 
 from app.database import Base
-from app.utils.constants import MuscleGroup
 
 
 class Exercise(Base):
     """
     Exercise library with muscle groups and characteristics.
+    
+    Muscles are now linked via ExerciseMuscle junction table with activation percentages.
     """
     __tablename__ = "exercises"
     
@@ -20,13 +21,6 @@ class Exercise(Base):
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     description = deferred(Column(Text, nullable=True))
     equipment = deferred(Column(String(100), nullable=True))
-    
-    # Muscle groups (stored as array of enums) - eagerly loaded (used by AI)
-    # Primary muscles targeted
-    primary_muscles = Column(ARRAY(String), nullable=False)
-    
-    # Secondary muscles involved
-    secondary_muscles = Column(ARRAY(String), nullable=True)
     
     # Injury risk assessment
     injury_risk_level = Column(Float, default=1.0, nullable=False)  # 1.0 = low, 2.0 = medium, 3.0 = high
@@ -45,6 +39,7 @@ class Exercise(Base):
     )  # CNS demand category for prescription generation
     
     # Relationships
+    muscle_links = relationship("ExerciseMuscle", back_populates="exercise", cascade="all, delete-orphan")
     workout_day_exercises = relationship("WorkoutDayExercise", back_populates="exercise")
     rpe_calibrations = relationship("AthleteRPECalibration", back_populates="exercise", cascade="all, delete-orphan")
     progression_tracking = relationship("ExerciseProgressionTracking", back_populates="exercise", cascade="all, delete-orphan")

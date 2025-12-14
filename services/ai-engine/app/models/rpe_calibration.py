@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from app.database import Base
+from app.database import Base, get_schema_table_args, get_fk_reference
 
 
 class AthleteRPECalibration(Base):
@@ -13,11 +13,11 @@ class AthleteRPECalibration(Base):
     Track RPE accuracy and calibration for each athlete-exercise combination.
     """
     __tablename__ = "athlete_rpe_calibration"
-    __table_args__ = {'schema': 'ai_analysis'}
+    __table_args__ = get_schema_table_args("ai_analysis")
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("public.athletes.id", ondelete="CASCADE"), nullable=False, index=True)
-    exercise_id = Column(Integer, ForeignKey("public.exercises.id", ondelete="CASCADE"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id"), ondelete="CASCADE"), nullable=False, index=True)
+    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id"), ondelete="CASCADE"), nullable=False)
     
     # RPE data
     reported_rpe = Column(Float, nullable=False)

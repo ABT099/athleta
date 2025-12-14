@@ -114,6 +114,55 @@ def db_session():
     TestingSessionLocal = sessionmaker(bind=engine)
     session = TestingSessionLocal()
     
+    # Seed muscle groups for tests (required since Drizzle manages these in production)
+    try:
+        from app.models import MuscleGroupModel
+        # Check if muscle groups already exist
+        if session.query(MuscleGroupModel).count() == 0:
+            # Seed basic muscle groups needed for tests
+            muscle_groups_data = [
+                # Chest (3)
+                ("mid_chest", "Mid Chest", "large", 72, None),
+                ("upper_chest", "Upper Chest", "large", 72, None),
+                ("lower_chest", "Lower Chest", "large", 72, None),
+                # Back (4)
+                ("lats", "Lats", "large", 72, None),
+                ("mid_back", "Mid Back", "medium", 60, None),
+                ("upper_traps", "Upper Traps", "medium", 60, None),
+                ("lower_traps", "Lower Traps", "medium", 60, None),
+                # Shoulders (3)
+                ("anterior_delt", "Front Delts", "medium", 60, None),
+                ("lateral_delt", "Side Delts", "small", 48, None),
+                ("posterior_delt", "Rear Delts", "small", 48, None),
+                # Arms (3)
+                ("biceps", "Biceps", "small", 48, None),
+                ("triceps", "Triceps", "small", 48, None),
+                ("forearms", "Forearms", "small", 48, None),
+                # Legs (5)
+                ("quadriceps", "Quadriceps", "large", 72, None),
+                ("hamstrings", "Hamstrings", "large", 72, None),
+                ("glutes", "Glutes", "large", 72, None),
+                ("hip_flexors", "Hip Flexors", "medium", 60, None),
+                ("calves", "Calves", "small", 48, None),
+                # Core (2)
+                ("abs", "Abs", "medium", 60, None),  # Medium muscles require 60 hours recovery
+                ("erector_spinae", "Lower Back", "medium", 60, None),
+            ]
+            
+            for name, display_name, size, recovery_hours, antagonist_id in muscle_groups_data:
+                mg = MuscleGroupModel(
+                    name=name,
+                    display_name=display_name,
+                    size=size,
+                    base_recovery_hours=recovery_hours,
+                    antagonist_id=antagonist_id
+                )
+                session.add(mg)
+            session.commit()
+    except Exception:
+        # If seeding fails, continue anyway (might already exist)
+        session.rollback()
+    
     try:
         yield session
         # Commit any pending changes before cleanup

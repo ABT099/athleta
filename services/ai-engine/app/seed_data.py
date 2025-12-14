@@ -1,10 +1,10 @@
 """
-Seed data for exercises library.
+Seed data for exercises library with granular muscle activations.
 
-Contains common exercises with muscle groups and injury risk levels.
+Contains common exercises with detailed muscle activation percentages.
 """
 from sqlalchemy.orm import Session
-from app.models import Exercise
+from app.models import Exercise, MuscleGroupModel, ExerciseMuscle
 from app.database import SessionLocal
 
 
@@ -14,49 +14,69 @@ EXERCISE_SEED_DATA = [
         "name": "Barbell Bench Press",
         "description": "Compound chest exercise",
         "equipment": "Barbell",
-        "difficulty": "intermediate",
-        "primary_muscles": ["chest"],
-        "secondary_muscles": ["triceps", "shoulders"],
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["shoulder", "elbow"],
         "movement_pattern": "push",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.7,
+        "intensity_category": "compound_heavy",
+        "muscles": [
+            ("mid_chest", 90),
+            ("anterior_delt", 60),
+            ("triceps", 50),
+            ("upper_chest", 30),
+            ("lower_chest", 25),
+        ]
     },
     {
         "name": "Incline Dumbbell Press",
         "description": "Upper chest focused press",
         "equipment": "Dumbbells",
-        "difficulty": "intermediate",
-        "primary_muscles": ["chest"],
-        "secondary_muscles": ["shoulders", "triceps"],
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder"],
         "movement_pattern": "push",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.6,
+        "intensity_category": "compound_moderate",
+        "muscles": [
+            ("upper_chest", 85),
+            ("anterior_delt", 65),
+            ("triceps", 45),
+            ("mid_chest", 40),
+        ]
     },
     {
         "name": "Cable Fly",
         "description": "Isolation chest exercise",
         "equipment": "Cable Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["chest"],
-        "secondary_muscles": [],
         "injury_risk_level": 1.0,
         "joint_stress_areas": ["shoulder"],
         "movement_pattern": "fly",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.3,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("mid_chest", 80),
+            ("upper_chest", 30),
+            ("lower_chest", 30),
+        ]
     },
     {
         "name": "Push-Ups",
         "description": "Bodyweight chest exercise",
         "equipment": "None",
-        "difficulty": "beginner",
-        "primary_muscles": ["chest"],
-        "secondary_muscles": ["triceps", "shoulders", "abs"],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "push",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.2,
+        "intensity_category": "compound_moderate",
+        "muscles": [
+            ("mid_chest", 75),
+            ("triceps", 50),
+            ("anterior_delt", 45),
+            ("abs", 20),
+        ]
     },
     
     # === BACK EXERCISES ===
@@ -64,61 +84,89 @@ EXERCISE_SEED_DATA = [
         "name": "Barbell Deadlift",
         "description": "Full body posterior chain exercise",
         "equipment": "Barbell",
-        "difficulty": "advanced",
-        "primary_muscles": ["back", "glutes", "hamstrings"],
-        "secondary_muscles": ["lower_back", "forearms"],
         "injury_risk_level": 2.5,
         "joint_stress_areas": ["lower_back", "hip"],
         "movement_pattern": "hinge",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.9,
+        "intensity_category": "compound_heavy",
+        "muscles": [
+            ("erector_spinae", 85),
+            ("glutes", 80),
+            ("hamstrings", 75),
+            ("upper_traps", 60),
+            ("lats", 40),
+            ("forearms", 35),
+        ]
     },
     {
         "name": "Pull-Ups",
         "description": "Bodyweight back exercise",
         "equipment": "Pull-up Bar",
-        "difficulty": "intermediate",
-        "primary_muscles": ["back"],
-        "secondary_muscles": ["biceps", "forearms"],
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder", "elbow"],
         "movement_pattern": "pull",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.6,
+        "intensity_category": "compound_moderate",
+        "muscles": [
+            ("lats", 85),
+            ("biceps", 60),
+            ("mid_back", 50),
+            ("posterior_delt", 30),
+            ("forearms", 25),
+        ]
     },
     {
         "name": "Bent-Over Barbell Row",
         "description": "Compound back exercise",
         "equipment": "Barbell",
-        "difficulty": "intermediate",
-        "primary_muscles": ["back"],
-        "secondary_muscles": ["biceps", "lower_back"],
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["lower_back"],
         "movement_pattern": "pull",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.7,
+        "intensity_category": "compound_heavy",
+        "muscles": [
+            ("mid_back", 80),
+            ("lats", 70),
+            ("biceps", 50),
+            ("erector_spinae", 45),
+            ("posterior_delt", 40),
+        ]
     },
     {
         "name": "Lat Pulldown",
         "description": "Machine back exercise",
         "equipment": "Cable Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["back"],
-        "secondary_muscles": ["biceps"],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "pull",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.3,
+        "intensity_category": "compound_moderate",
+        "muscles": [
+            ("lats", 85),
+            ("biceps", 55),
+            ("mid_back", 45),
+        ]
     },
     {
         "name": "Cable Row",
         "description": "Cable machine rowing",
         "equipment": "Cable Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["back"],
-        "secondary_muscles": ["biceps"],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "pull",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.3,
+        "intensity_category": "compound_moderate",
+        "muscles": [
+            ("mid_back", 80),
+            ("lats", 65),
+            ("biceps", 50),
+            ("posterior_delt", 35),
+        ]
     },
     
     # === SHOULDER EXERCISES ===
@@ -126,37 +174,50 @@ EXERCISE_SEED_DATA = [
         "name": "Overhead Press",
         "description": "Compound shoulder exercise",
         "equipment": "Barbell",
-        "difficulty": "intermediate",
-        "primary_muscles": ["shoulders"],
-        "secondary_muscles": ["triceps", "abs"],
         "injury_risk_level": 2.5,
         "joint_stress_areas": ["shoulder", "lower_back"],
         "movement_pattern": "push",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.7,
+        "intensity_category": "compound_heavy",
+        "muscles": [
+            ("anterior_delt", 85),
+            ("lateral_delt", 60),
+            ("triceps", 55),
+            ("upper_traps", 40),
+            ("abs", 25),
+        ]
     },
     {
         "name": "Dumbbell Lateral Raise",
         "description": "Shoulder isolation",
         "equipment": "Dumbbells",
-        "difficulty": "beginner",
-        "primary_muscles": ["shoulders"],
-        "secondary_muscles": [],
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder"],
         "movement_pattern": "raise",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.2,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("lateral_delt", 90),
+            ("anterior_delt", 20),
+        ]
     },
     {
         "name": "Face Pulls",
         "description": "Rear delt and upper back",
         "equipment": "Cable Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["shoulders", "back"],
-        "secondary_muscles": [],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "pull",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.3,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("posterior_delt", 85),
+            ("mid_back", 50),
+            ("upper_traps", 30),
+        ]
     },
     
     # === LEG EXERCISES ===
@@ -164,85 +225,112 @@ EXERCISE_SEED_DATA = [
         "name": "Barbell Back Squat",
         "description": "Compound leg exercise",
         "equipment": "Barbell",
-        "difficulty": "intermediate",
-        "primary_muscles": ["quadriceps", "glutes"],
-        "secondary_muscles": ["hamstrings", "abs"],
         "injury_risk_level": 2.5,
         "joint_stress_areas": ["knee", "hip", "lower_back"],
         "movement_pattern": "squat",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.8,
+        "intensity_category": "compound_heavy",
+        "muscles": [
+            ("quadriceps", 90),
+            ("glutes", 75),
+            ("hamstrings", 40),
+            ("erector_spinae", 35),
+            ("abs", 25),
+        ]
     },
     {
         "name": "Romanian Deadlift",
         "description": "Hamstring focused hinge",
         "equipment": "Barbell",
-        "difficulty": "intermediate",
-        "primary_muscles": ["hamstrings", "glutes"],
-        "secondary_muscles": ["lower_back"],
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["lower_back", "hip"],
         "movement_pattern": "hinge",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.7,
+        "intensity_category": "compound_heavy",
+        "muscles": [
+            ("hamstrings", 85),
+            ("glutes", 75),
+            ("erector_spinae", 60),
+            ("forearms", 30),
+        ]
     },
     {
         "name": "Leg Press",
         "description": "Machine leg exercise",
         "equipment": "Leg Press Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["quadriceps", "glutes"],
-        "secondary_muscles": ["hamstrings"],
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
         "movement_pattern": "squat",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.3,
+        "intensity_category": "compound_moderate",
+        "muscles": [
+            ("quadriceps", 85),
+            ("glutes", 70),
+            ("hamstrings", 35),
+        ]
     },
     {
         "name": "Leg Extension",
         "description": "Quad isolation",
         "equipment": "Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["quadriceps"],
-        "secondary_muscles": [],
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
         "movement_pattern": "extension",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.1,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("quadriceps", 95),
+        ]
     },
     {
         "name": "Leg Curl",
         "description": "Hamstring isolation",
         "equipment": "Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["hamstrings"],
-        "secondary_muscles": [],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "curl",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.1,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("hamstrings", 95),
+        ]
     },
     {
         "name": "Bulgarian Split Squat",
         "description": "Single leg squat variation",
         "equipment": "Dumbbells",
-        "difficulty": "intermediate",
-        "primary_muscles": ["quadriceps", "glutes"],
-        "secondary_muscles": ["hamstrings"],
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
         "movement_pattern": "squat",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.6,
+        "intensity_category": "compound_moderate",
+        "muscles": [
+            ("quadriceps", 85),
+            ("glutes", 75),
+            ("hamstrings", 40),
+        ]
     },
     {
         "name": "Walking Lunges",
         "description": "Dynamic leg exercise",
         "equipment": "Dumbbells",
-        "difficulty": "beginner",
-        "primary_muscles": ["quadriceps", "glutes"],
-        "secondary_muscles": ["hamstrings"],
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
         "movement_pattern": "lunge",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.5,
+        "intensity_category": "compound_moderate",
+        "muscles": [
+            ("quadriceps", 80),
+            ("glutes", 70),
+            ("hamstrings", 35),
+        ]
     },
     
     # === ARM EXERCISES ===
@@ -250,61 +338,75 @@ EXERCISE_SEED_DATA = [
         "name": "Barbell Curl",
         "description": "Bicep exercise",
         "equipment": "Barbell",
-        "difficulty": "beginner",
-        "primary_muscles": ["biceps"],
-        "secondary_muscles": ["forearms"],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "curl",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.2,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("biceps", 95),
+            ("forearms", 25),
+        ]
     },
     {
         "name": "Hammer Curl",
         "description": "Bicep and forearm exercise",
         "equipment": "Dumbbells",
-        "difficulty": "beginner",
-        "primary_muscles": ["biceps"],
-        "secondary_muscles": ["forearms"],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "curl",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.2,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("biceps", 85),
+            ("forearms", 60),
+        ]
     },
     {
         "name": "Tricep Dips",
         "description": "Bodyweight tricep exercise",
         "equipment": "Dip Station",
-        "difficulty": "intermediate",
-        "primary_muscles": ["triceps"],
-        "secondary_muscles": ["chest", "shoulders"],
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["shoulder", "elbow"],
         "movement_pattern": "push",
-        "exercise_type": "compound"
+        "exercise_type": "compound",
+        "complexity_score": 0.5,
+        "intensity_category": "compound_moderate",
+        "muscles": [
+            ("triceps", 85),
+            ("lower_chest", 50),
+            ("anterior_delt", 40),
+        ]
     },
     {
         "name": "Tricep Pushdown",
         "description": "Cable tricep isolation",
         "equipment": "Cable Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["triceps"],
-        "secondary_muscles": [],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "extension",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.2,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("triceps", 95),
+        ]
     },
     {
         "name": "Skull Crushers",
         "description": "Tricep isolation exercise",
         "equipment": "Barbell/EZ Bar",
-        "difficulty": "intermediate",
-        "primary_muscles": ["triceps"],
-        "secondary_muscles": [],
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["elbow"],
         "movement_pattern": "extension",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.4,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("triceps", 90),
+        ]
     },
     
     # === CORE EXERCISES ===
@@ -312,37 +414,47 @@ EXERCISE_SEED_DATA = [
         "name": "Plank",
         "description": "Core stabilization",
         "equipment": "None",
-        "difficulty": "beginner",
-        "primary_muscles": ["abs"],
-        "secondary_muscles": ["shoulders"],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "hold",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.2,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("abs", 85),
+            ("erector_spinae", 30),
+            ("anterior_delt", 15),
+        ]
     },
     {
         "name": "Hanging Leg Raise",
         "description": "Advanced ab exercise",
         "equipment": "Pull-up Bar",
-        "difficulty": "advanced",
-        "primary_muscles": ["abs"],
-        "secondary_muscles": ["forearms"],
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder"],
         "movement_pattern": "raise",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.6,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("abs", 90),
+            ("hip_flexors", 60),
+            ("forearms", 25),
+        ]
     },
     {
         "name": "Cable Crunch",
         "description": "Weighted ab exercise",
         "equipment": "Cable Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["abs"],
-        "secondary_muscles": [],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "crunch",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.2,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("abs", 95),
+        ]
     },
     
     # === CALF EXERCISES ===
@@ -350,32 +462,36 @@ EXERCISE_SEED_DATA = [
         "name": "Standing Calf Raise",
         "description": "Calf isolation",
         "equipment": "Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["calves"],
-        "secondary_muscles": [],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "raise",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.1,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("calves", 95),
+        ]
     },
     {
         "name": "Seated Calf Raise",
         "description": "Soleus focused",
         "equipment": "Machine",
-        "difficulty": "beginner",
-        "primary_muscles": ["calves"],
-        "secondary_muscles": [],
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
         "movement_pattern": "raise",
-        "exercise_type": "isolation"
+        "exercise_type": "isolation",
+        "complexity_score": 0.1,
+        "intensity_category": "isolation",
+        "muscles": [
+            ("calves", 95),
+        ]
     }
 ]
 
 
 def seed_exercises(db: Session):
     """
-    Seed the database with common exercises.
+    Seed the database with common exercises and their muscle activations.
     
     Args:
         db: Database session
@@ -386,11 +502,39 @@ def seed_exercises(db: Session):
         print(f"Database already has {existing_count} exercises. Skipping seed.")
         return
     
+    # Check if muscle groups exist
+    muscle_count = db.query(MuscleGroupModel).count()
+    if muscle_count == 0:
+        print("ERROR: No muscle groups found. Run Drizzle migration 0007_seed_muscle_groups first to seed muscle groups.")
+        return
+    
+    # Get all muscle groups for lookup
+    muscles = {m.name: m for m in db.query(MuscleGroupModel).all()}
+    
     print("Seeding exercises...")
     
     for exercise_data in EXERCISE_SEED_DATA:
-        exercise = Exercise(**exercise_data)
+        # Extract muscle data (use .get() to avoid mutating the original data)
+        muscle_activations = exercise_data.get("muscles", [])
+        
+        # Create exercise (exclude "muscles" key as it's not an Exercise model field)
+        exercise_data_copy = {k: v for k, v in exercise_data.items() if k != "muscles"}
+        exercise = Exercise(**exercise_data_copy)
         db.add(exercise)
+        db.flush()  # Get the exercise ID
+        
+        # Create muscle links
+        for muscle_name, activation_percent in muscle_activations:
+            if muscle_name not in muscles:
+                print(f"WARNING: Muscle '{muscle_name}' not found for exercise '{exercise.name}'")
+                continue
+            
+            link = ExerciseMuscle(
+                exercise_id=exercise.id,
+                muscle_group_id=muscles[muscle_name].id,
+                activation_percent=activation_percent
+            )
+            db.add(link)
     
     db.commit()
     print(f"✓ Seeded {len(EXERCISE_SEED_DATA)} exercises successfully!")
@@ -407,5 +551,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

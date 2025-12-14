@@ -18,9 +18,10 @@ from sqlalchemy import desc
 from app.utils.constants import (
     SetType, RepStyle, TrainingType, TrainingPhase, TrainingExperience,
     ExerciseType, SET_TYPE_CONFIG, REP_STYLE_CONFIG, VALID_TECHNIQUE_COMBINATIONS,
-    MRV_SETS_PER_WEEK, MuscleGroup, EFFECTIVE_SET_RIR_THRESHOLD
+    MRV_SETS_PER_WEEK, EFFECTIVE_SET_RIR_THRESHOLD
 )
 
+from app.models import ExerciseMuscle, MuscleGroupModel
 
 class IntensityTechniqueService:
     """
@@ -46,7 +47,7 @@ class IntensityTechniqueService:
         order_in_workout: int,
         performance_level: Optional[str] = None,
         week_number: Optional[int] = None,
-        muscle_group: Optional[MuscleGroup] = None
+        muscle_name: Optional[str] = None
     ) -> Dict[str, any]:
         """
         Recommend set type and rep style for an exercise.
@@ -69,7 +70,7 @@ class IntensityTechniqueService:
             experience=experience,
             performance_level=performance_level,
             week_number=week_number,
-            muscle_group=muscle_group
+            muscle_name=muscle_name
         )
         
         # If no triggers detected, return defaults
@@ -130,7 +131,7 @@ class IntensityTechniqueService:
         experience: TrainingExperience,
         performance_level: Optional[str],
         week_number: Optional[int],
-        muscle_group: Optional[MuscleGroup]
+        muscle_name: Optional[str]
     ) -> Dict[str, any]:
         """
         Detect all triggers that would warrant an intensity technique.
@@ -161,12 +162,12 @@ class IntensityTechniqueService:
                 triggers["details"]["struggling"] = struggling_info
         
         # 3. Volume ceiling: At MRV but hypertrophy-focused
-        if training_type == TrainingType.HYPERTROPHY and muscle_group:
-            volume_info = self._check_volume_ceiling(athlete_id, experience, muscle_group)
+        if training_type == TrainingType.HYPERTROPHY and muscle_name:
+            volume_info = self._check_volume_ceiling(athlete_id, experience, muscle_name)
             if volume_info["at_ceiling"]:
                 triggers["volume_ceiling_detected"] = True
                 triggers["details"]["volume_ceiling"] = volume_info
-        
+    
         # 4. Phase-based: Late accumulation phase (week 3-4 of mesocycle)
         if training_phase == TrainingPhase.ACCUMULATION and week_number:
             if week_number >= 3 and (week_number % 4) != 0:  # Week 3-4, not deload
@@ -283,12 +284,20 @@ class IntensityTechniqueService:
         self,
         athlete_id: int,
         experience: TrainingExperience,
-        muscle_group: MuscleGroup
+        muscle_name: str
     ) -> Dict:
         """
         Check if athlete is at MRV (Maximum Recoverable Volume) for a muscle group.
         """
         from app.models import ExerciseSet, WorkoutSession, Exercise
+        
+        # Get muscle from database
+        muscle = self.db.query(MuscleGroupModel).filter(
+            MuscleGroupModel.name == muscle_name
+        ).first()
+        
+        if not muscle:
+            return {"at_ceiling": False}
         
         # Get MRV for this experience level
         mrv = MRV_SETS_PER_WEEK.get(experience, 20)
@@ -296,13 +305,16 @@ class IntensityTechniqueService:
         # Calculate weekly sets for this muscle group
         week_ago = datetime.now(timezone.utc) - timedelta(days=7)
         
-        # Get exercises targeting this muscle
-        exercises = (
-            self.db.query(Exercise)
-            .filter(Exercise.primary_muscles.contains([muscle_group.value]))
+        # Get exercises targeting this muscle with significant activation
+        exercise_links = (
+            self.db.query(ExerciseMuscle.exercise_id)
+            .filter(
+                ExerciseMuscle.muscle_group_id == muscle.id,
+                ExerciseMuscle.activation_percent >= 70  # Primary targets only
+            )
             .all()
         )
-        exercise_ids = [e.id for e in exercises]
+        exercise_ids = [link[0] for link in exercise_links]
         
         if not exercise_ids:
             return {"at_ceiling": False}

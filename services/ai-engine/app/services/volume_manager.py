@@ -10,11 +10,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
 from app.models import (
-    Athlete, WorkoutSession, ExerciseSet, Exercise, WorkoutDayExercise
+    Athlete, WorkoutSession, ExerciseSet, Exercise, WorkoutDayExercise,
+    MuscleGroupModel, ExerciseMuscle
 )
 from app.utils.constants import (
-    TrainingExperience, MuscleGroup, MuscleSize, MUSCLE_SIZE_MAP,
-    MEV_SETS_PER_WEEK, MRV_SETS_PER_WEEK, FocusArea, FOCUS_AREA_TO_MUSCLE_GROUPS,
+    TrainingExperience, MuscleSize,
+    MEV_SETS_PER_WEEK, MRV_SETS_PER_WEEK, FocusArea,
     EFFECTIVE_SET_RIR_THRESHOLD
 )
 from app.services.training_calculations import TrainingCalculations
@@ -40,32 +41,41 @@ class VolumeManager:
     def get_volume_landmarks(
         self,
         experience: TrainingExperience,
-        muscle_group: MuscleGroup
+        muscle_name: str
     ) -> Dict[str, int]:
         """
         Get MEV, MAV, and MRV for a muscle group based on experience.
         
         Args:
             experience: Training experience level
-            muscle_group: Muscle group to get landmarks for
+            muscle_name: Muscle group name to get landmarks for
             
         Returns:
             Dict with 'mev', 'mav', 'mrv' in sets per week
         """
+        # Get muscle from database
+        muscle = self.db.query(MuscleGroupModel).filter(
+            MuscleGroupModel.name == muscle_name
+        ).first()
+        
+        if not muscle:
+            # Fallback to default values if muscle not found
+            return {"mev": 10, "mav": 15, "mrv": 20}
+        
         # Get base MEV/MRV from experience
         base_mev = MEV_SETS_PER_WEEK[experience]
         base_mrv = MRV_SETS_PER_WEEK[experience]
         
         # Adjust for muscle size
-        muscle_size = MUSCLE_SIZE_MAP.get(muscle_group, MuscleSize.MEDIUM)
         size_multiplier = {
-            MuscleSize.SMALL: 0.8,
-            MuscleSize.MEDIUM: 0.9,
-            MuscleSize.LARGE: 1.0,
+            "small": 0.8,
+            "medium": 0.9,
+            "large": 1.0,
         }
         
-        mev = int(base_mev * size_multiplier[muscle_size])
-        mrv = int(base_mrv * size_multiplier[muscle_size])
+        multiplier = size_multiplier.get(muscle.size, 0.9)
+        mev = int(base_mev * multiplier)
+        mrv = int(base_mrv * multiplier)
         mav = int((mev + mrv) / 2)  # Maximum Adaptive Volume (midpoint)
         
         return {
@@ -77,7 +87,7 @@ class VolumeManager:
     def get_volume_target_for_muscle(
         self,
         experience: TrainingExperience,
-        muscle_group: MuscleGroup,
+        muscle_name: str,
         focus_areas: Optional[List[str]] = None
     ) -> Dict[str, int | str]:
         """
@@ -86,10 +96,10 @@ class VolumeManager:
         - Focus muscles: aim for MAV (upper adaptive range) without exceeding MRV.
         - Maintenance muscles: hold MEV to preserve adaptations with minimal fatigue.
         """
-        landmarks = self.get_volume_landmarks(experience, muscle_group)
+        landmarks = self.get_volume_landmarks(experience, muscle_name)
         prioritized_muscles = self._expand_focus_areas(focus_areas or [])
 
-        is_focus = muscle_group in prioritized_muscles
+        is_focus = muscle_name in prioritized_muscles
         if is_focus:
             target_sets = min(landmarks["mav"], landmarks["mrv"])
             upper_bound = landmarks["mrv"]
@@ -100,7 +110,7 @@ class VolumeManager:
             focus_state = "maintenance"
 
         return {
-            "muscle_group": muscle_group.value,
+            "muscle_group": muscle_name,
             "target_sets": target_sets,
             "upper_bound": upper_bound,
             "focus_state": focus_state,
@@ -110,22 +120,39 @@ class VolumeManager:
         }
 
     @staticmethod
-    def _expand_focus_areas(focus_areas: List[str]) -> Set[MuscleGroup]:
-        """Convert simplified focus areas into the underlying muscle groups."""
+    def _expand_focus_areas(focus_areas: List[str]) -> Set[str]:
+        """Convert simplified focus areas into the underlying muscle group names."""
+        # Map focus areas to muscle names
+        focus_to_muscles = {
+            "chest": {"upper_chest", "mid_chest", "lower_chest"},
+            "back": {"lats", "upper_traps", "mid_back", "lower_traps"},
+            "shoulders": {"anterior_delt", "lateral_delt", "posterior_delt"},
+            "arms": {"biceps", "triceps", "forearms"},
+            "legs": {"quadriceps", "hamstrings", "glutes", "hip_flexors", "calves"},
+            "core": {"abs", "erector_spinae"},
+        }
+        
         prioritized = set()
         for area in focus_areas:
+            # Lowercase the area for consistent matching with database muscle names
+            area_lower = area.lower()
+            
+            # Try as focus area first (expands to granular muscle names)
             try:
-                focus_area_enum = FocusArea(area)
-            except ValueError:
-                continue
-            for muscle in FOCUS_AREA_TO_MUSCLE_GROUPS.get(focus_area_enum, []):
-                prioritized.add(muscle)
+                focus_area_enum = FocusArea(area_lower)
+                muscles = focus_to_muscles.get(focus_area_enum.value, set())
+                prioritized.update(muscles)
+            except (ValueError, KeyError):
+                # Not a valid focus area - might be a direct muscle name
+                # Only add if it's a direct muscle name (not a focus area)
+                prioritized.add(area_lower)
+        
         return prioritized
     
     def calculate_current_volume(
         self,
         athlete_id: int,
-        muscle_group: MuscleGroup,
+        muscle_name: str,
         days_lookback: int = 7
     ) -> Dict:
         """
@@ -133,13 +160,28 @@ class VolumeManager:
         
         Args:
             athlete_id: Athlete ID
-            muscle_group: Muscle group to analyze
+            muscle_name: Muscle group name to analyze
             days_lookback: Days to look back (default 7 for weekly volume)
             
         Returns:
             Dict with volume metrics
         """
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
+        
+        # Get muscle from database
+        muscle = self.db.query(MuscleGroupModel).filter(
+            MuscleGroupModel.name == muscle_name
+        ).first()
+        
+        if not muscle:
+            return {
+                "muscle_group": muscle_name,
+                "total_sets": 0.0,
+                "total_volume_load": 0.0,
+                "exercises_count": 0,
+                "days_analyzed": days_lookback,
+                "note": "Muscle group not found"
+            }
         
         # Get recent workout sessions
         sessions = (
@@ -152,7 +194,7 @@ class VolumeManager:
             .all()
         )
         
-        total_sets = 0
+        total_sets = 0.0
         total_volume_load = 0.0
         exercises_tracked = set()
         
@@ -175,34 +217,41 @@ class VolumeManager:
             
             # Check each exercise for muscle group targeting
             for ex_id, sets_list in exercise_sets.items():
-                exercise = self.db.query(Exercise).filter(Exercise.id == ex_id).first()
-                if not exercise:
-                    continue
-                
-                # Check if exercise targets this muscle group
-                targets_muscle = (
-                    muscle_group.value in (exercise.primary_muscles or []) or
-                    muscle_group.value in (exercise.secondary_muscles or [])
+                # Check if exercise targets this muscle via junction table
+                muscle_link = (
+                    self.db.query(ExerciseMuscle)
+                    .filter(
+                        ExerciseMuscle.exercise_id == ex_id,
+                        ExerciseMuscle.muscle_group_id == muscle.id
+                    )
+                    .first()
                 )
                 
-                if targets_muscle:
+                if muscle_link:
                     exercises_tracked.add(ex_id)
+                    
+                    # Weight sets by activation percentage
+                    activation_weight = muscle_link.activation_percent / 100.0
+                    
                     # Calculate effective sets (only RIR 0-4 count toward MEV/MRV)
                     effective_sets = self._calculate_effective_sets_from_sets(sets_list)
-                    total_sets += effective_sets
-                    # Calculate volume load (weight × reps) only for effective sets
-                    # Weight by effectiveness: RIR 0-4 = 100%, RIR 5-6 = 50%, RIR 7+ = 0%
+                    total_sets += effective_sets * activation_weight
+                    
+                    # Calculate volume load (weight × reps) weighted by activation
                     for set_record in sets_list:
                         effectiveness = self._get_set_effectiveness(set_record.rir)
-                        total_volume_load += set_record.weight * set_record.reps * effectiveness
+                        total_volume_load += (
+                            set_record.weight * set_record.reps * 
+                            effectiveness * activation_weight
+                        )
         
         return {
-            "muscle_group": muscle_group.value,
+            "muscle_group": muscle_name,
             "total_sets": round(total_sets, 1),
             "total_volume_load": round(total_volume_load, 1),
             "exercises_count": len(exercises_tracked),
             "days_analyzed": days_lookback,
-            "note": "Volume calculated using effective sets (RIR 0-4 count fully, RIR 5-6 count 50%, RIR 7+ count 0%). Volume load is weighted by set effectiveness for consistency."
+            "note": "Volume weighted by muscle activation % (RIR 0-4 count fully, RIR 5-6 count 50%, RIR 7+ count 0%). Volume load weighted by set effectiveness and activation."
         }
     
     def _calculate_effective_sets_from_sets(self, sets_list: List[ExerciseSet]) -> float:
@@ -244,7 +293,7 @@ class VolumeManager:
     def calculate_overreach_volume(
         self,
         experience: TrainingExperience,
-        muscle_group: MuscleGroup,
+        muscle_name: str,
         current_volume: float,
         focus_areas: Optional[List[str]] = None
     ) -> Dict[str, float]:
@@ -256,14 +305,14 @@ class VolumeManager:
         
         Args:
             experience: Training experience
-            muscle_group: Muscle group
+            muscle_name: Muscle group name
             current_volume: Current weekly volume (effective sets)
             focus_areas: Optional focus areas
             
         Returns:
             Dict with overreach volume and duration
         """
-        landmarks = self.get_volume_landmarks(experience, muscle_group)
+        landmarks = self.get_volume_landmarks(experience, muscle_name)
         mrv = landmarks["mrv"]
         
         # Overreach is 110-120% of MRV
@@ -284,7 +333,7 @@ class VolumeManager:
     def get_volume_cycle_phase(
         self,
         athlete_id: int,
-        muscle_group: MuscleGroup,
+        muscle_name: str,
         lookback_weeks: int = 4
     ) -> Optional[str]:
         """
@@ -292,7 +341,7 @@ class VolumeManager:
         
         Args:
             athlete_id: Athlete ID
-            muscle_group: Muscle group to check
+            muscle_name: Muscle group name to check
             lookback_weeks: Weeks to look back
             
         Returns:
@@ -300,7 +349,7 @@ class VolumeManager:
         """
         # Get current volume
         current_volume = self.calculate_current_volume(
-            athlete_id, muscle_group, days_lookback=lookback_weeks * 7
+            athlete_id, muscle_name, days_lookback=lookback_weeks * 7
         )
         
         # Get athlete experience
@@ -308,7 +357,7 @@ class VolumeManager:
         if not athlete:
             return None
         
-        landmarks = self.get_volume_landmarks(athlete.experience, muscle_group)
+        landmarks = self.get_volume_landmarks(athlete.training_experience, muscle_name)
         mrv = landmarks["mrv"]
         mev = landmarks["mev"]
         
@@ -347,7 +396,7 @@ class VolumeManager:
     def get_volume_position(
         self,
         athlete_id: int,
-        muscle_group: MuscleGroup,
+        muscle_name: str,
         experience: TrainingExperience,
         days_lookback: int = 7
     ) -> Dict:
@@ -356,7 +405,7 @@ class VolumeManager:
         
         Args:
             athlete_id: Athlete ID
-            muscle_group: Muscle group to analyze
+            muscle_name: Muscle group name to analyze
             experience: Training experience level
             days_lookback: Days to look back
             
@@ -364,13 +413,13 @@ class VolumeManager:
             Dict with volume position and recommendations
         """
         # Get landmarks
-        landmarks = self.get_volume_landmarks(experience, muscle_group)
+        landmarks = self.get_volume_landmarks(experience, muscle_name)
         mev = landmarks["mev"]
         mav = landmarks["mav"]
         mrv = landmarks["mrv"]
         
         # Get current volume
-        current = self.calculate_current_volume(athlete_id, muscle_group, days_lookback)
+        current = self.calculate_current_volume(athlete_id, muscle_name, days_lookback)
         current_sets = current["total_sets"]
         
         # Determine position
@@ -405,7 +454,7 @@ class VolumeManager:
             percentage = 100 + ((current_sets - mrv) / mrv) * 50 if mrv > 0 else 100  # >100% if above MRV
         
         return {
-            "muscle_group": muscle_group.value,
+            "muscle_group": muscle_name,
             "current_sets": current_sets,
             "mev": mev,
             "mav": mav,
@@ -421,7 +470,7 @@ class VolumeManager:
     def get_volume_adjustment_recommendation(
         self,
         athlete_id: int,
-        muscle_group: MuscleGroup,
+        muscle_name: str,
         experience: TrainingExperience,
         current_volume_multiplier: float = 1.0
     ) -> Dict:
@@ -430,14 +479,14 @@ class VolumeManager:
         
         Args:
             athlete_id: Athlete ID
-            muscle_group: Muscle group to analyze
+            muscle_name: Muscle group name to analyze
             experience: Training experience level
             current_volume_multiplier: Current volume multiplier being applied
             
         Returns:
             Dict with recommended volume adjustment
         """
-        volume_position = self.get_volume_position(athlete_id, muscle_group, experience)
+        volume_position = self.get_volume_position(athlete_id, muscle_name, experience)
         
         position = volume_position["position"]
         current_sets = volume_position["current_sets"]
@@ -467,7 +516,7 @@ class VolumeManager:
         recommended_multiplier = current_volume_multiplier * adjustment
         
         return {
-            "muscle_group": muscle_group.value,
+            "muscle_group": muscle_name,
             "current_volume_multiplier": current_volume_multiplier,
             "recommended_multiplier": round(recommended_multiplier, 3),
             "adjustment": round(adjustment, 3),
@@ -492,17 +541,22 @@ class VolumeManager:
         Returns:
             Dict with volume status for each muscle group
         """
-        muscle_groups = [
-            MuscleGroup.CHEST, MuscleGroup.BACK, MuscleGroup.SHOULDERS,
-            MuscleGroup.BICEPS, MuscleGroup.TRICEPS, MuscleGroup.QUADRICEPS,
-            MuscleGroup.HAMSTRINGS, MuscleGroup.GLUTES, MuscleGroup.CALVES
+        # Query all muscle groups from database
+        all_muscles = self.db.query(MuscleGroupModel).all()
+        muscle_names = [m.name for m in all_muscles]
+        
+        # Focus on major muscles for summary
+        major_muscle_names = [
+            "mid_chest", "lats", "anterior_delt", "biceps", "triceps",
+            "quadriceps", "hamstrings", "glutes", "calves"
         ]
         
         status = {}
-        for muscle_group in muscle_groups:
-            status[muscle_group.value] = self.get_volume_position(
-                athlete_id, muscle_group, experience, days_lookback
-            )
+        for muscle_name in major_muscle_names:
+            if muscle_name in muscle_names:
+                status[muscle_name] = self.get_volume_position(
+                    athlete_id, muscle_name, experience, days_lookback
+                )
         
         # Summary statistics
         below_mev_count = sum(1 for s in status.values() if s["position"] == "below_mev")
@@ -515,7 +569,7 @@ class VolumeManager:
                 "below_mev_count": below_mev_count,
                 "above_mrv_count": above_mrv_count,
                 "optimal_count": optimal_count,
-                "total_muscle_groups": len(muscle_groups),
+                "total_muscle_groups": len(status),
             },
             "overall_recommendation": self._get_overall_recommendation(
                 below_mev_count, above_mrv_count, optimal_count
@@ -535,4 +589,3 @@ class VolumeManager:
             return "Increase volume for under-stimulated muscle groups"
         else:
             return "Volume distribution is balanced"
-

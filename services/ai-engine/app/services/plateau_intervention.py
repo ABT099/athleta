@@ -13,7 +13,7 @@ from sqlalchemy import desc
 
 from app.models import ExerciseSet, WorkoutSession, Exercise
 from app.utils.constants import (
-    TrainingExperience, TrainingType, TrainingPhase, MuscleGroup
+    TrainingExperience, TrainingType, TrainingPhase
 )
 
 
@@ -173,7 +173,19 @@ class PlateauInterventionService:
             })
         
         # Sort by date (most recent first)
-        sessions_analyzed.sort(key=lambda x: x["date"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        # Handle None dates and ensure all datetimes are in UTC for consistent sorting
+        def normalize_datetime(dt):
+            if dt is None:
+                return datetime.min.replace(tzinfo=timezone.utc)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            # Convert timezone-aware datetime to UTC
+            return dt.astimezone(timezone.utc)
+        
+        sessions_analyzed.sort(
+            key=lambda x: normalize_datetime(x["date"]),
+            reverse=True
+        )
         
         if len(sessions_analyzed) < 3:
             return {"is_plateau": False, "sessions_analyzed": len(sessions_analyzed)}

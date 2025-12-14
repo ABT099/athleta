@@ -8,7 +8,7 @@ from sqlalchemy import Column, Integer, DateTime, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from app.database import Base
+from app.database import Base, get_schema_table_args, get_fk_reference
 
 
 class FormQualityTrend(Base):
@@ -22,11 +22,11 @@ class FormQualityTrend(Base):
     - Generate form quality alerts and recommendations
     """
     __tablename__ = "form_quality_trends"
-    __table_args__ = {'schema': 'ai_analysis'}
+    __table_args__ = get_schema_table_args("ai_analysis")
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("public.athletes.id"), nullable=False)
-    exercise_id = Column(Integer, ForeignKey("public.exercises.id"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id")), nullable=False)
+    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id")), nullable=False)
     date = Column(DateTime, nullable=False, index=True)
     
     # Average form score for this exercise on this date

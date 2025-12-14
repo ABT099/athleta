@@ -7,12 +7,13 @@ References: NSCA Essentials of Strength Training and Conditioning.
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
+from app.models import ExerciseMuscle, MuscleGroupModel
 from app.utils.constants import (
-    ExerciseIntensityCategory, MOVEMENT_PRIORITY, MuscleGroup, MUSCLE_SIZE_MAP,
+    ExerciseIntensityCategory, MOVEMENT_PRIORITY,
     TrainingType, STRENGTH_ORDER_PRIORITY, HYPERTROPHY_ORDER_PRIORITY,
     HYPERTROPHY_PRE_EXHAUST_ALLOWED, STRENGTH_PRE_EXHAUST_ALLOWED,
     TIER_1_SPINAL_PATTERNS, TIER_5_CORE_PATTERNS, INTENSITY_CATEGORY_TIER_MAP,
-    FOCUS_TIER_BONUS, FocusArea, FOCUS_AREA_TO_MUSCLE_GROUPS
+    FOCUS_TIER_BONUS, FocusArea
 )
 
 
@@ -226,12 +227,24 @@ class ExerciseOrderAnalyzer:
                 ex.exercise_type, ex.movement_pattern
             )
         
+        # Get primary muscles via junction table
+        muscle_links = (
+            self.db.query(MuscleGroupModel.name)
+            .join(ExerciseMuscle, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
+            .filter(
+                ExerciseMuscle.exercise_id == ex.id,
+                ExerciseMuscle.activation_percent >= 70  # Primary only
+            )
+            .all()
+        )
+        primary_muscles = [m[0] for m in muscle_links]
+        
         return {
             "id": ex.id,
             "name": ex.name,
             "exercise_type": ex.exercise_type,
             "intensity_category": intensity_category,
-            "primary_muscles": ex.primary_muscles or [],
+            "primary_muscles": primary_muscles,
             "movement_pattern": ex.movement_pattern,
         }
     
@@ -319,7 +332,7 @@ class ExerciseOrderAnalyzer:
         
         Args:
             exercise: Exercise details dict
-            focus_muscle_groups: Set of muscle groups that are focus areas
+            focus_muscle_groups: Set of muscle group names that are focus areas
             
         Returns:
             True if exercise targets a focus muscle group
@@ -329,51 +342,66 @@ class ExerciseOrderAnalyzer:
         
         primary_muscles = exercise.get("primary_muscles", [])
         for muscle_name in primary_muscles:
-            try:
-                muscle_group = MuscleGroup(muscle_name)
-                if muscle_group in focus_muscle_groups:
-                    return True
-            except (ValueError, KeyError):
-                continue
+            if muscle_name in focus_muscle_groups:
+                return True
         
         return False
     
     def _expand_focus_areas(self, focus_areas: List[str]) -> set:
         """
-        Expand focus areas to muscle groups.
+        Expand focus areas to muscle group names.
         
         Args:
             focus_areas: List of focus area strings (e.g., ["chest", "back"])
             
         Returns:
-            Set of MuscleGroup enums
+            Set of muscle group names
         """
         if not focus_areas:
             return set()
         
+        # Map focus areas to muscle names
+        focus_to_muscles = {
+            "chest": {"upper_chest", "mid_chest", "lower_chest"},
+            "back": {"lats", "upper_traps", "mid_back", "lower_traps"},
+            "shoulders": {"anterior_delt", "lateral_delt", "posterior_delt"},
+            "arms": {"biceps", "triceps", "forearms"},
+            "legs": {"quadriceps", "hamstrings", "glutes", "hip_flexors", "calves"},
+            "core": {"abs", "erector_spinae"},
+        }
+        
         muscle_groups = set()
         for focus_area_str in focus_areas:
             try:
-                focus_area = FocusArea(focus_area_str.lower())
-                groups = FOCUS_AREA_TO_MUSCLE_GROUPS.get(focus_area, [])
-                muscle_groups.update(groups)
+                focus_area_lower = focus_area_str.lower()
+                # Try as FocusArea enum
+                try:
+                    focus_area = FocusArea(focus_area_lower)
+                    muscles = focus_to_muscles.get(focus_area.value, set())
+                    muscle_groups.update(muscles)
+                except ValueError:
+                    # Maybe it's a direct muscle name
+                    muscle_groups.add(focus_area_lower)
             except (ValueError, KeyError):
                 continue
         
         return muscle_groups
     
     def _get_muscle_size(self, exercise: Dict) -> str:
-        """Get muscle size category for primary muscle."""
+        """Get muscle size category for primary muscle from database."""
         primary_muscles = exercise.get("primary_muscles", [])
         if not primary_muscles:
             return "medium"
         
-        try:
-            muscle_group = MuscleGroup(primary_muscles[0])
-            muscle_size = MUSCLE_SIZE_MAP.get(muscle_group)
-            return muscle_size.value if muscle_size else "medium"
-        except (ValueError, KeyError):
-            return "medium"
+        # Query muscle size from database
+        muscle = self.db.query(MuscleGroupModel).filter(
+            MuscleGroupModel.name == primary_muscles[0]
+        ).first()
+        
+        if muscle:
+            return muscle.size
+        
+        return "medium"
     
     def _same_primary_muscle(self, ex1: Dict, ex2: Dict) -> bool:
         """Check if exercises target the same primary muscle."""

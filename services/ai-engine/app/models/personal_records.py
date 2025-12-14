@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, UniqueConst
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from app.database import Base
+from app.database import Base, get_table_args_with_constraints, get_fk_reference
 
 
 class ExercisePersonalRecord(Base):
@@ -17,8 +17,8 @@ class ExercisePersonalRecord(Base):
     __tablename__ = "exercise_personal_records"
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("public.athletes.id", ondelete="CASCADE"), nullable=False, index=True)
-    exercise_id = Column(Integer, ForeignKey("public.exercises.id", ondelete="CASCADE"), nullable=False, index=True)
+    athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id"), ondelete="CASCADE"), nullable=False, index=True)
+    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id"), ondelete="CASCADE"), nullable=False, index=True)
     
     # Rep-max PRs
     one_rep_max = Column(Float, nullable=True)
@@ -55,9 +55,9 @@ class ExercisePersonalRecord(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Unique constraint: one record per athlete-exercise combination
-    __table_args__ = (
+    __table_args__ = get_table_args_with_constraints(
         UniqueConstraint('athlete_id', 'exercise_id', name='uq_athlete_exercise_pr'),
-        {'schema': 'ai_analysis'}
+        schema="ai_analysis"
     )
     
     # Relationships

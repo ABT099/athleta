@@ -68,9 +68,6 @@ python_functions = ["test_*"]
 addopts = [
     "--verbose",
     "--strict-markers",
-    "--cov=app",
-    "--cov-report=term-missing",
-    "--cov-report=html",
 ]
 markers = [
     "unit: Unit tests (fast)",

@@ -34,20 +34,13 @@ def sample_athlete(db_session):
 @pytest.fixture
 def sample_exercise(db_session):
     """Create sample exercise for testing."""
-    import json
-    exercise = Exercise(
-        id=1,
+    from tests.factories import ExerciseFactory
+    exercise = ExerciseFactory.create_compound(
+        db_session,
         name="Barbell Bench Press",
-        description="Compound chest exercise",
-        primary_muscles=json.dumps(["chest"]),  # Serialize for SQLite
-        secondary_muscles=json.dumps(["triceps", "shoulders"]),
-        injury_risk_level=2.0,
-        joint_stress_areas=json.dumps(["shoulder", "elbow"]),
-        movement_pattern="push",
-        exercise_type="compound",
-        complexity_score=1.0
+        muscles=[("mid_chest", 90), ("triceps", 60), ("anterior_delt", 50)],
+        movement_pattern="push"
     )
-    db_session.add(exercise)
     db_session.commit()
     return exercise
 

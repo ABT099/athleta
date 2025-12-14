@@ -26,14 +26,13 @@ class TestInjuryPreventionRobustness:
         db_session.add(athlete)
         db_session.flush()
         
-        # Create exercise
-        exercise = Exercise(
+        # Create exercise using factory
+        from tests.factories import ExerciseFactory
+        exercise = ExerciseFactory.create_compound(
+            db_session,
             name="Bench Press",
-            primary_muscles=json.dumps(["chest"]),  # Serialize for SQLite
-            exercise_type="compound"
+            muscles=[("mid_chest", 90), ("anterior_delt", 60), ("triceps", 50)]
         )
-        db_session.add(exercise)
-        db_session.flush()
         
         # Create workout session WITHOUT form quality data
         session = WorkoutSession(
@@ -113,14 +112,13 @@ class TestFormQualityServiceRobustness:
         db_session.add(athlete)
         db_session.flush()
         
-        # Create exercise
-        exercise = Exercise(
+        # Create exercise using factory
+        from tests.factories import ExerciseFactory
+        exercise = ExerciseFactory.create_compound(
+            db_session,
             name="Bench Press",
-            primary_muscles=json.dumps(["chest"]),  # Serialize for SQLite
-            exercise_type="compound"
+            muscles=[("mid_chest", 90), ("anterior_delt", 60), ("triceps", 50)]
         )
-        db_session.add(exercise)
-        db_session.flush()
         
         service = FormQualityService(db_session)
         

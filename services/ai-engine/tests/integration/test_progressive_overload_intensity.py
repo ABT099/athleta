@@ -13,7 +13,7 @@ from app.services.progressive_overload_engine import ProgressiveOverloadEngine
 from app.services.intensity_technique_service import IntensityTechniqueService
 from app.utils.constants import (
     SetType, RepStyle, TrainingType, TrainingPhase, TrainingExperience,
-    ExerciseType, Gender, MuscleGroup
+    ExerciseType, Gender
 )
 from tests.factories import (
     AthleteFactory, ExerciseFactory, WorkoutPlanFactory,
@@ -44,7 +44,7 @@ class TestEngineIntensityTechniqueIntegration:
         exercise = ExerciseFactory.create_isolation(
             db_session,
             name="Bicep Curl",
-            primary_muscles=["biceps"]
+            muscles=[("biceps", 95)]
         )
         
         plan = WorkoutPlanFactory.create(
@@ -99,7 +99,7 @@ class TestEngineIntensityTechniqueIntegration:
             order_in_workout=1,
             performance_level="progressing",
             week_number=1,
-            muscle_group=MuscleGroup.BICEPS
+            muscle_name="biceps"
         )
         
         # With progress being made, should get straight sets
@@ -119,7 +119,7 @@ class TestEngineIntensityTechniqueIntegration:
         exercise = ExerciseFactory.create_isolation(
             db_session,
             name="Tricep Pushdown",
-            primary_muscles=["triceps"]
+            muscles=[("triceps", 95)]
         )
         
         plan = WorkoutPlanFactory.create(
@@ -173,7 +173,7 @@ class TestEngineIntensityTechniqueIntegration:
             order_in_workout=2,
             performance_level="struggling",
             week_number=3,
-            muscle_group=MuscleGroup.TRICEPS
+            muscle_name="triceps"
         )
         
         # Should detect plateau and recommend technique
@@ -195,13 +195,13 @@ class TestTechniqueRecommendationContext:
         compound = ExerciseFactory.create_compound(
             db_session,
             name="Squat",
-            primary_muscles=["quads", "glutes"]
+            muscles=[("quadriceps", 90), ("glutes", 85)]
         )
         
         isolation = ExerciseFactory.create_isolation(
             db_session,
             name="Leg Extension",
-            primary_muscles=["quads"]
+            muscles=[("quadriceps", 95)]
         )
         
         db_session.flush()
@@ -222,7 +222,7 @@ class TestTechniqueRecommendationContext:
             order_in_workout=1,
             performance_level="progressing",
             week_number=3,  # Late phase
-            muscle_group=MuscleGroup.QUADRICEPS
+            muscle_name="quadriceps"
         )
         
         # Get recommendations for isolation
@@ -238,7 +238,7 @@ class TestTechniqueRecommendationContext:
             order_in_workout=3,
             performance_level="progressing",
             week_number=3,  # Late phase
-            muscle_group=MuscleGroup.QUADRICEPS
+            muscle_name="quadriceps"
         )
         
         # If phase-based trigger fires, compound should not get drop sets
@@ -261,7 +261,7 @@ class TestTechniqueRecommendationContext:
         exercise = ExerciseFactory.create_isolation(
             db_session,
             name="Lateral Raise",
-            primary_muscles=["shoulders"]
+            muscles=[("lateral_delt", 95)]
         )
         
         db_session.flush()
@@ -279,7 +279,7 @@ class TestTechniqueRecommendationContext:
             "order_in_workout": 2,
             "performance_level": "struggling",
             "week_number": 3,
-            "muscle_group": MuscleGroup.SHOULDERS
+            "muscle_name": "lateral_delt"
         }
         
         beginner_result = technique_service.recommend_techniques(
@@ -316,7 +316,7 @@ class TestFatigueImpactCalculation:
         exercise = ExerciseFactory.create_isolation(
             db_session,
             name="Cable Curl",
-            primary_muscles=["biceps"]
+            muscles=[("biceps", 95)]
         )
         
         db_session.flush()
@@ -362,7 +362,7 @@ class TestLatePhaseIntegration:
         exercise = ExerciseFactory.create_isolation(
             db_session,
             name="Preacher Curl",
-            primary_muscles=["biceps"]
+            muscles=[("biceps", 95)]
         )
         
         plan = WorkoutPlanFactory.create(
@@ -389,7 +389,7 @@ class TestLatePhaseIntegration:
             order_in_workout=2,
             performance_level="progressing",
             week_number=3,
-            muscle_group=MuscleGroup.BICEPS
+            muscle_name="biceps"
         )
         
         # Phase-based trigger should fire on week 3
@@ -406,7 +406,7 @@ class TestLatePhaseIntegration:
         exercise = ExerciseFactory.create_isolation(
             db_session,
             name="Hammer Curl",
-            primary_muscles=["biceps"]
+            muscles=[("biceps", 95)]
         )
         
         db_session.flush()
@@ -427,7 +427,7 @@ class TestLatePhaseIntegration:
             order_in_workout=2,
             performance_level="progressing",
             week_number=4,  # Deload week
-            muscle_group=MuscleGroup.BICEPS
+            muscle_name="biceps"
         )
         
         # Phase-based trigger should NOT fire on deload week
@@ -447,13 +447,13 @@ class TestMultipleExerciseWorkout:
         compound = ExerciseFactory.create_compound(
             db_session,
             name="Barbell Row",
-            primary_muscles=["back", "biceps"]
+            muscles=[("lats", 90), ("mid_back", 80), ("biceps", 60)]
         )
         
         isolation = ExerciseFactory.create_isolation(
             db_session,
             name="Face Pull",
-            primary_muscles=["shoulders"]
+            muscles=[("posterior_delt", 90), ("upper_traps", 50)]
         )
         
         db_session.flush()
@@ -474,7 +474,7 @@ class TestMultipleExerciseWorkout:
             order_in_workout=1,
             performance_level="progressing",
             week_number=3,
-            muscle_group=MuscleGroup.BACK
+            muscle_name="lats"
         )
         
         # Accessory isolation (3rd exercise)
@@ -490,7 +490,7 @@ class TestMultipleExerciseWorkout:
             order_in_workout=3,
             performance_level="progressing",
             week_number=3,
-            muscle_group=MuscleGroup.SHOULDERS
+            muscle_name="posterior_delt"
         )
         
         # Both should have results
@@ -511,7 +511,7 @@ class TestRecoveryImpactOnTechniques:
         exercise = ExerciseFactory.create_isolation(
             db_session,
             name="Cable Lateral Raise",
-            primary_muscles=["shoulders"]
+            muscles=[("lateral_delt", 95)]
         )
         
         db_session.flush()
@@ -532,7 +532,7 @@ class TestRecoveryImpactOnTechniques:
             order_in_workout=2,
             performance_level="progressing",
             week_number=3,
-            muscle_group=MuscleGroup.SHOULDERS
+            muscle_name="lateral_delt"
         )
         
         # Even with phase trigger, low readiness should limit options

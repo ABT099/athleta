@@ -10,7 +10,7 @@ from unittest.mock import Mock, MagicMock, patch
 from app.services.intensity_technique_service import IntensityTechniqueService
 from app.utils.constants import (
     SetType, RepStyle, TrainingType, TrainingPhase, TrainingExperience,
-    ExerciseType, MuscleGroup, SET_TYPE_CONFIG, REP_STYLE_CONFIG,
+    ExerciseType, SET_TYPE_CONFIG, REP_STYLE_CONFIG,
     VALID_TECHNIQUE_COMBINATIONS, MRV_SETS_PER_WEEK
 )
 
@@ -42,7 +42,7 @@ class TestAllTrainingTypesCoverage:
             order_in_workout=1,
             performance_level="progressing",
             week_number=1,
-            muscle_group=MuscleGroup.CHEST
+            muscle_name="mid_chest"
         )
         
         # Without triggers, should always get straight sets
@@ -127,7 +127,7 @@ class TestAllPhasesCoverage:
             order_in_workout=1,
             performance_level="progressing",
             week_number=1,
-            muscle_group=MuscleGroup.CHEST
+            muscle_name="mid_chest"
         )
         
         assert result["set_type"] == SetType.STRAIGHT
@@ -233,7 +233,7 @@ class TestReadinessScoreThresholds:
             order_in_workout=2,
             performance_level="struggling",
             week_number=3,
-            muscle_group=MuscleGroup.BICEPS
+            muscle_name="biceps"
         )
         
         # Even with triggers, low readiness should limit options
@@ -424,7 +424,7 @@ class TestCombinedTriggers:
             order_in_workout=2,
             performance_level="struggling",
             week_number=3,  # Late accumulation
-            muscle_group=MuscleGroup.BICEPS
+            muscle_name="biceps"
         )
         
         # All triggers should be marked
@@ -455,7 +455,7 @@ class TestCombinedTriggers:
             order_in_workout=2,
             performance_level="progressing",
             week_number=2,
-            muscle_group=MuscleGroup.BICEPS
+            muscle_name="biceps"
         )
         
         # Volume-efficient techniques should be prioritized
@@ -482,7 +482,7 @@ class TestCombinedTriggers:
             order_in_workout=2,
             performance_level="struggling",
             week_number=2,
-            muscle_group=MuscleGroup.BICEPS
+            muscle_name="biceps"
         )
         
         assert result["triggers"]["struggling_detected"] == True
@@ -646,7 +646,7 @@ class TestErrorHandling:
             order_in_workout=2,
             performance_level="progressing",
             week_number=2,
-            muscle_group=None  # None muscle group
+            muscle_name=None  # None muscle name
         )
         
         # Should not crash and return valid result
@@ -671,7 +671,7 @@ class TestErrorHandling:
             order_in_workout=2,
             performance_level="progressing",
             week_number=None,  # None week number
-            muscle_group=MuscleGroup.BICEPS
+            muscle_name="biceps"
         )
         
         # Should not crash and return valid result
@@ -742,7 +742,7 @@ class TestWeekNumberEdgeCases:
             order_in_workout=2,
             performance_level="progressing",
             week_number=week_number,
-            muscle_group=MuscleGroup.BICEPS
+            muscle_name="biceps"
         )
         
         assert result["triggers"]["phase_based_triggered"] == expect_phase_trigger
@@ -759,8 +759,8 @@ class TestAllMuscleGroups:
         self.service._check_struggling = Mock(return_value={"is_struggling": False})
         self.service._check_volume_ceiling = Mock(return_value={"at_ceiling": False})
     
-    @pytest.mark.parametrize("muscle_group", list(MuscleGroup))
-    def test_all_muscle_groups_handled(self, muscle_group):
+    @pytest.mark.parametrize("muscle_name", ["biceps", "triceps", "mid_chest", "lats", "quadriceps", "hamstrings"])
+    def test_all_muscle_groups_handled(self, muscle_name):
         """Test that all muscle groups are handled without errors."""
         result = self.service.recommend_techniques(
             athlete_id=1,
@@ -774,7 +774,7 @@ class TestAllMuscleGroups:
             order_in_workout=2,
             performance_level="progressing",
             week_number=2,
-            muscle_group=muscle_group
+            muscle_name=muscle_name
         )
         
         assert result["set_type"] is not None

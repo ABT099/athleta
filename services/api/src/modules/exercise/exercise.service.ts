@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
-import { exercisesTable } from '../../db/schema';
+import {
+  exercisesTable,
+  muscleGroupsTable,
+  exerciseMusclesTable,
+} from '../../db/schema';
 import { eq, ne, lte, inArray, and } from 'drizzle-orm';
 import { MuscleSimilarityUtil } from './utils/muscle-similarity.util';
 import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
@@ -8,10 +12,15 @@ import {
   SubstitutionResultDto,
   ExerciseDto,
   MatchDetailsDto,
+  MuscleActivationDto,
 } from './dto/substitution-result.dto';
 import { SubstitutionFiltersDto } from './dto/substitution-filters.dto';
 
 type ExerciseEntity = typeof exercisesTable.$inferSelect;
+
+interface ExerciseWithMuscles extends ExerciseEntity {
+  muscles: MuscleActivationDto[];
+}
 
 @Injectable()
 export class ExerciseService {
@@ -24,10 +33,9 @@ export class ExerciseService {
     originalExerciseId: number,
     filters?: SubstitutionFiltersDto,
   ): Promise<SubstitutionResultDto[]> {
-    // Get original exercise
-    const originalExercise = await this.db.query.exercisesTable.findFirst({
-      where: eq(exercisesTable.id, originalExerciseId),
-    });
+    // Get original exercise with muscles
+    const originalExercise =
+      await this.getExerciseWithMuscles(originalExerciseId);
 
     if (!originalExercise) {
       throw new NotFoundException(
@@ -78,8 +86,13 @@ export class ExerciseService {
       });
     }
 
+    // Get muscles for all candidate exercises
+    const candidateIds = filteredExercises.map((e) => e.id);
+    const exercisesWithMuscles =
+      await this.getMultipleExercisesWithMuscles(candidateIds);
+
     // Calculate similarity scores
-    const scoredExercises = filteredExercises
+    const scoredExercises = exercisesWithMuscles
       .map((exercise) => {
         const matchDetails = this.calculateMatchDetails(
           originalExercise,
@@ -127,29 +140,112 @@ export class ExerciseService {
     return this.findSubstitutions(originalExerciseId, enhancedFilters);
   }
 
-  private calculateMatchDetails(
-    exercise1: ExerciseEntity,
-    exercise2: ExerciseEntity,
-  ): MatchDetailsDto {
-    const primaryMuscleOverlap =
-      MuscleSimilarityUtil.calculateJaccardSimilarity(
-        exercise1.primaryMuscles || [],
-        exercise2.primaryMuscles || [],
-      );
+  /**
+   * Get a single exercise with its muscle activations
+   */
+  private async getExerciseWithMuscles(
+    exerciseId: number,
+  ): Promise<ExerciseWithMuscles | null> {
+    const exercise = await this.db.query.exercisesTable.findFirst({
+      where: eq(exercisesTable.id, exerciseId),
+    });
 
-    const secondaryMuscleOverlap =
-      MuscleSimilarityUtil.calculateJaccardSimilarity(
-        exercise1.secondaryMuscles || [],
-        exercise2.secondaryMuscles || [],
+    if (!exercise) {
+      return null;
+    }
+
+    // Get muscle activations for this exercise
+    const muscles = await this.db
+      .select({
+        id: muscleGroupsTable.id,
+        name: muscleGroupsTable.name,
+        displayName: muscleGroupsTable.displayName,
+        activationPercent: exerciseMusclesTable.activationPercent,
+      })
+      .from(exerciseMusclesTable)
+      .innerJoin(
+        muscleGroupsTable,
+        eq(exerciseMusclesTable.muscleGroupId, muscleGroupsTable.id),
+      )
+      .where(eq(exerciseMusclesTable.exerciseId, exerciseId))
+      .orderBy(exerciseMusclesTable.activationPercent);
+
+    return {
+      ...exercise,
+      muscles,
+    };
+  }
+
+  /**
+   * Get multiple exercises with their muscle activations
+   */
+  private async getMultipleExercisesWithMuscles(
+    exerciseIds: number[],
+  ): Promise<ExerciseWithMuscles[]> {
+    if (exerciseIds.length === 0) {
+      return [];
+    }
+
+    // Get all exercises
+    const exercises = await this.db.query.exercisesTable.findMany({
+      where: inArray(exercisesTable.id, exerciseIds),
+    });
+
+    // Get all muscle activations for these exercises
+    const allMuscles = await this.db
+      .select({
+        exerciseId: exerciseMusclesTable.exerciseId,
+        id: muscleGroupsTable.id,
+        name: muscleGroupsTable.name,
+        displayName: muscleGroupsTable.displayName,
+        activationPercent: exerciseMusclesTable.activationPercent,
+      })
+      .from(exerciseMusclesTable)
+      .innerJoin(
+        muscleGroupsTable,
+        eq(exerciseMusclesTable.muscleGroupId, muscleGroupsTable.id),
+      )
+      .where(inArray(exerciseMusclesTable.exerciseId, exerciseIds));
+
+    // Group muscles by exercise ID
+    const musclesByExercise = new Map<number, MuscleActivationDto[]>();
+    allMuscles.forEach((muscle) => {
+      if (!musclesByExercise.has(muscle.exerciseId)) {
+        musclesByExercise.set(muscle.exerciseId, []);
+      }
+      musclesByExercise.get(muscle.exerciseId)!.push({
+        id: muscle.id,
+        name: muscle.name,
+        displayName: muscle.displayName,
+        activationPercent: muscle.activationPercent,
+      });
+    });
+
+    // Combine exercises with their muscles
+    return exercises.map((exercise) => ({
+      ...exercise,
+      muscles: musclesByExercise.get(exercise.id) || [],
+    }));
+  }
+
+  private calculateMatchDetails(
+    exercise1: ExerciseWithMuscles,
+    exercise2: ExerciseWithMuscles,
+  ): MatchDetailsDto {
+    // Use weighted muscle similarity based on activation percentages
+    const muscleSimilarity =
+      MuscleSimilarityUtil.calculateWeightedMuscleSimilarity(
+        exercise1.muscles,
+        exercise2.muscles,
       );
 
     const movementPatternMatch =
       exercise1.movementPattern === exercise2.movementPattern
         ? 1.0
         : MuscleSimilarityUtil.areSimilarMovementPatterns(
-            exercise1.movementPattern || '',
-            exercise2.movementPattern || '',
-          )
+              exercise1.movementPattern || '',
+              exercise2.movementPattern || '',
+            )
           ? 0.7
           : 0.0;
 
@@ -166,32 +262,29 @@ export class ExerciseService {
     );
 
     return {
-      primaryMuscleOverlap,
+      muscleSimilarity,
       movementPatternMatch,
       exerciseTypeMatch,
-      secondaryMuscleOverlap,
       complexitySimilarity,
     };
   }
 
   private calculateSimilarityScore(matchDetails: MatchDetailsDto): number {
     return (
-      matchDetails.primaryMuscleOverlap * 0.4 +
+      matchDetails.muscleSimilarity * 0.5 + // Increased weight for muscle similarity
       matchDetails.movementPatternMatch * 0.25 +
       matchDetails.exerciseTypeMatch * 0.2 +
-      matchDetails.secondaryMuscleOverlap * 0.1 +
       matchDetails.complexitySimilarity * 0.05
     );
   }
 
-  private mapToExerciseDto(exercise: ExerciseEntity): ExerciseDto {
+  private mapToExerciseDto(exercise: ExerciseWithMuscles): ExerciseDto {
     return {
       id: exercise.id,
       name: exercise.name,
       description: exercise.description || '',
       equipment: exercise.equipment || '',
-      primaryMuscles: exercise.primaryMuscles || [],
-      secondaryMuscles: exercise.secondaryMuscles || [],
+      muscles: exercise.muscles,
       injuryRiskLevel: exercise.injuryRiskLevel,
       jointStressAreas: exercise.jointStressAreas || [],
       movementPattern: exercise.movementPattern || '',

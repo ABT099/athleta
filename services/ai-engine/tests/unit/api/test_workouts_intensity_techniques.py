@@ -47,7 +47,7 @@ def setup_basic_data(db_session):
     exercise = ExerciseFactory.create_isolation(
         db_session,
         name="Bicep Curl",
-        primary_muscles=["biceps"]
+        muscles=[("biceps", 95)]
     )
     
     plan = WorkoutPlanFactory.create(

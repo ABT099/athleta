@@ -8,14 +8,13 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
-from app.models import RecoveryMetrics, WorkoutSession, Athlete, ExerciseSet, Exercise
+from app.models import RecoveryMetrics, WorkoutSession, Athlete, ExerciseSet, Exercise, MuscleGroupModel
 from app.utils.constants import (
-    SleepQuality, SLEEP_QUALITY_MULTIPLIERS, MuscleGroup, 
+    SleepQuality, SLEEP_QUALITY_MULTIPLIERS,
     Gender, AGE_PROGRESSION_MODIFIERS, GENDER_RECOVERY_MODIFIERS,
     TrainingExperience, CNS_HEAVY_PATTERNS, CNS_MODERATE_PATTERNS,
     CNS_FATIGUE_PER_HEAVY_COMPOUND, CNS_FATIGUE_PER_MODERATE_COMPOUND
 )
-
 
 class RecoveryAnalyzer:
     """
@@ -248,7 +247,7 @@ class RecoveryAnalyzer:
     def assess_muscle_recovery(
         self,
         athlete_id: int,
-        muscle_group: MuscleGroup,
+        muscle_name: str,
         days_lookback: int = 7
     ) -> Dict:
         """
@@ -256,27 +255,41 @@ class RecoveryAnalyzer:
         
         Args:
             athlete_id: Athlete ID
-            muscle_group: Muscle group to assess
+            muscle_name: Muscle group name (e.g., "mid_chest", "lats")
             days_lookback: Days to look back for workouts
             
         Returns:
             Dict with recovery status and metrics
         """
+        # Get the muscle model from database
+        muscle = self.get_muscle_by_name(muscle_name)
+        if not muscle:
+            return {
+                "error": f"Muscle '{muscle_name}' not found in database",
+                "is_recovered": True,
+                "recovery_percentage": 1.0
+            }
+        
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
         
         # Get recent workouts targeting this muscle
+        from app.models import ExerciseMuscle
         recent_sessions = (
             self.db.query(WorkoutSession)
+            .join(ExerciseSet, ExerciseSet.workout_session_id == WorkoutSession.id)
+            .join(ExerciseMuscle, ExerciseMuscle.exercise_id == ExerciseSet.exercise_id)
             .filter(
                 WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= cutoff_date
+                WorkoutSession.session_date >= cutoff_date,
+                ExerciseMuscle.muscle_group_id == muscle.id,
+                ExerciseMuscle.activation_percent >= 50  # Only significant activation
             )
             .order_by(WorkoutSession.session_date.desc())
+            .distinct(WorkoutSession.id)  # Explicitly distinct on WorkoutSession.id to avoid duplicates from multiple JOINs
             .all()
         )
         
         # Calculate days since last workout for this muscle
-        # (Simplified - in production would need to check workout_day target muscles)
         if recent_sessions:
             last_workout = recent_sessions[0]
             current_time = datetime.now(timezone.utc)
@@ -284,9 +297,76 @@ class RecoveryAnalyzer:
             if session_time.tzinfo is None:
                 session_time = session_time.replace(tzinfo=timezone.utc)
             
-            days_since_workout = (current_time - session_time).days
+            # Calculate time elapsed in hours (preserves fractional hours, minutes, seconds)
+            time_elapsed = current_time - session_time
+            hours_since_workout = time_elapsed.total_seconds() / 3600
+            days_since_workout = time_elapsed.days  # Keep for display/logging purposes
+            
+            # Get athlete for dynamic recovery calculation
+            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            
+            if not athlete:
+                # If athlete not found, return error response
+                return {
+                    "error": f"Athlete {athlete_id} not found",
+                    "is_recovered": True,
+                    "recovery_percentage": 1.0
+                }
+            
+            # Get recent recovery metrics for sleep quality
+            recent_recovery = (
+                self.db.query(RecoveryMetrics)
+                .filter(
+                    RecoveryMetrics.athlete_id == athlete_id,
+                    RecoveryMetrics.date >= cutoff_date
+                )
+                .order_by(RecoveryMetrics.date.desc())
+                .first()
+            )
+            
+            sleep_quality = recent_recovery.sleep_quality if recent_recovery else SleepQuality.GOOD
+            
+            # Calculate dynamic recovery time based on last workout intensity
+            avg_rpe = last_workout.overall_rpe or 7.0
+            workout_intensity = avg_rpe / 10.0  # Convert RPE to 0-1 scale
+            
+            # Determine if workout had compound exercises by checking actual exercises performed
+            # Get exercises from the workout session that targeted this muscle
+            exercises_in_workout = (
+                self.db.query(Exercise)
+                .join(ExerciseSet, ExerciseSet.exercise_id == Exercise.id)
+                .join(ExerciseMuscle, ExerciseMuscle.exercise_id == Exercise.id)
+                .filter(
+                    ExerciseSet.workout_session_id == last_workout.id,
+                    ExerciseMuscle.muscle_group_id == muscle.id,
+                    ExerciseMuscle.activation_percent >= 50  # Only significant activation
+                )
+                .distinct(Exercise.id)  # Explicitly distinct on Exercise.id to avoid duplicates from multiple JOINs
+                .all()
+            )
+            
+            # Check if any exercises are compound
+            has_compound = any(
+                ex.exercise_type and ex.exercise_type.lower() == "compound"
+                for ex in exercises_in_workout
+            )
+            exercise_type = "compound" if has_compound else "isolation"
+            
+            # Calculate required recovery hours dynamically
+            required_recovery_hours = self.calculate_muscle_recovery_hours(
+                muscle=muscle,
+                workout_intensity=workout_intensity,
+                exercise_type=exercise_type,
+                athlete=athlete,
+                sleep_quality=sleep_quality
+            )
         else:
-            days_since_workout = 7  # No recent workout
+            # No recent workout - use default values
+            hours_since_workout = 7 * 24  # 7 days in hours
+            days_since_workout = 7
+            required_recovery_hours = muscle.base_recovery_hours
+        
+        required_recovery_days = required_recovery_hours / 24
         
         # Get recent soreness data
         recent_recovery = (
@@ -303,20 +383,11 @@ class RecoveryAnalyzer:
         if recent_recovery and recent_recovery.muscle_soreness:
             try:
                 soreness_dict = json.loads(recent_recovery.muscle_soreness)
-                muscle_soreness_level = soreness_dict.get(muscle_group.value, 1)
+                muscle_soreness_level = soreness_dict.get(muscle_name, 1)
             except (json.JSONDecodeError, TypeError, KeyError, AttributeError):
-                # AttributeError: JSON parses to non-dict (list/string), .get() fails
                 pass
         
-        # Determine recovery status
-        # Large muscles need 72h, medium 60h, small 48h
-        from app.utils.constants import MUSCLE_SIZE_MAP, RECOVERY_TIME_HOURS
-        
-        muscle_size = MUSCLE_SIZE_MAP.get(muscle_group)
-        required_recovery_hours = RECOVERY_TIME_HOURS.get(muscle_size, 48)
-        required_recovery_days = required_recovery_hours / 24
-        
-        hours_since_workout = days_since_workout * 24
+        # Use fractional hours for accurate recovery percentage calculation
         recovery_percentage = min(hours_since_workout / required_recovery_hours, 1.0)
         
         # Adjust for soreness
@@ -326,12 +397,15 @@ class RecoveryAnalyzer:
         is_recovered = recovery_percentage >= 0.9 and muscle_soreness_level <= 3
         
         return {
-            "muscle_group": muscle_group.value,
+            "muscle_group": muscle_name,
+            "muscle_display_name": muscle.display_name,
             "is_recovered": is_recovered,
             "recovery_percentage": round(recovery_percentage, 2),
             "days_since_workout": days_since_workout,
             "soreness_level": muscle_soreness_level,
-            "required_recovery_days": required_recovery_days,
+            "required_recovery_days": round(required_recovery_days, 1),
+            "required_recovery_hours": required_recovery_hours,
+            "muscle_size": muscle.size,
             "recommendation": self._get_recovery_recommendation(recovery_percentage, muscle_soreness_level)
         }
     
@@ -418,7 +492,9 @@ class RecoveryAnalyzer:
             if session_time.tzinfo is None:
                 session_time = session_time.replace(tzinfo=timezone.utc)
             
-            days_since = (current_time - session_time).days
+            # Calculate time elapsed in days (preserves fractional days for accurate decay)
+            time_elapsed = current_time - session_time
+            days_since = time_elapsed.total_seconds() / 86400  # Convert to fractional days
             load = 0
             
             if session.total_volume and session.overall_rpe:
@@ -594,3 +670,70 @@ class RecoveryAnalyzer:
         
         return recommendations
 
+    def calculate_muscle_recovery_hours(
+        self,
+        muscle: MuscleGroupModel,
+        workout_intensity: float,
+        exercise_type: str,
+        athlete: Athlete,
+        sleep_quality: SleepQuality
+    ) -> int:
+        """
+        Calculate dynamic recovery hours for a muscle based on multiple factors.
+        
+        Formula: base_hours * intensity_mod * exercise_mod * fitness_mod * sleep_mod
+        
+        Args:
+            muscle: MuscleGroupModel with base_recovery_hours
+            workout_intensity: Workout intensity (0.0-1.0, RPE-based)
+            exercise_type: "compound" or "isolation"
+            athlete: Athlete model with training_experience
+            sleep_quality: Recent sleep quality
+            
+        Returns:
+            Calculated recovery hours (int)
+        """
+        base_hours = muscle.base_recovery_hours
+        
+        # Intensity modifier: Higher RPE = longer recovery
+        # RPE 6 (0.6) = 0.85x, RPE 10 (1.0) = 1.3x
+        intensity_mod = 0.7 + (workout_intensity * 0.6)
+        
+        # Exercise type modifier: Compound exercises cause more systemic fatigue
+        exercise_mod = 1.15 if exercise_type == "compound" else 1.0
+        
+        # Experience/fitness modifier: Advanced athletes recover faster
+        fitness_mods = {
+            TrainingExperience.BEGINNER: 1.2,      # Longer recovery needed
+            TrainingExperience.INTERMEDIATE: 1.0,  # Baseline
+            TrainingExperience.ADVANCED: 0.85,     # Faster recovery
+        }
+        fitness_mod = fitness_mods.get(athlete.training_experience, 1.0)
+        
+        # Sleep quality modifier: Poor sleep slows recovery
+        sleep_mods = {
+            SleepQuality.POOR: 1.3,
+            SleepQuality.NOT_BAD: 1.1,
+            SleepQuality.GOOD: 1.0,
+            SleepQuality.EXCELLENT: 0.9,
+        }
+        sleep_mod = sleep_mods.get(sleep_quality, 1.0)
+        
+        # Calculate final recovery time
+        recovery_hours = base_hours * intensity_mod * exercise_mod * fitness_mod * sleep_mod
+        
+        return int(recovery_hours)
+    
+    def get_muscle_by_name(self, muscle_name: str) -> Optional[MuscleGroupModel]:
+        """
+        Get muscle group model by name.
+        
+        Args:
+            muscle_name: Name of the muscle (e.g., "mid_chest", "lats")
+            
+        Returns:
+            MuscleGroupModel or None if not found
+        """
+        return self.db.query(MuscleGroupModel).filter(
+            MuscleGroupModel.name == muscle_name
+        ).first()

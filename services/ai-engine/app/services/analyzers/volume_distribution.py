@@ -7,8 +7,9 @@ based on MEV/MAV/MRV landmarks (Israetel et al., Schoenfeld 2017).
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
+from app.models import ExerciseMuscle, MuscleGroupModel
 from app.utils.constants import (
-    TrainingExperience, MuscleGroup, MEV_SETS_PER_WEEK, MRV_SETS_PER_WEEK,
+    TrainingExperience, MEV_SETS_PER_WEEK, MRV_SETS_PER_WEEK,
     EFFECTIVE_SET_RIR_THRESHOLD, MAX_FOCUS_AREAS
 )
 from app.services.volume_manager import VolumeManager
@@ -69,14 +70,17 @@ class VolumeDistributionAnalyzer:
         if focus_warning:
             warnings.append(focus_warning)
         
-        for muscle_group in MuscleGroup:
-            muscle_name = muscle_group.value
+        # Get all muscle groups from database
+        all_muscles = self.db.query(MuscleGroupModel).all()
+        
+        for muscle in all_muscles:
+            muscle_name = muscle.name
             weekly_sets = muscle_volume.get(muscle_name, 0)
             
             # Get focus-aware volume targets
             volume_target = self.volume_manager.get_volume_target_for_muscle(
                 experience=experience,
-                muscle_group=muscle_group,
+                muscle_name=muscle_name,
                 focus_areas=focus_areas
             )
             
@@ -86,7 +90,7 @@ class VolumeDistributionAnalyzer:
             
             # Get landmarks for reference
             muscle_landmarks = self.volume_manager.get_volume_landmarks(
-                experience, muscle_group
+                experience, muscle_name
             )
             mev = muscle_landmarks["mev"]
             mav = muscle_landmarks["mav"]
@@ -203,21 +207,22 @@ class VolumeDistributionAnalyzer:
                 # Calculate effective sets (only RIR 0-4 count toward MEV/MRV)
                 effective_sets = self._calculate_effective_sets(exercise)
                 
-                # Get exercise from database to find muscle groups
-                from app.models import Exercise
-                ex = self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
-                if not ex:
-                    continue
+                # Get muscle activations for this exercise via junction table
+                muscle_links = (
+                    self.db.query(ExerciseMuscle, MuscleGroupModel)
+                    .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
+                    .filter(ExerciseMuscle.exercise_id == exercise_id)
+                    .all()
+                )
                 
-                # Count effective sets for primary muscles
-                primary_muscles = ex.primary_muscles or []
-                for muscle_name in primary_muscles:
-                    muscle_volume[muscle_name] = muscle_volume.get(muscle_name, 0) + effective_sets
-                
-                # Count partial effective sets for secondary muscles (50% contribution)
-                secondary_muscles = ex.secondary_muscles or []
-                for muscle_name in secondary_muscles:
-                    muscle_volume[muscle_name] = muscle_volume.get(muscle_name, 0) + (effective_sets * 0.5)
+                # Weight sets by activation percentage
+                for link, muscle in muscle_links:
+                    muscle_name = muscle.name
+                    activation_weight = link.activation_percent / 100.0
+                    
+                    # Weight by activation percentage
+                    weighted_sets = effective_sets * activation_weight
+                    muscle_volume[muscle_name] = muscle_volume.get(muscle_name, 0) + weighted_sets
         
         return muscle_volume
     

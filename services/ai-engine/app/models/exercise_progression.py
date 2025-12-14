@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, String, Boo
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from app.database import Base
+from app.database import Base, get_schema_table_args, get_fk_reference
 
 
 class ExerciseProgressionTracking(Base):
@@ -13,12 +13,12 @@ class ExerciseProgressionTracking(Base):
     Track exercise-specific progression for double progression logic.
     """
     __tablename__ = "exercise_progression_tracking"
-    __table_args__ = {'schema': 'ai_analysis'}
+    __table_args__ = get_schema_table_args("ai_analysis")
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("public.athletes.id", ondelete="CASCADE"), nullable=False, index=True)
-    exercise_id = Column(Integer, ForeignKey("public.exercises.id", ondelete="CASCADE"), nullable=False, index=True)
-    workout_session_id = Column(Integer, ForeignKey("ai_analysis.workout_sessions.id", ondelete="CASCADE"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id"), ondelete="CASCADE"), nullable=False, index=True)
+    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id"), ondelete="CASCADE"), nullable=False, index=True)
+    workout_session_id = Column(Integer, ForeignKey(get_fk_reference("workout_sessions.id", "ai_analysis"), ondelete="CASCADE"), nullable=False)
     session_date = Column(DateTime, nullable=False)
     
     # Performance data

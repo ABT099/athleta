@@ -278,7 +278,6 @@ class PlanUpdaterService:
         # Undefer deferred fields for response
         workout_day = self.db.query(WorkoutDay).options(
             undefer(WorkoutDay.name),
-            undefer(WorkoutDay.description),
             undefer(WorkoutDay.created_at)
         ).filter(WorkoutDay.id == workout_day.id).first()
         
@@ -287,7 +286,6 @@ class PlanUpdaterService:
             id=workout_day.id,
             workout_plan_id=workout_day.workout_plan_id,
             name=workout_day.name,
-            description=workout_day.description,
             day_of_week=workout_day.day_of_week,
             order_in_week=workout_day.order_in_week,
             target_muscle_groups=workout_day.target_muscle_groups,

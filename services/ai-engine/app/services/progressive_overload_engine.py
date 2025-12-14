@@ -13,7 +13,8 @@ import numpy as np
 
 from app.models import (
     Athlete, WorkoutPlan, PlanEntry, WorkoutDay, WorkoutDayExercise,
-    WorkoutSession, ExerciseSet, Exercise, RecoveryMetrics, PerformanceTrend
+    WorkoutSession, ExerciseSet, Exercise, RecoveryMetrics, PerformanceTrend,
+    ExerciseMuscle, MuscleGroupModel
 )
 from app.services.training_calculations import TrainingCalculations
 from app.services.recovery_analyzer import RecoveryAnalyzer
@@ -124,6 +125,7 @@ class ProgressiveOverloadEngine:
         )
         
         # Step 5.5: Apply constraint-based optimization
+        training_type = plan_context.get("training_type", TrainingType.HYPERTROPHY)
         from app.ml.constrained_optimizer import ConstrainedOptimizer
         optimizer = ConstrainedOptimizer(self.db)
         optimized_params = optimizer.optimize(
@@ -132,8 +134,8 @@ class ProgressiveOverloadEngine:
             adjustments.get("intensity_multiplier", 1.0),
             injury_risk,
             recovery_status,
-            athlete.training_type,
-            athlete.experience
+            training_type,
+            athlete.training_experience
         )
         
         # Update adjustments with optimized parameters
@@ -968,17 +970,16 @@ class ProgressiveOverloadEngine:
         if exercise_analyses and training_type == TrainingType.HYPERTROPHY:
             # For hypertrophy training, respect volume landmarks
             # Get volume recommendations for primary muscle groups
-            from app.utils.constants import MuscleGroup
             
             # Sample a few key muscle groups to check (chest, back, legs)
-            key_muscles = [MuscleGroup.CHEST, MuscleGroup.BACK, MuscleGroup.QUADRICEPS]
+            key_muscle_names = ["mid_chest", "lats", "quadriceps"]
             volume_adjustments_by_muscle = []
             
-            for muscle_group in key_muscles:
+            for muscle_name in key_muscle_names:
                 try:
                     volume_rec = self.volume_manager.get_volume_adjustment_recommendation(
                         athlete.id,
-                        muscle_group,
+                        muscle_name,
                         athlete.training_experience,
                         volume_adjustment
                     )
@@ -1114,14 +1115,20 @@ class ProgressiveOverloadEngine:
             exercise = self.db.query(Exercise).filter(Exercise.id == ex_id).first()
             exercise_type = ExerciseType.COMPOUND if exercise and exercise.exercise_type == "compound" else ExerciseType.ISOLATION
             
-            # Get primary muscle group for volume ceiling check
-            muscle_group = None
-            if exercise and exercise.primary_muscles:
-                from app.utils.constants import MuscleGroup
-                try:
-                    muscle_group = MuscleGroup(exercise.primary_muscles[0])
-                except (ValueError, IndexError):
-                    pass
+            # Get primary muscle group name for volume ceiling check
+            muscle_name = None
+            if exercise:
+                # Get primary muscle (highest activation)
+                primary_result = (
+                    self.db.query(ExerciseMuscle, MuscleGroupModel)
+                    .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
+                    .filter(ExerciseMuscle.exercise_id == exercise.id)
+                    .order_by(ExerciseMuscle.activation_percent.desc())
+                    .first()
+                )
+                if primary_result:
+                    link, muscle = primary_result
+                    muscle_name = muscle.name
             
             # Recommend intensity techniques (only if triggers detected)
             technique_recommendation = self.intensity_technique.recommend_techniques(
@@ -1136,7 +1143,7 @@ class ProgressiveOverloadEngine:
                 order_in_workout=analysis.get("order_in_workout", 1),
                 performance_level=performance_level,
                 week_number=week_number,
-                muscle_group=muscle_group
+                muscle_name=muscle_name,
             )
             
             # Calculate fatigue impact of technique

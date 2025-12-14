@@ -6,7 +6,7 @@ Tests volume tracking, landmark calculations, and recommendations.
 import pytest
 from datetime import datetime, timedelta
 from app.services.volume_manager import VolumeManager
-from app.utils.constants import TrainingExperience, MuscleGroup, MuscleSize
+from app.utils.constants import TrainingExperience
 from app.models import Athlete, Exercise, WorkoutSession, ExerciseSet
 
 
@@ -25,7 +25,7 @@ class TestVolumeLandmarks:
         
         landmarks = vm.get_volume_landmarks(
             TrainingExperience.BEGINNER,
-            MuscleGroup.CHEST
+            "mid_chest"
         )
         
         # Beginner chest (large muscle) should have MEV around 8, MRV around 15
@@ -43,7 +43,7 @@ class TestVolumeLandmarks:
         
         landmarks = vm.get_volume_landmarks(
             TrainingExperience.ADVANCED,
-            MuscleGroup.CHEST
+            "mid_chest"
         )
         
         # Advanced should have higher landmarks
@@ -51,24 +51,32 @@ class TestVolumeLandmarks:
         assert landmarks["mrv"] >= 20
         assert landmarks["mav"] == (landmarks["mev"] + landmarks["mrv"]) // 2
     
-    def test_muscle_size_adjustment(self):
+    def test_muscle_size_adjustment(self, db_session):
         """Test that muscle size affects landmarks."""
         from app.services.volume_manager import VolumeManager
-        from unittest.mock import Mock
+        from app.models import MuscleGroupModel
         
-        db = Mock()
-        vm = VolumeManager(db)
+        vm = VolumeManager(db_session)
         
-        # Large muscle (chest)
+        # Ensure muscle groups exist in test database
+        large_muscle = db_session.query(MuscleGroupModel).filter(
+            MuscleGroupModel.name == "quadriceps"
+        ).first()
+        
+        small_muscle = db_session.query(MuscleGroupModel).filter(
+            MuscleGroupModel.name == "biceps"
+        ).first()
+        
+        # Large muscle (quadriceps)
         large_landmarks = vm.get_volume_landmarks(
             TrainingExperience.INTERMEDIATE,
-            MuscleGroup.CHEST
+            "quadriceps"
         )
         
         # Small muscle (biceps)
         small_landmarks = vm.get_volume_landmarks(
             TrainingExperience.INTERMEDIATE,
-            MuscleGroup.BICEPS
+            "biceps"
         )
         
         # Large muscles should have higher landmarks
@@ -97,7 +105,7 @@ class TestVolumePosition:
         
         position = vm.get_volume_position(
             athlete_id=1,
-            muscle_group=MuscleGroup.CHEST,
+            muscle_name="mid_chest",
             experience=TrainingExperience.INTERMEDIATE
         )
         
@@ -123,7 +131,7 @@ class TestVolumePosition:
         
         position = vm.get_volume_position(
             athlete_id=1,
-            muscle_group=MuscleGroup.CHEST,
+            muscle_name="mid_chest",
             experience=TrainingExperience.INTERMEDIATE
         )
         
@@ -149,7 +157,7 @@ class TestVolumePosition:
         
         position = vm.get_volume_position(
             athlete_id=1,
-            muscle_group=MuscleGroup.CHEST,
+            muscle_name="mid_chest",
             experience=TrainingExperience.INTERMEDIATE
         )
         
@@ -180,7 +188,7 @@ class TestVolumeAdjustmentRecommendations:
         
         recommendation = vm.get_volume_adjustment_recommendation(
             athlete_id=1,
-            muscle_group=MuscleGroup.CHEST,
+            muscle_name="mid_chest",
             experience=TrainingExperience.INTERMEDIATE,
             current_volume_multiplier=1.0
         )
@@ -209,7 +217,7 @@ class TestVolumeAdjustmentRecommendations:
         
         recommendation = vm.get_volume_adjustment_recommendation(
             athlete_id=1,
-            muscle_group=MuscleGroup.CHEST,
+            muscle_name="mid_chest",
             experience=TrainingExperience.INTERMEDIATE,
             current_volume_multiplier=1.0
         )
@@ -238,7 +246,7 @@ class TestVolumeAdjustmentRecommendations:
         
         recommendation = vm.get_volume_adjustment_recommendation(
             athlete_id=1,
-            muscle_group=MuscleGroup.CHEST,
+            muscle_name="mid_chest",
             experience=TrainingExperience.INTERMEDIATE,
             current_volume_multiplier=1.0
         )
@@ -259,7 +267,7 @@ class TestAllMuscleVolumeStatus:
         vm = VolumeManager(db)
         
         # Mock get_volume_position for all muscle groups
-        def mock_get_volume_position(athlete_id, muscle_group, experience, days_lookback):
+        def mock_get_volume_position(athlete_id, muscle_name, experience, days_lookback):
             return {
                 "position": "mev_to_mav",
                 "current_sets": 12,
@@ -273,6 +281,27 @@ class TestAllMuscleVolumeStatus:
             }
         
         vm.get_volume_position = Mock(side_effect=mock_get_volume_position)
+        
+        # Mock the database query for muscle groups
+        from app.models import MuscleGroupModel
+        # Create mock muscles with name attribute properly configured
+        mock_muscle1 = Mock(spec=MuscleGroupModel)
+        mock_muscle1.name = "mid_chest"
+        mock_muscle1.display_name = "Mid Chest"
+        
+        mock_muscle2 = Mock(spec=MuscleGroupModel)
+        mock_muscle2.name = "biceps"
+        mock_muscle2.display_name = "Biceps"
+        
+        mock_muscle3 = Mock(spec=MuscleGroupModel)
+        mock_muscle3.name = "quadriceps"
+        mock_muscle3.display_name = "Quadriceps"
+        
+        mock_muscles = [mock_muscle1, mock_muscle2, mock_muscle3]
+        
+        mock_query = Mock()
+        mock_query.all = Mock(return_value=mock_muscles)
+        db.query = Mock(return_value=mock_query)
         
         status = vm.get_all_muscle_volume_status(
             athlete_id=1,

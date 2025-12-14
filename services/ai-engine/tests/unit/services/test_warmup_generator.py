@@ -7,6 +7,7 @@ number of sets, and exercise characteristics.
 import pytest
 from app.services.warmup_generator import WarmupGenerator
 from app.models import Exercise
+from tests.factories import ExerciseFactory
 
 
 @pytest.mark.unit
@@ -133,9 +134,10 @@ class TestWarmupGenerator:
         """Test warm-up set count determination for compound primary exercise."""
         generator = WarmupGenerator()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Squat",
-            primary_muscles=["quadriceps", "glutes"],
+            muscles=[("quadriceps", 60), ("glutes", 60)],
             exercise_type="compound",
             complexity_score=1.5,
             injury_risk_level=0.6
@@ -153,9 +155,10 @@ class TestWarmupGenerator:
         """Test warm-up set count determination for isolation accessory exercise."""
         generator = WarmupGenerator()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bicep Curl",
-            primary_muscles=["biceps"],
+            muscles=[("biceps", 95)],
             exercise_type="isolation",
             complexity_score=0.7,
             injury_risk_level=0.2
@@ -173,9 +176,10 @@ class TestWarmupGenerator:
         """Test warm-up set count with high complexity score."""
         generator = WarmupGenerator()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Snatch",
-            primary_muscles=["shoulders", "legs"],
+            muscles=[("anterior_delt", 70), ("quadriceps", 60)],
             exercise_type="compound",
             complexity_score=2.0,  # Very high complexity
             injury_risk_level=0.8  # High injury risk
@@ -193,9 +197,10 @@ class TestWarmupGenerator:
         """Test warm-up set count with low risk and simple exercise."""
         generator = WarmupGenerator()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Leg Extension",
-            primary_muscles=["quadriceps"],
+            muscles=[("quadriceps", 95)],
             exercise_type="isolation",
             complexity_score=0.5,  # Low complexity
             injury_risk_level=0.1  # Low injury risk
@@ -242,9 +247,10 @@ class TestWarmupIntegration:
         db_session.flush()
         
         # Create exercise
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound",
             complexity_score=1.2,
             injury_risk_level=0.5
@@ -342,9 +348,10 @@ class TestWarmupIntegration:
         db_session.flush()
         
         # Create exercise
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Deadlift",
-            primary_muscles=["hamstrings", "glutes", "back"],
+            muscles=[("hamstrings", 70), ("glutes", 60), ("erector_spinae", 50)],
             exercise_type="compound",
             complexity_score=1.8,  # High complexity
             injury_risk_level=0.7  # High injury risk

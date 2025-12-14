@@ -4,16 +4,14 @@ Muscle Group Balance Analyzer.
 Analyzes push/pull and upper/lower balance ratios.
 References: Contreras, Helms - Push/pull balance for shoulder health.
 """
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from sqlalchemy.orm import Session
 
+from app.models import Exercise, ExerciseMuscle, MuscleGroupModel
 from app.utils.constants import (
-    MuscleGroup, PUSH_MUSCLE_GROUPS, PULL_MUSCLE_GROUPS,
-    UPPER_MUSCLE_GROUPS, LOWER_MUSCLE_GROUPS,
     PUSH_PULL_RATIO_TARGET, PUSH_PULL_RATIO_TOLERANCE,
     UPPER_LOWER_RATIO_TARGET, UPPER_LOWER_RATIO_TOLERANCE,
-    ANTAGONIST_PAIRS, EFFECTIVE_SET_RIR_THRESHOLD,
-    FocusArea, FOCUS_AREA_TO_MUSCLE_GROUPS
+    EFFECTIVE_SET_RIR_THRESHOLD, FocusArea
 )
 
 
@@ -26,6 +24,17 @@ class MuscleGroupBalanceAnalyzer:
     - Upper/Lower ratio (context-dependent)
     - Antagonist pair balance
     """
+    
+    # Define muscle groups for push/pull/upper/lower
+    PUSH_MUSCLES = {"mid_chest", "upper_chest", "lower_chest", "anterior_delt", "triceps"}
+    PULL_MUSCLES = {"lats", "mid_back", "upper_traps", "lower_traps", "posterior_delt", "biceps"}
+    UPPER_MUSCLES = {
+        "mid_chest", "upper_chest", "lower_chest", 
+        "anterior_delt", "lateral_delt", "posterior_delt",
+        "lats", "mid_back", "upper_traps", "lower_traps",
+        "biceps", "triceps", "forearms"
+    }
+    LOWER_MUSCLES = {"quadriceps", "hamstrings", "glutes", "calves", "hip_flexors"}
     
     def __init__(self, db: Session):
         self.db = db
@@ -52,18 +61,18 @@ class MuscleGroupBalanceAnalyzer:
         muscle_volume = self._calculate_muscle_volume(workout_days)
         
         # Calculate push/pull volume
-        push_volume = sum(muscle_volume.get(mg.value, 0) for mg in PUSH_MUSCLE_GROUPS)
-        pull_volume = sum(muscle_volume.get(mg.value, 0) for mg in PULL_MUSCLE_GROUPS)
+        push_volume = sum(muscle_volume.get(mg, 0) for mg in self.PUSH_MUSCLES)
+        pull_volume = sum(muscle_volume.get(mg, 0) for mg in self.PULL_MUSCLES)
         
         # Calculate upper/lower volume
-        upper_volume = sum(muscle_volume.get(mg.value, 0) for mg in UPPER_MUSCLE_GROUPS)
-        lower_volume = sum(muscle_volume.get(mg.value, 0) for mg in LOWER_MUSCLE_GROUPS)
+        upper_volume = sum(muscle_volume.get(mg, 0) for mg in self.UPPER_MUSCLES)
+        lower_volume = sum(muscle_volume.get(mg, 0) for mg in self.LOWER_MUSCLES)
         
         # Check if focus areas create intentional imbalance
-        focus_push = any(mg in focus_muscle_groups for mg in PUSH_MUSCLE_GROUPS)
-        focus_pull = any(mg in focus_muscle_groups for mg in PULL_MUSCLE_GROUPS)
-        focus_upper = any(mg in focus_muscle_groups for mg in UPPER_MUSCLE_GROUPS)
-        focus_lower = any(mg in focus_muscle_groups for mg in LOWER_MUSCLE_GROUPS)
+        focus_push = any(mg in focus_muscle_groups for mg in self.PUSH_MUSCLES)
+        focus_pull = any(mg in focus_muscle_groups for mg in self.PULL_MUSCLES)
+        focus_upper = any(mg in focus_muscle_groups for mg in self.UPPER_MUSCLES)
+        focus_lower = any(mg in focus_muscle_groups for mg in self.LOWER_MUSCLES)
         
         # Calculate ratios
         push_pull_ratio = push_volume / pull_volume if pull_volume > 0 else float('inf')
@@ -110,7 +119,7 @@ class MuscleGroupBalanceAnalyzer:
                         "severity": "high",
                         "category": "balance",
                         "message": f"Push volume ({push_volume:.1f} sets) exceeds pull volume ({pull_volume:.1f} sets)",
-                        "affected_items": [mg.value for mg in PUSH_MUSCLE_GROUPS],
+                        "affected_items": list(self.PUSH_MUSCLES),
                         "recommendation": f"Add {push_volume - pull_volume:.0f} more pull sets to balance shoulder health"
                     })
                 else:
@@ -118,7 +127,7 @@ class MuscleGroupBalanceAnalyzer:
                         "severity": "medium",
                         "category": "balance",
                         "message": f"Pull volume ({pull_volume:.1f} sets) exceeds push volume ({push_volume:.1f} sets)",
-                        "affected_items": [mg.value for mg in PULL_MUSCLE_GROUPS],
+                        "affected_items": list(self.PULL_MUSCLES),
                         "recommendation": f"Add {pull_volume - push_volume:.0f} more push sets for balanced development"
                     })
         
@@ -200,21 +209,23 @@ class MuscleGroupBalanceAnalyzer:
                 # Calculate effective sets (only RIR 0-4 count toward volume landmarks)
                 effective_sets = self._calculate_effective_sets(exercise)
                 
-                # Get exercise from database
-                from app.models import Exercise
-                ex = self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
-                if not ex:
-                    continue
+                # Get muscle activations for this exercise via junction table
+                muscle_links = (
+                    self.db.query(ExerciseMuscle, MuscleGroupModel)
+                    .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
+                    .filter(ExerciseMuscle.exercise_id == exercise_id)
+                    .all()
+                )
                 
-                # Count effective sets for primary muscles
-                primary_muscles = ex.primary_muscles or []
-                for muscle_name in primary_muscles:
-                    muscle_volume[muscle_name] = muscle_volume.get(muscle_name, 0) + effective_sets
-                
-                # Count partial effective sets for secondary muscles (50% contribution)
-                secondary_muscles = ex.secondary_muscles or []
-                for muscle_name in secondary_muscles:
-                    muscle_volume[muscle_name] = muscle_volume.get(muscle_name, 0) + (effective_sets * 0.5)
+                for link, muscle in muscle_links:
+                    muscle_name = muscle.name
+                    activation_weight = link.activation_percent / 100.0
+                    
+                    # Weight by activation percentage
+                    # Primary muscles (70%+) get full weight, secondary get proportional
+                    weighted_sets = effective_sets * activation_weight
+                    
+                    muscle_volume[muscle_name] = muscle_volume.get(muscle_name, 0) + weighted_sets
         
         return muscle_volume
     
@@ -263,15 +274,19 @@ class MuscleGroupBalanceAnalyzer:
         Returns:
             Dict with antagonist pair analysis
         """
+        # Define antagonist pairs using muscle names
+        antagonist_pairs = [
+            ("mid_chest", "mid_back"),
+            ("anterior_delt", "posterior_delt"),
+            ("biceps", "triceps"),
+            ("quadriceps", "hamstrings"),
+        ]
+        
         pairs_analysis = {}
         
-        for muscle1, muscle2 in ANTAGONIST_PAIRS.items():
-            # Avoid duplicate pairs
-            if muscle1.value > muscle2.value:
-                continue
-            
-            vol1 = muscle_volume.get(muscle1.value, 0)
-            vol2 = muscle_volume.get(muscle2.value, 0)
+        for muscle1, muscle2 in antagonist_pairs:
+            vol1 = muscle_volume.get(muscle1, 0)
+            vol2 = muscle_volume.get(muscle2, 0)
             
             if vol1 == 0 and vol2 == 0:
                 continue
@@ -279,36 +294,51 @@ class MuscleGroupBalanceAnalyzer:
             ratio = vol1 / vol2 if vol2 > 0 else float('inf')
             status = "balanced" if 0.8 <= ratio <= 1.2 else "imbalanced"
             
-            pairs_analysis[f"{muscle1.value}_{muscle2.value}"] = {
-                muscle1.value: round(vol1, 1),
-                muscle2.value: round(vol2, 1),
+            pairs_analysis[f"{muscle1}_{muscle2}"] = {
+                muscle1: round(vol1, 1),
+                muscle2: round(vol2, 1),
                 "ratio": round(ratio, 2),
                 "status": status,
             }
         
         return pairs_analysis
     
-    def _expand_focus_areas(self, focus_areas: List[str]) -> set:
+    def _expand_focus_areas(self, focus_areas: List[str]) -> Set[str]:
         """
-        Expand focus areas to muscle groups.
+        Expand focus areas to muscle group names.
         
         Args:
             focus_areas: List of focus area strings (e.g., ["chest", "back"])
             
         Returns:
-            Set of MuscleGroup enums
+            Set of muscle group names
         """
         if not focus_areas:
             return set()
         
+        # Map focus areas to muscle names
+        focus_to_muscles = {
+            "chest": {"upper_chest", "mid_chest", "lower_chest"},
+            "back": {"lats", "upper_traps", "mid_back", "lower_traps"},
+            "shoulders": {"anterior_delt", "lateral_delt", "posterior_delt"},
+            "arms": {"biceps", "triceps", "forearms"},
+            "legs": {"quadriceps", "hamstrings", "glutes", "hip_flexors", "calves"},
+            "core": {"abs", "erector_spinae"},
+        }
+        
         muscle_groups = set()
         for focus_area_str in focus_areas:
             try:
-                focus_area = FocusArea(focus_area_str.lower())
-                groups = FOCUS_AREA_TO_MUSCLE_GROUPS.get(focus_area, [])
-                muscle_groups.update(groups)
+                focus_area_lower = focus_area_str.lower()
+                # Try as FocusArea enum
+                try:
+                    focus_area = FocusArea(focus_area_lower)
+                    muscles = focus_to_muscles.get(focus_area.value, set())
+                    muscle_groups.update(muscles)
+                except ValueError:
+                    # Maybe it's a direct muscle name
+                    muscle_groups.add(focus_area_lower)
             except (ValueError, KeyError):
                 continue
         
         return muscle_groups
-

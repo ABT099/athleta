@@ -1,9 +1,15 @@
 export class MatchDetailsDto {
-  primaryMuscleOverlap: number;
+  muscleSimilarity: number; // Weighted similarity based on activation percentages
   movementPatternMatch: number;
   exerciseTypeMatch: number;
-  secondaryMuscleOverlap: number;
   complexitySimilarity: number;
+}
+
+export class MuscleActivationDto {
+  id: number;
+  name: string;
+  displayName: string;
+  activationPercent: number;
 }
 
 export class ExerciseDto {
@@ -11,8 +17,7 @@ export class ExerciseDto {
   name: string;
   description: string;
   equipment: string;
-  primaryMuscles: string[];
-  secondaryMuscles: string[];
+  muscles: MuscleActivationDto[]; // Replaces primaryMuscles and secondaryMuscles
   injuryRiskLevel: number;
   jointStressAreas: string[];
   movementPattern: string;
@@ -26,4 +31,3 @@ export class SubstitutionResultDto {
   reason: string;
   matchDetails: MatchDetailsDto;
 }
-

@@ -1,7 +1,56 @@
+export interface MuscleActivation {
+  id: number;
+  name: string;
+  displayName: string;
+  activationPercent: number;
+}
+
 export class MuscleSimilarityUtil {
   /**
+   * Calculate weighted Jaccard similarity between two muscle activation sets.
+   * Uses activation percentages to weight the similarity calculation.
+   * Returns a value between 0 (no overlap) and 1 (identical activation patterns).
+   */
+  static calculateWeightedMuscleSimilarity(
+    muscles1: MuscleActivation[],
+    muscles2: MuscleActivation[],
+  ): number {
+    if (muscles1.length === 0 && muscles2.length === 0) {
+      return 1.0;
+    }
+    if (muscles1.length === 0 || muscles2.length === 0) {
+      return 0.0;
+    }
+
+    // Create maps of muscle name -> activation percentage
+    const map1 = new Map(
+      muscles1.map((m) => [m.name, m.activationPercent / 100]),
+    );
+    const map2 = new Map(
+      muscles2.map((m) => [m.name, m.activationPercent / 100]),
+    );
+
+    // Get all unique muscle names
+    const allMuscles = new Set([...map1.keys(), ...map2.keys()]);
+
+    // Calculate weighted Jaccard similarity
+    let intersectionSum = 0;
+    let unionSum = 0;
+
+    allMuscles.forEach((muscle) => {
+      const act1 = map1.get(muscle) || 0;
+      const act2 = map2.get(muscle) || 0;
+      intersectionSum += Math.min(act1, act2);
+      unionSum += Math.max(act1, act2);
+    });
+
+    return unionSum === 0 ? 0 : intersectionSum / unionSum;
+  }
+
+  /**
+   * Legacy method for backward compatibility.
    * Calculate Jaccard similarity between two arrays.
-   * Returns a value between 0 (no overlap) and 1 (identical sets).
+   * @deprecated Use calculateWeightedMuscleSimilarity instead
    */
   static calculateJaccardSimilarity(
     array1: string[],
@@ -52,18 +101,17 @@ export class MuscleSimilarityUtil {
    * Generate human-readable reason for substitution recommendation.
    */
   static generateSubstitutionReason(matchDetails: {
-    primaryMuscleOverlap: number;
+    muscleSimilarity: number;
     movementPatternMatch: number;
     exerciseTypeMatch: number;
-    secondaryMuscleOverlap: number;
     complexitySimilarity: number;
   }): string {
     const reasons: string[] = [];
 
-    if (matchDetails.primaryMuscleOverlap >= 0.8) {
-      reasons.push('targets same primary muscles');
-    } else if (matchDetails.primaryMuscleOverlap >= 0.5) {
-      reasons.push('targets similar primary muscles');
+    if (matchDetails.muscleSimilarity >= 0.8) {
+      reasons.push('targets same muscles');
+    } else if (matchDetails.muscleSimilarity >= 0.5) {
+      reasons.push('targets similar muscles');
     }
 
     if (matchDetails.movementPatternMatch >= 0.9) {
@@ -76,10 +124,6 @@ export class MuscleSimilarityUtil {
       reasons.push('same exercise type');
     }
 
-    if (matchDetails.secondaryMuscleOverlap >= 0.7) {
-      reasons.push('similar secondary muscle involvement');
-    }
-
     if (matchDetails.complexitySimilarity >= 0.9) {
       reasons.push('similar complexity level');
     }
@@ -87,4 +131,3 @@ export class MuscleSimilarityUtil {
     return reasons.join(', ') || 'suitable alternative';
   }
 }
-

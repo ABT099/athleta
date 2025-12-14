@@ -14,6 +14,7 @@ from app.models import (
 from app.utils.constants import (
     Gender, TrainingExperience, TrainingType, PeriodizationModel
 )
+from tests.factories import ExerciseFactory
 
 
 class TestPRDetection:
@@ -31,9 +32,10 @@ class TestPRDetection:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -118,9 +120,10 @@ class TestPRDetection:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Squat",
-            primary_muscles=["quadriceps"],
+            muscles=[("quadriceps", 90)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -218,9 +221,10 @@ class TestPRDetection:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Deadlift",
-            primary_muscles=["back"],
+            muscles=[("lats", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -296,9 +300,10 @@ class TestPRDetection:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -385,9 +390,10 @@ class TestPRRetrieval:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -432,9 +438,10 @@ class TestPRRetrieval:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="New Exercise",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -509,9 +516,10 @@ class TestPlateauDetection:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -534,9 +542,10 @@ class TestPlateauDetection:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -571,9 +580,10 @@ class TestPlateauDetection:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -614,9 +624,10 @@ class TestPRComparison:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -655,9 +666,10 @@ class TestPRComparison:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -695,9 +707,10 @@ class TestPRComparison:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)
@@ -741,9 +754,10 @@ class TestPRIntegration:
         db_session.add(athlete)
         db_session.flush()
         
-        exercise = Exercise(
+        exercise = ExerciseFactory.create(
+            db_session,
             name="Bench Press",
-            primary_muscles=["chest"],
+            muscles=[("mid_chest", 95)],
             exercise_type="compound"
         )
         db_session.add(exercise)

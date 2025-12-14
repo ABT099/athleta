@@ -10,11 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Athlete, Exercise, WorkoutPlan, WorkoutDay, WorkoutDayExercise,
-    WorkoutSession, ExerciseSet, RecoveryMetrics
+    WorkoutSession, ExerciseSet, RecoveryMetrics, MuscleGroupModel, ExerciseMuscle
 )
 from app.utils.constants import (
     Gender, TrainingExperience, TrainingType, PeriodizationModel,
-    TrainingPhase, MuscleGroup
+    TrainingPhase
 )
 
 
@@ -83,45 +83,67 @@ class ExerciseFactory:
     def create(
         db: Session,
         name: str = "Test Exercise",
-        primary_muscles: List[str] = None,
+        muscles: List[tuple[str, int]] = None,
         exercise_type: str = "compound",
         complexity_score: float = 1.0,
         injury_risk_level: float = 0.5,
-        secondary_muscles: Optional[List[str]] = None,
         movement_pattern: Optional[str] = None,
         **kwargs
     ) -> Exercise:
         """
-        Create an Exercise instance.
+        Create an Exercise instance with muscle activations.
         
         Args:
             db: Database session
             name: Exercise name
-            primary_muscles: List of primary muscle groups
+            muscles: List of (muscle_name, activation_percent) tuples
             exercise_type: "compound" or "isolation"
             complexity_score: Complexity score (0.0-2.0)
             injury_risk_level: Injury risk level (0.0-1.0)
-            secondary_muscles: List of secondary muscle groups
             movement_pattern: Movement pattern (squat, hinge, push, pull, etc.)
             **kwargs: Additional fields to set
             
         Returns:
-            Created Exercise instance
+            Created Exercise instance with muscle links
         """
-        if primary_muscles is None:
-            primary_muscles = ["chest"]
+        if muscles is None:
+            # Default to mid_chest with high activation
+            muscles = [("mid_chest", 90)]
         
         exercise = Exercise(
             name=name,
-            primary_muscles=primary_muscles,
             exercise_type=exercise_type,
             complexity_score=complexity_score,
             injury_risk_level=injury_risk_level,
-            secondary_muscles=secondary_muscles,
             movement_pattern=movement_pattern,
             **kwargs
         )
         db.add(exercise)
+        db.flush()
+        
+        # Create muscle links
+        for muscle_name, activation_percent in muscles:
+            # Get or query muscle from database
+            muscle = db.query(MuscleGroupModel).filter(
+                MuscleGroupModel.name == muscle_name
+            ).first()
+            
+            if muscle:
+                link = ExerciseMuscle(
+                    exercise_id=exercise.id,
+                    muscle_group_id=muscle.id,
+                    activation_percent=activation_percent
+                )
+                db.add(link)
+            else:
+                # Warn when muscle is not found to help catch typos and missing data
+                import warnings
+                warnings.warn(
+                    f"Muscle '{muscle_name}' not found in database for exercise '{name}'. "
+                    f"Muscle link will not be created. Check if muscle name is correct or if muscle groups are seeded.",
+                    UserWarning
+                )
+        
         db.flush()
         return exercise
     
@@ -129,12 +151,17 @@ class ExerciseFactory:
     def create_compound(
         db: Session,
         name: str = "Bench Press",
-        primary_muscles: List[str] = None,
+        muscles: List[tuple[str, int]] = None,
         **kwargs
     ) -> Exercise:
-        """Create a compound exercise."""
-        if primary_muscles is None:
-            primary_muscles = ["chest", "shoulders", "triceps"]
+        """Create a compound exercise with typical activation pattern."""
+        if muscles is None:
+            # Default compound exercise: bench press pattern
+            muscles = [
+                ("mid_chest", 90),
+                ("anterior_delt", 60),
+                ("triceps", 50)
+            ]
             
         # Set default movement pattern if not provided
         if "movement_pattern" not in kwargs:
@@ -143,7 +170,7 @@ class ExerciseFactory:
         return ExerciseFactory.create(
             db,
             name=name,
-            primary_muscles=primary_muscles,
+            muscles=muscles,
             exercise_type="compound",
             complexity_score=1.2,
             injury_risk_level=0.5,
@@ -154,12 +181,16 @@ class ExerciseFactory:
     def create_isolation(
         db: Session,
         name: str = "Bicep Curl",
-        primary_muscles: List[str] = None,
+        muscles: List[tuple[str, int]] = None,
         **kwargs
     ) -> Exercise:
-        """Create an isolation exercise."""
-        if primary_muscles is None:
-            primary_muscles = ["biceps"]
+        """Create an isolation exercise with typical activation pattern."""
+        if muscles is None:
+            # Default isolation exercise: bicep curl pattern
+            muscles = [
+                ("biceps", 95),
+                ("forearms", 30)
+            ]
             
         # Set default movement pattern if not provided
         if "movement_pattern" not in kwargs:
@@ -168,7 +199,7 @@ class ExerciseFactory:
         return ExerciseFactory.create(
             db,
             name=name,
-            primary_muscles=primary_muscles,
+            muscles=muscles,
             exercise_type="isolation",
             complexity_score=0.7,
             injury_risk_level=0.2,
@@ -255,7 +286,7 @@ class WorkoutDayFactory:
             Created WorkoutDay instance
         """
         if target_muscle_groups is None:
-            target_muscle_groups = ["chest"]
+            target_muscle_groups = ["mid_chest"]
         
         workout_day = WorkoutDay(
             workout_plan_id=workout_plan_id,

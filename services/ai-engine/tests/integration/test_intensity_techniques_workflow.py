@@ -49,21 +49,21 @@ def setup_athlete_with_plan(db_session):
     bench_press = ExerciseFactory.create_compound(
         db_session,
         name="Bench Press",
-        primary_muscles=["chest", "shoulders", "triceps"],
+        muscles=[("mid_chest", 90), ("anterior_delt", 70), ("triceps", 60)],
         movement_pattern="push"
     )
     
     bicep_curl = ExerciseFactory.create_isolation(
         db_session,
         name="Bicep Curl",
-        primary_muscles=["biceps"],
+        muscles=[("biceps", 95)],
         movement_pattern="pull"
     )
     
     tricep_pushdown = ExerciseFactory.create_isolation(
         db_session,
         name="Tricep Pushdown",
-        primary_muscles=["triceps"],
+        muscles=[("triceps", 95)],
         movement_pattern="push"
     )
     
@@ -334,7 +334,7 @@ class TestCreatePlateauForTechniqueRecommendation:
                 db_session,
                 athlete_id=data["athlete"].id,
                 workout_day_id=data["workout_day"].id,
-                session_date=(datetime.now(timezone.utc) - timedelta(days=7*(3-session_num))).replace(tzinfo=None),
+                session_date=datetime.now(timezone.utc) - timedelta(days=7*(3-session_num)),
                 overall_rpe=8.0
             )
             
@@ -553,7 +553,7 @@ class TestBeginnerDoesNotGetAdvancedTechniques:
         exercise = ExerciseFactory.create_isolation(
             db_session,
             name="Lateral Raise",
-            primary_muscles=["shoulders"]
+            muscles=[("lateral_delt", 95)]
         )
         
         plan = WorkoutPlanFactory.create(
@@ -586,7 +586,7 @@ class TestBeginnerDoesNotGetAdvancedTechniques:
                 db_session,
                 athlete_id=athlete.id,
                 workout_day_id=workout_day.id,
-                session_date=(datetime.now(timezone.utc) - timedelta(days=7*(2-session_num))).replace(tzinfo=None),
+                session_date=datetime.now(timezone.utc) - timedelta(days=7*(2-session_num)),
                 overall_rpe=9.0
             )
             

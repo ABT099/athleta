@@ -47,22 +47,6 @@ class SleepQuality(str, Enum):
     EXCELLENT = "excellent"
 
 
-class MuscleGroup(str, Enum):
-    """Major muscle groups."""
-    CHEST = "chest"
-    BACK = "back"
-    SHOULDERS = "shoulders"
-    BICEPS = "biceps"
-    TRICEPS = "triceps"
-    FOREARMS = "forearms"
-    QUADRICEPS = "quadriceps"
-    HAMSTRINGS = "hamstrings"
-    GLUTES = "glutes"
-    CALVES = "calves"
-    ABS = "abs"
-    LOWER_BACK = "lower_back"
-
-
 class FocusArea(str, Enum):
     """Simplified focus areas for athlete preferences."""
     CHEST = "chest"
@@ -73,45 +57,11 @@ class FocusArea(str, Enum):
     CORE = "core"
 
 
-FOCUS_AREA_TO_MUSCLE_GROUPS: Dict[FocusArea, List[MuscleGroup]] = {
-    FocusArea.CHEST: [MuscleGroup.CHEST],
-    FocusArea.BACK: [MuscleGroup.BACK],
-    FocusArea.SHOULDERS: [MuscleGroup.SHOULDERS],
-    FocusArea.ARMS: [MuscleGroup.BICEPS, MuscleGroup.TRICEPS, MuscleGroup.FOREARMS],
-    FocusArea.LEGS: [MuscleGroup.QUADRICEPS, MuscleGroup.HAMSTRINGS, MuscleGroup.GLUTES],
-    FocusArea.CORE: [MuscleGroup.ABS, MuscleGroup.LOWER_BACK],
-}
-
-
 class MuscleSize(str, Enum):
-    """Relative muscle size for recovery considerations."""
+    """Relative muscle size for recovery considerations (used for type hints)."""
     SMALL = "small"  # Biceps, triceps, calves, forearms
     MEDIUM = "medium"  # Shoulders, abs
     LARGE = "large"  # Chest, back, quads, hamstrings, glutes
-
-
-# Muscle group to size mapping
-MUSCLE_SIZE_MAP: Dict[MuscleGroup, MuscleSize] = {
-    MuscleGroup.CHEST: MuscleSize.LARGE,
-    MuscleGroup.BACK: MuscleSize.LARGE,
-    MuscleGroup.SHOULDERS: MuscleSize.MEDIUM,
-    MuscleGroup.BICEPS: MuscleSize.SMALL,
-    MuscleGroup.TRICEPS: MuscleSize.SMALL,
-    MuscleGroup.FOREARMS: MuscleSize.SMALL,
-    MuscleGroup.QUADRICEPS: MuscleSize.LARGE,
-    MuscleGroup.HAMSTRINGS: MuscleSize.LARGE,
-    MuscleGroup.GLUTES: MuscleSize.LARGE,
-    MuscleGroup.CALVES: MuscleSize.SMALL,
-    MuscleGroup.ABS: MuscleSize.MEDIUM,
-    MuscleGroup.LOWER_BACK: MuscleSize.MEDIUM,
-}
-
-# Recovery time in hours by muscle size
-RECOVERY_TIME_HOURS: Dict[MuscleSize, int] = {
-    MuscleSize.SMALL: 48,
-    MuscleSize.MEDIUM: 60,
-    MuscleSize.LARGE: 72,
-}
 
 # Sleep quality multipliers for recovery
 SLEEP_QUALITY_MULTIPLIERS: Dict[SleepQuality, float] = {
@@ -601,35 +551,32 @@ ABSOLUTE_RPE_CEILING = 10.0     # Never prescribe above this
 # PLAN ANALYZER CONSTANTS
 # ==============================
 
-# Push/Pull muscle group mappings for balance analysis
+# Push/Pull muscle group names for balance analysis
 # References: Contreras, Helms - Push/pull balance for shoulder health
-PUSH_MUSCLE_GROUPS: List[MuscleGroup] = [
-    MuscleGroup.CHEST,
-    MuscleGroup.SHOULDERS,
-    MuscleGroup.TRICEPS,
+# Note: These are now queried from the database instead of hardcoded
+PUSH_MUSCLE_NAMES = [
+    "upper_chest", "mid_chest", "lower_chest",
+    "anterior_delt", "lateral_delt",
+    "triceps",
 ]
 
-PULL_MUSCLE_GROUPS: List[MuscleGroup] = [
-    MuscleGroup.BACK,
-    MuscleGroup.BICEPS,
-    MuscleGroup.FOREARMS,
+PULL_MUSCLE_NAMES = [
+    "lats", "upper_traps", "mid_back", "lower_traps",
+    "posterior_delt",
+    "biceps",
+    "forearms",
 ]
 
-# Upper/Lower body muscle groups
-UPPER_MUSCLE_GROUPS: List[MuscleGroup] = [
-    MuscleGroup.CHEST,
-    MuscleGroup.BACK,
-    MuscleGroup.SHOULDERS,
-    MuscleGroup.BICEPS,
-    MuscleGroup.TRICEPS,
-    MuscleGroup.FOREARMS,
+# Upper/Lower body muscle group names
+UPPER_MUSCLE_NAMES = [
+    "upper_chest", "mid_chest", "lower_chest",
+    "lats", "upper_traps", "mid_back", "lower_traps",
+    "anterior_delt", "lateral_delt", "posterior_delt",
+    "biceps", "triceps", "forearms",
 ]
 
-LOWER_MUSCLE_GROUPS: List[MuscleGroup] = [
-    MuscleGroup.QUADRICEPS,
-    MuscleGroup.HAMSTRINGS,
-    MuscleGroup.GLUTES,
-    MuscleGroup.CALVES,
+LOWER_MUSCLE_NAMES = [
+    "quadriceps", "hamstrings", "glutes", "hip_flexors", "calves",
 ]
 
 # Movement pattern priority for exercise ordering
@@ -670,15 +617,8 @@ PUSH_PULL_RATIO_TOLERANCE = 0.2       # +/- 20% acceptable
 UPPER_LOWER_RATIO_TARGET = 1.0
 UPPER_LOWER_RATIO_TOLERANCE = 0.3     # More flexible than push/pull
 
-# Antagonist muscle pairs for balance checking
-ANTAGONIST_PAIRS: Dict[MuscleGroup, MuscleGroup] = {
-    MuscleGroup.CHEST: MuscleGroup.BACK,
-    MuscleGroup.BACK: MuscleGroup.CHEST,
-    MuscleGroup.QUADRICEPS: MuscleGroup.HAMSTRINGS,
-    MuscleGroup.HAMSTRINGS: MuscleGroup.QUADRICEPS,
-    MuscleGroup.BICEPS: MuscleGroup.TRICEPS,
-    MuscleGroup.TRICEPS: MuscleGroup.BICEPS,
-}
+# Antagonist muscle pairs are now stored in the database via antagonist_id relationship
+# This comment is kept for reference - query MuscleGroupModel.antagonist instead
 
 # ==============================
 # ENHANCED PLAN ANALYZER CONSTANTS

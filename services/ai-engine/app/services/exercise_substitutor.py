@@ -6,12 +6,11 @@ Finds suitable exercise variations based on:
 - Same muscles, different angle
 - Novel stimulus for psychological plateaus
 """
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func
 
-from app.models import Exercise
-from app.utils.constants import MuscleGroup
+from app.models import Exercise, ExerciseMuscle, MuscleGroupModel
 
 
 class ExerciseSubstitutor:
@@ -86,6 +85,69 @@ class ExerciseSubstitutor:
         
         return None
     
+    def _get_primary_muscles(self, exercise: Exercise) -> Set[int]:
+        """
+        Get primary muscle IDs for an exercise (activation >= 70%).
+        
+        Args:
+            exercise: Exercise model
+            
+        Returns:
+            Set of muscle group IDs
+        """
+        primary_links = (
+            self.db.query(ExerciseMuscle.muscle_group_id)
+            .filter(
+                ExerciseMuscle.exercise_id == exercise.id,
+                ExerciseMuscle.activation_percent >= 70
+            )
+            .all()
+        )
+        return {link[0] for link in primary_links}
+    
+    def _calculate_muscle_similarity(self, exercise1_id: int, exercise2_id: int) -> float:
+        """
+        Calculate muscle activation similarity between two exercises.
+        
+        Uses weighted Jaccard similarity based on activation percentages.
+        
+        Args:
+            exercise1_id: First exercise ID
+            exercise2_id: Second exercise ID
+            
+        Returns:
+            Similarity score (0.0 - 1.0)
+        """
+        # Get muscle activations for both exercises
+        ex1_muscles = {}
+        ex2_muscles = {}
+        
+        for link in self.db.query(ExerciseMuscle).filter(ExerciseMuscle.exercise_id == exercise1_id).all():
+            ex1_muscles[link.muscle_group_id] = link.activation_percent
+        
+        for link in self.db.query(ExerciseMuscle).filter(ExerciseMuscle.exercise_id == exercise2_id).all():
+            ex2_muscles[link.muscle_group_id] = link.activation_percent
+        
+        if not ex1_muscles or not ex2_muscles:
+            return 0.0
+        
+        # Calculate weighted Jaccard similarity
+        all_muscles = set(ex1_muscles.keys()) | set(ex2_muscles.keys())
+        
+        intersection_sum = 0.0
+        union_sum = 0.0
+        
+        for muscle_id in all_muscles:
+            act1 = ex1_muscles.get(muscle_id, 0)
+            act2 = ex2_muscles.get(muscle_id, 0)
+            intersection_sum += min(act1, act2)
+            union_sum += max(act1, act2)
+        
+        if union_sum == 0:
+            return 0.0
+        
+        return intersection_sum / union_sum
+    
     def _find_equipment_variation(self, original: Exercise) -> Optional[Exercise]:
         """
         Find exercise with same movement pattern but different equipment.
@@ -129,31 +191,50 @@ class ExerciseSubstitutor:
         - Flat Bench Press -> Incline Bench Press
         - Barbell Row -> T-Bar Row
         """
-        if not original.primary_muscles:
+        # Get primary muscles for the original exercise
+        original_muscles = self._get_primary_muscles(original)
+        if not original_muscles:
             return None
         
-        # Get exercises with same primary muscles
-        candidates = (
-            self.db.query(Exercise)
+        # Find exercises that target the same muscles
+        candidate_ids = (
+            self.db.query(ExerciseMuscle.exercise_id)
             .filter(
-                Exercise.id != original.id,
-                Exercise.primary_muscles.contains(original.primary_muscles)
+                ExerciseMuscle.exercise_id != original.id,
+                ExerciseMuscle.muscle_group_id.in_(original_muscles),
+                ExerciseMuscle.activation_percent >= 70
             )
+            .group_by(ExerciseMuscle.exercise_id)
+            .having(func.count(ExerciseMuscle.muscle_group_id) >= len(original_muscles) * 0.5)
             .all()
         )
         
-        if not candidates:
+        if not candidate_ids:
             return None
         
-        # Prefer different name (indicates different angle/variation)
-        # and same movement pattern category
-        for candidate in candidates:
-            if (candidate.name.lower() != original.name.lower() and
-                candidate.movement_pattern == original.movement_pattern):
-                return candidate
+        # Get full exercise objects
+        candidates = (
+            self.db.query(Exercise)
+            .filter(Exercise.id.in_([cid[0] for cid in candidate_ids]))
+            .all()
+        )
         
-        # Fallback to any candidate with same primary muscles
-        return candidates[0] if candidates else None
+        # Score candidates by muscle similarity and prefer same movement pattern
+        best_candidate = None
+        best_score = 0.0
+        
+        for candidate in candidates:
+            similarity = self._calculate_muscle_similarity(original.id, candidate.id)
+            
+            # Bonus for same movement pattern
+            if candidate.movement_pattern == original.movement_pattern:
+                similarity += 0.2
+            
+            if similarity > best_score:
+                best_score = similarity
+                best_candidate = candidate
+        
+        return best_candidate
     
     def _find_novel_stimulus(self, original: Exercise) -> Optional[Exercise]:
         """
@@ -161,15 +242,31 @@ class ExerciseSubstitutor:
         
         Provides psychological novelty while maintaining muscle targeting.
         """
-        if not original.primary_muscles:
+        # Get primary muscles for the original exercise
+        original_muscles = self._get_primary_muscles(original)
+        if not original_muscles:
             return None
         
-        # Get exercises with same primary muscles but different movement pattern
+        # Find exercises with similar muscles but different movement pattern
+        candidate_ids = (
+            self.db.query(ExerciseMuscle.exercise_id)
+            .filter(
+                ExerciseMuscle.exercise_id != original.id,
+                ExerciseMuscle.muscle_group_id.in_(original_muscles),
+                ExerciseMuscle.activation_percent >= 60
+            )
+            .group_by(ExerciseMuscle.exercise_id)
+            .all()
+        )
+        
+        if not candidate_ids:
+            return None
+        
+        # Get candidates with different movement patterns
         candidates = (
             self.db.query(Exercise)
             .filter(
-                Exercise.id != original.id,
-                Exercise.primary_muscles.contains(original.primary_muscles),
+                Exercise.id.in_([cid[0] for cid in candidate_ids]),
                 or_(
                     Exercise.movement_pattern != original.movement_pattern,
                     Exercise.movement_pattern.is_(None)
@@ -181,7 +278,7 @@ class ExerciseSubstitutor:
         if not candidates:
             return None
         
-        # Prefer similar exercise_type
+        # Prefer similar exercise_type for similar training effect
         for candidate in candidates:
             if candidate.exercise_type == original.exercise_type:
                 return candidate
@@ -193,17 +290,23 @@ class ExerciseSubstitutor:
         """
         Find any exercise targeting the same primary muscles.
         """
-        if not original.primary_muscles:
+        # Get primary muscles for the original exercise
+        original_muscles = self._get_primary_muscles(original)
+        if not original_muscles:
             return None
         
-        candidate = (
-            self.db.query(Exercise)
+        # Find any exercise with significant overlap
+        candidate_id = (
+            self.db.query(ExerciseMuscle.exercise_id)
             .filter(
-                Exercise.id != original.id,
-                Exercise.primary_muscles.contains(original.primary_muscles)
+                ExerciseMuscle.exercise_id != original.id,
+                ExerciseMuscle.muscle_group_id.in_(original_muscles),
+                ExerciseMuscle.activation_percent >= 60
             )
             .first()
         )
         
-        return candidate
-
+        if not candidate_id:
+            return None
+        
+        return self.db.query(Exercise).filter(Exercise.id == candidate_id[0]).first()

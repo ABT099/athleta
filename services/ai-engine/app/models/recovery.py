@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKe
 from sqlalchemy.orm import relationship, deferred
 from datetime import datetime
 
-from app.database import Base
+from app.database import Base, get_schema_table_args, get_fk_reference
 from app.utils.constants import SleepQuality
 
 
@@ -14,10 +14,10 @@ class RecoveryMetrics(Base):
     Daily recovery and readiness metrics.
     """
     __tablename__ = "recovery_metrics"
-    __table_args__ = {'schema': 'ai_analysis'}
+    __table_args__ = get_schema_table_args("ai_analysis")
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("public.athletes.id"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id")), nullable=False)
     
     # Date of measurement
     date = Column(DateTime, nullable=False, index=True)

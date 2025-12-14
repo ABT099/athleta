@@ -292,15 +292,25 @@ class PlanAnalyzerService:
                 "summary": "No focus areas selected"
             }
         
-        from app.utils.constants import FocusArea, FOCUS_AREA_TO_MUSCLE_GROUPS, MuscleGroup
+        from app.utils.constants import FocusArea
+        
+        # Map focus areas to muscle names
+        focus_to_muscles = {
+            FocusArea.CHEST: ["upper_chest", "mid_chest", "lower_chest"],
+            FocusArea.BACK: ["lats", "upper_traps", "mid_back", "lower_traps"],
+            FocusArea.SHOULDERS: ["anterior_delt", "lateral_delt", "posterior_delt"],
+            FocusArea.ARMS: ["biceps", "triceps", "forearms"],
+            FocusArea.LEGS: ["quadriceps", "hamstrings", "glutes", "hip_flexors", "calves"],
+            FocusArea.CORE: ["abs", "erector_spinae"],
+        }
         
         # Expand focus areas to muscle groups
         focus_muscle_groups = set()
         for focus_area_str in focus_areas:
             try:
                 focus_area = FocusArea(focus_area_str.lower())
-                groups = FOCUS_AREA_TO_MUSCLE_GROUPS.get(focus_area, [])
-                focus_muscle_groups.update(groups)
+                muscles = focus_to_muscles.get(focus_area, [])
+                focus_muscle_groups.update(muscles)
             except (ValueError, KeyError):
                 continue
         
@@ -311,7 +321,7 @@ class PlanAnalyzerService:
         total_focus = 0
         
         for muscle_group in focus_muscle_groups:
-            muscle_name = muscle_group.value
+            muscle_name = muscle_group  # focus_muscle_groups contains strings, not enum objects
             muscle_data = muscle_volume.get(muscle_name, {})
             status = muscle_data.get("status", "not_trained")
             focus_state = muscle_data.get("focus_state", "maintenance")
@@ -333,7 +343,7 @@ class PlanAnalyzerService:
         
         return {
             "focus_areas": focus_areas,
-            "focus_muscle_groups": [mg.value for mg in focus_muscle_groups],
+            "focus_muscle_groups": list(focus_muscle_groups),  # focus_muscle_groups contains strings, not enum objects
             "compliance_score": round(compliance_score, 1) if compliance_score is not None else None,
             "optimal_count": optimal_count,
             "total_focus_muscles": total_focus,

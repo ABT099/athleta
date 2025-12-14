@@ -20,7 +20,6 @@ from app.utils.constants import (
 class WorkoutPlanBase(BaseModel):
     """Base workout plan schema."""
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
     training_type: TrainingType
     periodization_model: PeriodizationModel
     frequency: int = Field(..., ge=1, le=7)
@@ -196,7 +195,6 @@ class WorkoutDayExerciseResponse(WorkoutDayExerciseBase):
 class WorkoutDayBase(BaseModel):
     """Base workout day schema."""
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
     day_of_week: Optional[int] = Field(None, ge=0, le=6)
     order_in_week: int = Field(..., ge=1, le=7)
     target_muscle_groups: List[str]

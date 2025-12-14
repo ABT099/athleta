@@ -1,6 +1,13 @@
 import { jsonb, real, index } from 'drizzle-orm/pg-core';
 import { serial } from 'drizzle-orm/pg-core';
-import { boolean, integer, pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  varchar,
+} from 'drizzle-orm/pg-core';
 
 // Tables in public schema (default schema, no need to specify explicitly)
 export const usersTable = pgTable('users', {
@@ -10,31 +17,54 @@ export const usersTable = pgTable('users', {
   firstName: varchar({ length: 255 }).notNull(),
   lastName: varchar({ length: 255 }).notNull(),
   role: varchar({ length: 10 }).notNull().$type<'admin' | 'user'>(),
-  googleId: varchar( { length: 255 }).unique(),
+  googleId: varchar({ length: 255 }).unique(),
   appleId: varchar({ length: 255 }).unique(),
   hasInitialPlan: boolean().notNull().default(false),
   createdAt: timestamp().notNull().defaultNow(),
 });
 
-export const passwordResetTokensTable = pgTable('password_reset_tokens', {
-  id: serial().primaryKey(),
-  userId: integer().references(() => usersTable.id).notNull().unique(),
-  code: text().notNull().unique(),
-  verified: boolean().notNull().default(false),
-  expiresAt: timestamp().notNull(),
-  createdAt: timestamp().notNull().defaultNow(),
-}, (table) => [
-  index('password_reset_tokens_expires_at_idx').on(table.expiresAt),
-]);
+export const passwordResetTokensTable = pgTable(
+  'password_reset_tokens',
+  {
+    id: serial().primaryKey(),
+    userId: integer()
+      .references(() => usersTable.id)
+      .notNull()
+      .unique(),
+    code: text().notNull().unique(),
+    verified: boolean().notNull().default(false),
+    expiresAt: timestamp().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
+  },
+  (table) => [
+    index('password_reset_tokens_expires_at_idx').on(table.expiresAt),
+  ],
+);
 
 export const athletesTable = pgTable('athletes', {
   id: serial().primaryKey(),
-  userId: integer().references(() => usersTable.id).notNull(),
+  userId: integer()
+    .references(() => usersTable.id)
+    .notNull(),
   age: integer().notNull(),
-  gender: varchar({ length: 10 }).notNull().$type<('male' | 'female')>(),
-  trainingExperience: varchar({ length: 12 }).notNull().$type<('beginner' | 'intermediate' | 'advanced')>(),
-  rpeCalibrationFactor: real().notNull().$default(() => 1.0),
+  gender: varchar({ length: 10 }).notNull().$type<'male' | 'female'>(),
+  trainingExperience: varchar({ length: 12 })
+    .notNull()
+    .$type<'beginner' | 'intermediate' | 'advanced'>(),
+  rpeCalibrationFactor: real()
+    .notNull()
+    .$default(() => 1.0),
   bodyWeightKg: real(),
+});
+
+export const muscleGroupsTable = pgTable('muscle_groups', {
+  id: serial().primaryKey(),
+  name: varchar({ length: 50 }).notNull().unique(),
+  displayName: varchar({ length: 100 }).notNull(),
+  size: varchar({ length: 20 }).notNull().$type<'small' | 'medium' | 'large'>(),
+  baseRecoveryHours: integer().notNull(),
+  isCompoundTarget: boolean().notNull().default(false),
+  antagonistId: integer().references((): any => muscleGroupsTable.id),
 });
 
 export const exercisesTable = pgTable('exercises', {
@@ -42,24 +72,53 @@ export const exercisesTable = pgTable('exercises', {
   name: varchar({ length: 255 }).notNull().unique(),
   description: text().notNull(),
   equipment: varchar({ length: 100 }).notNull(),
-  primaryMuscles: text().array().notNull(),
-  secondaryMuscles: text().array().notNull(),
   injuryRiskLevel: real().notNull(),
   jointStressAreas: varchar({ length: 255 }).array().notNull(),
   movementPattern: varchar({ length: 100 }).notNull(),
-  exerciseType: varchar({ length: 50 }).notNull().$type<'compound' | 'isolation'>(),
-  complexityScore: real().notNull().$default(() => 1.0),
-  intensityCategory: varchar({ length: 20 }).notNull().$type<'compound_heavy' | 'compound_moderate' | 'isolation'>().$default(() => 'isolation'),
+  exerciseType: varchar({ length: 50 })
+    .notNull()
+    .$type<'compound' | 'isolation'>(),
+  complexityScore: real()
+    .notNull()
+    .$default(() => 1.0),
+  intensityCategory: varchar({ length: 20 })
+    .notNull()
+    .$type<'compound_heavy' | 'compound_moderate' | 'isolation'>()
+    .$default(() => 'isolation'),
 });
+
+export const exerciseMusclesTable = pgTable(
+  'exercise_muscles',
+  {
+    id: serial().primaryKey(),
+    exerciseId: integer()
+      .references(() => exercisesTable.id, { onDelete: 'cascade' })
+      .notNull(),
+    muscleGroupId: integer()
+      .references(() => muscleGroupsTable.id, { onDelete: 'cascade' })
+      .notNull(),
+    activationPercent: integer().notNull(),
+  },
+  (table) => [
+    index('exercise_muscles_exercise_idx').on(table.exerciseId),
+    index('exercise_muscles_muscle_idx').on(table.muscleGroupId),
+  ],
+);
 
 export const workoutPlansTable = pgTable('workout_plans', {
   id: serial().primaryKey(),
-  athleteId: integer().references(() => athletesTable.id).notNull(),
+  athleteId: integer()
+    .references(() => athletesTable.id)
+    .notNull(),
   name: varchar({ length: 255 }).notNull(),
   description: text().notNull(),
-  trainingType: varchar({ length: 50 }).notNull().$type<'hypertrophy' | 'strength' | 'hybrid'>(),
+  trainingType: varchar({ length: 50 })
+    .notNull()
+    .$type<'hypertrophy' | 'strength' | 'hybrid'>(),
   // will be determined by the AI engine (send the data to it)
-  periodizationModel: varchar({ length: 50 }).notNull().$type<'linear' | 'undulating' | 'block'>(),
+  periodizationModel: varchar({ length: 50 })
+    .notNull()
+    .$type<'linear' | 'undulating' | 'block'>(),
   focusAreas:
     jsonb().$type<
       Array<'chest' | 'back' | 'shoulders' | 'arms' | 'legs' | 'core'>
@@ -74,9 +133,10 @@ export const workoutPlansTable = pgTable('workout_plans', {
 
 export const workoutDaysTable = pgTable('workout_days', {
   id: serial().primaryKey(),
-  workoutPlanId: integer().references(() => workoutPlansTable.id).notNull(),
+  workoutPlanId: integer()
+    .references(() => workoutPlansTable.id)
+    .notNull(),
   name: varchar({ length: 255 }).notNull(),
-  description: text().notNull(),
   dayOfWeek: integer(),
   orderInWeek: integer().notNull(),
   targetMuscleGroups: jsonb().notNull(),
@@ -84,8 +144,12 @@ export const workoutDaysTable = pgTable('workout_days', {
 
 export const workoutDayExercisesTable = pgTable('workout_day_exercises', {
   id: serial().primaryKey(),
-  workoutDayId: integer().references(() => workoutDaysTable.id).notNull(),
-  exerciseId: integer().references(() => exercisesTable.id).notNull(),
+  workoutDayId: integer()
+    .references(() => workoutDaysTable.id)
+    .notNull(),
+  exerciseId: integer()
+    .references(() => exercisesTable.id)
+    .notNull(),
   orderInWorkout: integer().notNull(),
   targetSetsMin: integer().notNull(),
   targetSetsMax: integer().notNull(),
@@ -98,18 +162,28 @@ export const workoutDayExercisesTable = pgTable('workout_day_exercises', {
   notes: text(),
   isPrimary: boolean().notNull(),
   progressionScheme: varchar({ length: 50 }),
-  warmUpSets: integer().notNull().$default(() => 0), // 0-4 warm-up sets
-  autoGenerateWarmups: boolean().notNull().$default(() => true), // Auto-generate warm-up weights/reps
+  warmUpSets: integer()
+    .notNull()
+    .$default(() => 0), // 0-4 warm-up sets
+  autoGenerateWarmups: boolean()
+    .notNull()
+    .$default(() => true), // Auto-generate warm-up weights/reps
 });
 
-export const refreshTokensTable = pgTable('refresh_tokens', {
-  id: serial().primaryKey(),
-  userId: integer().references(() => usersTable.id).notNull(),
-  token: text().notNull().unique(),
-  expiresAt: timestamp().notNull(),
-  createdAt: timestamp().notNull().defaultNow(),
-  usedAt: timestamp(),
-}, (table) => [
-  index('refresh_tokens_user_id_idx').on(table.userId),
-  index('refresh_tokens_expires_at_idx').on(table.expiresAt),
-]);
+export const refreshTokensTable = pgTable(
+  'refresh_tokens',
+  {
+    id: serial().primaryKey(),
+    userId: integer()
+      .references(() => usersTable.id)
+      .notNull(),
+    token: text().notNull().unique(),
+    expiresAt: timestamp().notNull(),
+    createdAt: timestamp().notNull().defaultNow(),
+    usedAt: timestamp(),
+  },
+  (table) => [
+    index('refresh_tokens_user_id_idx').on(table.userId),
+    index('refresh_tokens_expires_at_idx').on(table.expiresAt),
+  ],
+);
