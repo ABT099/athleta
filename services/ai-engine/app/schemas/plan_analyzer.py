@@ -1,5 +1,5 @@
 """
-Pydantic schemas for plan analyzer WebSocket API.
+Pydantic schemas for plan analyzer API.
 """
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -65,34 +65,4 @@ class PlanAnalysisResponse(BaseModel):
     estimated_workout_duration_minutes: float = Field(..., description="Average estimated workout duration in minutes")
 
 
-class WebSocketMessage(BaseModel):
-    """Base WebSocket message schema."""
-    type: str = Field(..., description="Message type: analyze, stop, status, analysis, error")
-    session_id: str = Field(..., description="Session ID for connection management")
-    timestamp: Optional[str] = Field(None, description="ISO timestamp")
-
-
-class WebSocketAnalyzeRequest(WebSocketMessage):
-    """WebSocket message to request analysis."""
-    type: str = Field(default="analyze", description="Message type")
-    plan_data: Dict[str, Any] = Field(..., description="Plan data to analyze")
-    athlete_id: Optional[int] = Field(None, description="Optional athlete ID")
-
-
-class WebSocketAnalysisResponse(WebSocketMessage):
-    """WebSocket message with analysis results."""
-    type: str = Field(default="analysis", description="Message type")
-    analysis: PlanAnalysisResponse = Field(..., description="Analysis results")
-
-
-class WebSocketStatusResponse(WebSocketMessage):
-    """WebSocket status message."""
-    type: str = Field(default="status", description="Message type")
-    status: str = Field(..., description="Status: connected, analyzing, stopped")
-
-
-class WebSocketErrorResponse(WebSocketMessage):
-    """WebSocket error message."""
-    type: str = Field(default="error", description="Message type")
-    error: str = Field(..., description="Error message")
 
