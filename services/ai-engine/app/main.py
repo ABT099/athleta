@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api import athletes, workouts, periodization, ml, prescriptions, plan_analyzer_ws
+from app.api import athletes, workouts, periodization, ml, prescriptions, plan_analyzer
 
 # Create FastAPI application
 app = FastAPI(
@@ -31,7 +31,7 @@ app.include_router(workouts.router, prefix="/api", tags=["workouts"])
 app.include_router(periodization.router, prefix="/api", tags=["periodization"])
 app.include_router(ml.router, prefix="/api", tags=["ml"])
 app.include_router(prescriptions.router, prefix="/api", tags=["prescriptions"])
-app.include_router(plan_analyzer_ws.router, tags=["plan-analyzer"])
+app.include_router(plan_analyzer.router, tags=["plan-analyzer"])
 
 
 @app.get("/")

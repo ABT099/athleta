@@ -22,6 +22,7 @@ from app.services.progressive_overload_engine import ProgressiveOverloadEngine
 from app.services.plan_updater import PlanUpdaterService
 from app.services.rpe_calibration import RPECalibrationService
 from app.services.pr_tracker import PRTrackerService
+from app.services.workout_scheduler import WorkoutScheduler
 
 # Import ML services with graceful degradation
 try:
@@ -205,6 +206,103 @@ def complete_workout(
     # Commit all changes
     db.commit()
     
+    # === MULTI-STEP WORKOUT UPDATES ===
+    
+    # Step 1: Update plan entry with new multipliers (existing code)
+    plan_context = ai_result["plan_context"]
+    if plan_context.get("plan_entry_id"):
+        plan_updater = PlanUpdaterService(db)
+        plan_updater.update_plan_entry_after_workout(
+            plan_entry_id=plan_context["plan_entry_id"],
+            workout_session=workout_session,
+            recovery_metrics=recovery_metrics,
+            ai_adjustments=ai_result["adjustments"]
+        )
+    
+    # Step 2: Generate current workout with updated parameters (FOR RETURN)
+    # This returns the SAME workout (e.g., Upper) with adjustments for next week
+    plan_updater = PlanUpdaterService(db)
+    current_workout_updated = plan_updater.generate_next_workout(
+        athlete_id=request.athlete_id,
+        workout_day_id=request.workout_day_id,  # SAME workout
+        ai_adjustments=ai_result["adjustments"],
+        injury_warnings=ai_result["injury_risk"]["warnings"],
+        recovery_recommendations=ai_result["recovery_status"]["recommendations"]
+    )
+    
+    # Step 3: Pre-calculate and store next workout in rotation WITH RECOVERY ADJUSTMENT
+    scheduler = WorkoutScheduler(db)
+    next_workout_day_id = scheduler.get_next_workout_in_rotation(
+        athlete_id=request.athlete_id,
+        completed_workout_day_id=request.workout_day_id,
+        plan_id=plan_context["plan_id"]
+    )
+    
+    if next_workout_day_id:
+        # Extract readiness score from current workout
+        current_readiness = recovery_metrics.readiness_score
+        
+        # Adjust multipliers for next workout based on current recovery
+        # If readiness is low, reduce volume/intensity for next workout
+        next_workout_adjustments = ai_result["adjustments"].copy()
+        if current_readiness and current_readiness < 0.7:  # Poor recovery
+            next_workout_adjustments["volume_multiplier"] *= 0.95  # Reduce volume by 5%
+            next_workout_adjustments["intensity_multiplier"] *= 0.98  # Reduce intensity by 2%
+            adjustment_note = f"Reduced due to low readiness ({current_readiness:.2f})"
+        elif current_readiness and current_readiness > 0.85:  # Excellent recovery
+            next_workout_adjustments["volume_multiplier"] *= 1.02  # Increase volume by 2%
+            adjustment_note = f"Increased due to high readiness ({current_readiness:.2f})"
+        else:
+            adjustment_note = "Standard progression"
+        
+        # Generate next workout parameters with recovery-adjusted multipliers
+        next_workout_params = plan_updater.generate_next_workout(
+            athlete_id=request.athlete_id,
+            workout_day_id=next_workout_day_id,  # NEXT in rotation (e.g., Lower)
+            ai_adjustments=next_workout_adjustments,  # Recovery-adjusted
+            injury_warnings=[],
+            recovery_recommendations=[]
+        )
+        
+        # Store prescription history for each exercise in next workout
+        from app.models.workout_prescription_history import WorkoutPrescriptionHistory
+        
+        for exercise in next_workout_params["workout_day"].exercises:
+            prescription = WorkoutPrescriptionHistory(
+                athlete_id=request.athlete_id,
+                workout_day_id=next_workout_day_id,
+                exercise_id=exercise.exercise_id,
+                prescribed_date=datetime.now(timezone.utc),
+                
+                # Prescribed parameters
+                prescribed_weight=exercise.adjusted_weight,
+                prescribed_sets=exercise.adjusted_sets,
+                prescribed_reps_min=exercise.adjusted_reps_min,
+                prescribed_reps_max=exercise.adjusted_reps_max,
+                prescribed_rpe=exercise.target_rpe,
+                prescribed_rir=exercise.target_rir,
+                rest_period_seconds=exercise.rest_period_seconds,
+                
+                # Intensity techniques
+                set_type=exercise.set_type,
+                rep_style=exercise.rep_style,
+                set_type_params=exercise.set_type_params,
+                rep_style_params=exercise.rep_style_params,
+                
+                # AI context
+                volume_multiplier=next_workout_adjustments["volume_multiplier"],
+                intensity_multiplier=next_workout_adjustments["intensity_multiplier"],
+                adjustment_reason=f"{adjustment_note}. {exercise.adjustment_reason or ''}",
+                
+                # Context
+                week_number=plan_context.get("week_number"),
+                readiness_score=current_readiness,
+                training_phase=plan_context.get("current_phase")
+            )
+            db.add(prescription)
+        
+        db.commit()
+    
     # === PR DETECTION ===
     # Detect and update personal records
     pr_tracker = PRTrackerService(db)
@@ -229,32 +327,11 @@ def complete_workout(
         undefer(RecoveryMetrics.created_at)
     ).filter(RecoveryMetrics.id == recovery_metrics.id).first()
     
-    # Update plan entry if exists
-    plan_context = ai_result["plan_context"]
-    if plan_context.get("plan_entry_id"):
-        plan_updater = PlanUpdaterService(db)
-        plan_updater.update_plan_entry_after_workout(
-            plan_entry_id=plan_context["plan_entry_id"],
-            workout_session=workout_session,
-            recovery_metrics=recovery_metrics,
-            ai_adjustments=ai_result["adjustments"]
-        )
-    
-    # Generate next workout
-    plan_updater = PlanUpdaterService(db)
-    next_workout = plan_updater.generate_next_workout(
-        athlete_id=request.athlete_id,
-        workout_day_id=request.workout_day_id,  # Could be next in rotation
-        ai_adjustments=ai_result["adjustments"],
-        injury_warnings=ai_result["injury_risk"]["warnings"],
-        recovery_recommendations=ai_result["recovery_status"]["recommendations"]
-    )
-    
     # Build response
     return WorkoutCompletionResponse(
         workout_session=WorkoutSessionResponse.model_validate(workout_session),
         recovery_metrics=RecoveryMetricsResponse.model_validate(recovery_metrics),
-        next_workout=NextWorkoutResponse(**next_workout),
+        next_workout=NextWorkoutResponse(**current_workout_updated),  # Same workout, updated
         performance_analysis=ai_result["performance_analysis"],
         ai_insights=ai_result["ai_insights"]
     )

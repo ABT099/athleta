@@ -7,6 +7,7 @@ import {
   text,
   timestamp,
   varchar,
+  pgSchema,
 } from 'drizzle-orm/pg-core';
 
 // Tables in public schema (default schema, no need to specify explicitly)
@@ -185,5 +186,63 @@ export const refreshTokensTable = pgTable(
   (table) => [
     index('refresh_tokens_user_id_idx').on(table.userId),
     index('refresh_tokens_expires_at_idx').on(table.expiresAt),
+  ],
+);
+
+// AI Analysis schema tables
+export const aiAnalysisSchema = pgSchema('ai_analysis');
+
+export const workoutPrescriptionHistoryTable = aiAnalysisSchema.table(
+  'workout_prescription_history',
+  {
+    id: serial().primaryKey(),
+    athleteId: integer()
+      .references(() => athletesTable.id, { onDelete: 'cascade' })
+      .notNull(),
+    workoutDayId: integer().notNull(), // FK to workout_days
+    exerciseId: integer()
+      .references(() => exercisesTable.id, { onDelete: 'cascade' })
+      .notNull(),
+    prescribedDate: timestamp().notNull(),
+
+    // Prescribed parameters
+    prescribedWeight: real(),
+    prescribedSets: integer(),
+    prescribedRepsMin: integer(),
+    prescribedRepsMax: integer(),
+    prescribedRpe: real(),
+    prescribedRir: integer(),
+    restPeriodSeconds: integer(),
+
+    // Intensity techniques
+    setType: varchar({ length: 50 }),
+    repStyle: varchar({ length: 50 }),
+    setTypeParams: jsonb(),
+    repStyleParams: jsonb(),
+
+    // AI context
+    volumeMultiplier: real().notNull(),
+    intensityMultiplier: real().notNull(),
+    adjustmentReason: text(),
+
+    // Context when prescribed
+    weekNumber: integer(),
+    readinessScore: real(),
+    trainingPhase: varchar({ length: 50 }),
+
+    // Metadata
+    createdAt: timestamp().notNull().defaultNow(),
+  },
+  (table) => [
+    index('workout_prescription_history_athlete_workout_exercise_date_idx').on(
+      table.athleteId,
+      table.workoutDayId,
+      table.exerciseId,
+      table.prescribedDate,
+    ),
+    index('workout_prescription_history_athlete_exercise_idx').on(
+      table.athleteId,
+      table.exerciseId,
+    ),
   ],
 );

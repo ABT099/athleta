@@ -18,6 +18,7 @@ from app.models.performance_trends import PerformanceTrend
 from app.models.exercise_progression import ExerciseProgressionTracking
 from app.models.form_tracking import FormQualityTrend
 from app.models.personal_records import ExercisePersonalRecord
+from app.models.workout_prescription_history import WorkoutPrescriptionHistory
 
 __all__ = [
     "Athlete",
@@ -36,6 +37,7 @@ __all__ = [
     "ExerciseProgressionTracking",
     "FormQualityTrend",
     "ExercisePersonalRecord",
+    "WorkoutPrescriptionHistory",
 ]
 
 
