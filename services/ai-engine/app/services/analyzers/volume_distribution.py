@@ -215,10 +215,12 @@ class VolumeDistributionAnalyzer:
                     .all()
                 )
                 
-                # Weight sets by activation percentage
+                # Weight sets by role (convert role to activation weight)
+                # prime_mover=85%, synergist=55%, stabilizer=20%
+                role_weights = {"prime_mover": 0.85, "synergist": 0.55, "stabilizer": 0.20}
                 for link, muscle in muscle_links:
                     muscle_name = muscle.name
-                    activation_weight = link.activation_percent / 100.0
+                    activation_weight = role_weights.get(link.role, 0.20)
                     
                     # Weight by activation percentage
                     weighted_sets = effective_sets * activation_weight

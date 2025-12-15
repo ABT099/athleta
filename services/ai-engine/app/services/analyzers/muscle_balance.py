@@ -217,12 +217,15 @@ class MuscleGroupBalanceAnalyzer:
                     .all()
                 )
                 
+                # Weight sets by role (convert role to activation weight)
+                # prime_mover=85%, synergist=55%, stabilizer=20%
+                role_weights = {"prime_mover": 0.85, "synergist": 0.55, "stabilizer": 0.20}
                 for link, muscle in muscle_links:
                     muscle_name = muscle.name
-                    activation_weight = link.activation_percent / 100.0
+                    activation_weight = role_weights.get(link.role, 0.20)
                     
                     # Weight by activation percentage
-                    # Primary muscles (70%+) get full weight, secondary get proportional
+                    # Primary muscles (prime_mover) get full weight, secondary get proportional
                     weighted_sets = effective_sets * activation_weight
                     
                     muscle_volume[muscle_name] = muscle_volume.get(muscle_name, 0) + weighted_sets

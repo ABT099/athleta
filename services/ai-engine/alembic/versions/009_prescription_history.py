@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '009_prescription_history'
-down_revision = '008_schema_separation'
+revision = '009'
+down_revision = '008'
 branch_labels = None
 depends_on = None
 
@@ -21,9 +21,9 @@ def upgrade():
     op.create_table(
         'workout_prescription_history',
         sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('athlete_id', sa.Integer(), sa.ForeignKey('ai_analysis.athletes.id', ondelete='CASCADE'), nullable=False, index=True),
-        sa.Column('workout_day_id', sa.Integer(), sa.ForeignKey('ai_analysis.workout_days.id', ondelete='CASCADE'), nullable=False, index=True),
-        sa.Column('exercise_id', sa.Integer(), sa.ForeignKey('ai_analysis.exercises.id', ondelete='CASCADE'), nullable=False, index=True),
+        sa.Column('athlete_id', sa.Integer(), sa.ForeignKey('public.athletes.id', ondelete='CASCADE'), nullable=False, index=True),
+        sa.Column('workout_day_id', sa.Integer(), sa.ForeignKey('public.workout_days.id', ondelete='CASCADE'), nullable=False, index=True),
+        sa.Column('exercise_id', sa.Integer(), sa.ForeignKey('public.exercises.id', ondelete='CASCADE'), nullable=False, index=True),
         sa.Column('prescribed_date', sa.DateTime(), nullable=False, index=True),
         
         # What AI prescribed

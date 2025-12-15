@@ -233,7 +233,7 @@ class ExerciseOrderAnalyzer:
             .join(ExerciseMuscle, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
             .filter(
                 ExerciseMuscle.exercise_id == ex.id,
-                ExerciseMuscle.activation_percent >= 70  # Primary only
+                ExerciseMuscle.role == "prime_mover"  # Primary only
             )
             .all()
         )

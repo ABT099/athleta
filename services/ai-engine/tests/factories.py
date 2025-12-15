@@ -96,7 +96,11 @@ class ExerciseFactory:
         Args:
             db: Database session
             name: Exercise name
-            muscles: List of (muscle_name, activation_percent) tuples
+            muscles: List of (muscle_name, activation_percent) tuples.
+                    Activation percent is converted to role:
+                    - >= 70%: prime_mover
+                    - >= 40%: synergist
+                    - < 40%: stabilizer
             exercise_type: "compound" or "isolation"
             complexity_score: Complexity score (0.0-2.0)
             injury_risk_level: Injury risk level (0.0-1.0)
@@ -107,7 +111,7 @@ class ExerciseFactory:
             Created Exercise instance with muscle links
         """
         if muscles is None:
-            # Default to mid_chest with high activation
+            # Default to mid_chest with high activation (will be prime_mover)
             muscles = [("mid_chest", 90)]
         
         exercise = Exercise(
@@ -129,10 +133,18 @@ class ExerciseFactory:
             ).first()
             
             if muscle:
+                # Convert activation percentage to role
+                if activation_percent >= 70:
+                    role = "prime_mover"
+                elif activation_percent >= 40:
+                    role = "synergist"
+                else:
+                    role = "stabilizer"
+                
                 link = ExerciseMuscle(
                     exercise_id=exercise.id,
                     muscle_group_id=muscle.id,
-                    activation_percent=activation_percent
+                    role=role
                 )
                 db.add(link)
             else:

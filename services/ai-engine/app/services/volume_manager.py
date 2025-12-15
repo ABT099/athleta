@@ -230,8 +230,10 @@ class VolumeManager:
                 if muscle_link:
                     exercises_tracked.add(ex_id)
                     
-                    # Weight sets by activation percentage
-                    activation_weight = muscle_link.activation_percent / 100.0
+                    # Weight sets by role (convert role to activation weight)
+                    # prime_mover=85%, synergist=55%, stabilizer=20%
+                    role_weights = {"prime_mover": 0.85, "synergist": 0.55, "stabilizer": 0.20}
+                    activation_weight = role_weights.get(muscle_link.role, 0.20)
                     
                     # Calculate effective sets (only RIR 0-4 count toward MEV/MRV)
                     effective_sets = self._calculate_effective_sets_from_sets(sets_list)

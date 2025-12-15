@@ -342,13 +342,13 @@ class RecoveryWindowAnalyzer:
                 # Get muscle activations for this exercise via junction table
                 from app.models import ExerciseMuscle
                 
-                # Get primary muscles (activation >= 70%)
+                # Get primary muscles (prime_mover role)
                 muscle_links = (
                     self.db.query(ExerciseMuscle, MuscleGroupModel)
                     .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
                     .filter(
                         ExerciseMuscle.exercise_id == exercise_id,
-                        ExerciseMuscle.activation_percent >= 70  # Primary targets
+                        ExerciseMuscle.role == "prime_mover"  # Primary targets
                     )
                     .all()
                 )

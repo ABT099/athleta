@@ -1,7 +1,7 @@
 """
 Exercise library models.
 """
-from sqlalchemy import Column, Integer, String, Enum, Float, Text, ARRAY
+from sqlalchemy import Column, Integer, String, Enum, Float, ARRAY
 from sqlalchemy.orm import relationship, deferred
 
 from app.database import Base
@@ -19,7 +19,6 @@ class Exercise(Base):
     name = Column(String(255), nullable=False, unique=True, index=True)  # Eagerly loaded (used in AI error messages)
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
-    description = deferred(Column(Text, nullable=True))
     equipment = deferred(Column(String(100), nullable=True))
     
     # Injury risk assessment

@@ -39,7 +39,6 @@ func (c *Client) Close() error {
 type Exercise struct {
 	ID                int
 	Name              string
-	Description       string
 	Equipment         string
 	InjuryRiskLevel   float32
 	JointStressAreas  []string
@@ -60,7 +59,7 @@ type ExerciseMuscle struct {
 // GetAllExercises retrieves all exercises from PostgreSQL
 func (c *Client) GetAllExercises(ctx context.Context) ([]Exercise, error) {
 	query := `
-		SELECT id, name, description, equipment, injury_risk_level, 
+		SELECT id, name, equipment, injury_risk_level, 
 		       joint_stress_areas, movement_pattern, exercise_type,
 		       complexity_score, intensity_category
 		FROM exercises
@@ -81,7 +80,6 @@ func (c *Client) GetAllExercises(ctx context.Context) ([]Exercise, error) {
 		err := rows.Scan(
 			&ex.ID,
 			&ex.Name,
-			&ex.Description,
 			&ex.Equipment,
 			&ex.InjuryRiskLevel,
 			&jointStress,

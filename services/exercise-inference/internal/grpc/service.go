@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/athleta/exercise-inference/internal/inference"
+	"github.com/athleta/exercise-inference/internal/models"
 	pb "github.com/athleta/exercise-inference/proto"
 )
 
@@ -69,7 +70,7 @@ func (s *Service) FindSimilarExercises(ctx context.Context, req *pb.SimilarityRe
 }
 
 // convertToProto converts internal ExerciseData to protobuf ExerciseData
-func (s *Service) convertToProto(data *inference.ExerciseData) *pb.ExerciseData {
+func (s *Service) convertToProto(data *models.ExerciseData) *pb.ExerciseData {
 	// Convert muscle targets
 	muscles := make([]*pb.MuscleTarget, 0, len(data.MuscleTargets))
 	for _, m := range data.MuscleTargets {
@@ -91,7 +92,6 @@ func (s *Service) convertToProto(data *inference.ExerciseData) *pb.ExerciseData 
 
 	return &pb.ExerciseData{
 		Name:              data.Name,
-		Description:       data.Description,
 		Equipment:         data.Equipment,
 		MovementPattern:   data.MovementPattern,
 		ExerciseType:      data.ExerciseType,

@@ -53,16 +53,12 @@ func (e *Engine) InferExercise(ctx context.Context, name string) (*models.Exerci
 	// Step 5: Generate safety metrics
 	safetyMetrics := e.safety.GenerateSafetyMetrics(parsed.MovementPattern, parsed.Modifiers, exerciseType)
 	
-	// Step 6: Generate description
-	description := e.parser.GenerateDescription(name, parsed.MovementPattern, parsed.Modifiers)
-	
-	// Step 7: Extract equipment
+	// Step 6: Extract equipment
 	equipment := e.extractEquipment(parsed.Modifiers)
 	
 	// Build complete exercise data
 	exerciseData := &models.ExerciseData{
 		Name:              name,
-		Description:       description,
 		Equipment:         equipment,
 		MovementPattern:   parsed.MovementPattern,
 		ExerciseType:      exerciseType,

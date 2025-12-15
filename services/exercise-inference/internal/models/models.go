@@ -4,7 +4,6 @@ package models
 type ExerciseNode struct {
 	Name            string
 	PostgresID      int
-	Description     string
 	Equipment       string
 	MovementPattern string
 	ExerciseType    string
@@ -39,7 +38,6 @@ type ParsedExercise struct {
 // ExerciseData represents complete exercise information with auto-generated metadata
 type ExerciseData struct {
 	Name              string
-	Description       string
 	Equipment         string
 	MovementPattern   string
 	ExerciseType      string

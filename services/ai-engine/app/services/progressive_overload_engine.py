@@ -7,7 +7,7 @@ Respects plan context, periodization, recovery, and injury prevention.
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, case
 import json
 import numpy as np
 
@@ -1118,12 +1118,18 @@ class ProgressiveOverloadEngine:
             # Get primary muscle group name for volume ceiling check
             muscle_name = None
             if exercise:
-                # Get primary muscle (highest activation)
+                # Get primary muscle (prime_mover first, then synergist, then stabilizer)
+                role_priority = case(
+                    (ExerciseMuscle.role == "prime_mover", 1),
+                    (ExerciseMuscle.role == "synergist", 2),
+                    (ExerciseMuscle.role == "stabilizer", 3),
+                    else_=4
+                )
                 primary_result = (
                     self.db.query(ExerciseMuscle, MuscleGroupModel)
                     .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
                     .filter(ExerciseMuscle.exercise_id == exercise.id)
-                    .order_by(ExerciseMuscle.activation_percent.desc())
+                    .order_by(role_priority)
                     .first()
                 )
                 if primary_result:

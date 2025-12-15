@@ -282,7 +282,7 @@ class RecoveryAnalyzer:
                 WorkoutSession.athlete_id == athlete_id,
                 WorkoutSession.session_date >= cutoff_date,
                 ExerciseMuscle.muscle_group_id == muscle.id,
-                ExerciseMuscle.activation_percent >= 50  # Only significant activation
+                ExerciseMuscle.role.in_(["prime_mover", "synergist"])  # Only significant activation
             )
             .order_by(WorkoutSession.session_date.desc())
             .distinct(WorkoutSession.id)  # Explicitly distinct on WorkoutSession.id to avoid duplicates from multiple JOINs
@@ -339,7 +339,7 @@ class RecoveryAnalyzer:
                 .filter(
                     ExerciseSet.workout_session_id == last_workout.id,
                     ExerciseMuscle.muscle_group_id == muscle.id,
-                    ExerciseMuscle.activation_percent >= 50  # Only significant activation
+                    ExerciseMuscle.role.in_(["prime_mover", "synergist"])  # Only significant activation
                 )
                 .distinct(Exercise.id)  # Explicitly distinct on Exercise.id to avoid duplicates from multiple JOINs
                 .all()

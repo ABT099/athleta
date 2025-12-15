@@ -5,12 +5,12 @@ import (
 	"fmt"
 
 	"github.com/athleta/exercise-inference/internal/models"
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 )
 
 // Repository handles Neo4j database operations
 type Repository struct {
-	driver neo4j.DriverWithContext
+	driver neo4j.Driver
 }
 
 // NewRepository creates a new Neo4j repository
@@ -50,7 +50,6 @@ func (r *Repository) CreateArchetypalExercise(ctx context.Context, exercise *mod
 			name: $name,
 			archetypal: true,
 			postgres_id: $postgres_id,
-			description: $description,
 			equipment: $equipment,
 			movement_pattern: $movement_pattern,
 			exercise_type: $exercise_type
@@ -63,7 +62,6 @@ func (r *Repository) CreateArchetypalExercise(ctx context.Context, exercise *mod
 		"pattern_name":     exercise.MovementPattern,
 		"name":             exercise.Name,
 		"postgres_id":      exercise.PostgresID,
-		"description":      exercise.Description,
 		"equipment":        exercise.Equipment,
 		"movement_pattern": exercise.MovementPattern,
 		"exercise_type":    exercise.ExerciseType,
@@ -85,7 +83,7 @@ func (r *Repository) CreateArchetypalExercise(ctx context.Context, exercise *mod
 }
 
 // linkMuscleToExercise creates a TARGETS relationship between exercise and muscle
-func (r *Repository) linkMuscleToExercise(ctx context.Context, session neo4j.SessionWithContext, exerciseName string, muscle models.MuscleTarget) error {
+func (r *Repository) linkMuscleToExercise(ctx context.Context, session neo4j.Session, exerciseName string, muscle models.MuscleTarget) error {
 	query := `
 		MATCH (ex:Exercise {name: $exercise_name})
 		MERGE (m:Muscle {name: $muscle_name})
@@ -130,7 +128,6 @@ func (r *Repository) FindArchetypalExercise(ctx context.Context, pattern string,
 		LIMIT 1
 		
 		RETURN ex.name as name, 
-		       ex.description as description,
 		       ex.equipment as equipment,
 		       ex.movement_pattern as movement_pattern,
 		       ex.exercise_type as exercise_type,
@@ -160,16 +157,15 @@ func (r *Repository) FindArchetypalExercise(ctx context.Context, pattern string,
 	record := result.Record()
 	
 	name, _ := record.Get("name")
-	description, _ := record.Get("description")
-	equipment, _ := record.Get("equipment")
+	equipmentVal, _ := record.Get("equipment")
+	equipment = equipmentVal.(string)
 	movementPattern, _ := record.Get("movement_pattern")
 	exerciseType, _ := record.Get("exercise_type")
 	musclesRaw, _ := record.Get("muscles")
 
 	exercise := &models.ExerciseNode{
 		Name:            name.(string),
-		Description:     description.(string),
-		Equipment:       equipment.(string),
+		Equipment:       equipment,
 		MovementPattern: movementPattern.(string),
 		ExerciseType:    exerciseType.(string),
 		MuscleTargets:   []models.MuscleTarget{},

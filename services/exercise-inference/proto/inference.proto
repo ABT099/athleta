@@ -35,24 +35,23 @@ message ParseRequest {
 message ExerciseData {
   // Basic information
   string name = 1;
-  string description = 2;              // Auto-generated description
-  string equipment = 3;                 // Extracted from name (e.g., "barbell", "dumbbell")
+  string equipment = 2;                 // Extracted from name (e.g., "barbell", "dumbbell")
   
   // Movement classification
-  string movement_pattern = 4;          // e.g., "push", "pull", "squat", "hinge"
-  string exercise_type = 5;             // "compound" or "isolation"
+  string movement_pattern = 3;          // e.g., "push", "pull", "squat", "hinge"
+  string exercise_type = 4;             // "compound" or "isolation"
   
   // Auto-generated safety/difficulty metrics
-  float injury_risk_level = 6;          // 1.0 (low), 2.0 (medium), 3.0 (high)
-  float complexity_score = 7;           // 0.0-1.0, affects familiarity progression
-  repeated string joint_stress_areas = 8;  // e.g., ["shoulder", "elbow"]
-  string intensity_category = 9;        // "compound_heavy", "compound_moderate", "isolation"
+  float injury_risk_level = 5;          // 1.0 (low), 2.0 (medium), 3.0 (high)
+  float complexity_score = 6;           // 0.0-1.0, affects familiarity progression
+  repeated string joint_stress_areas = 7;  // e.g., ["shoulder", "elbow"]
+  string intensity_category = 8;        // "compound_heavy", "compound_moderate", "isolation"
   
   // Muscle targeting with roles
-  repeated MuscleTarget muscle_targets = 10;
+  repeated MuscleTarget muscle_targets = 9;
   
   // Extracted modifiers (for reference/debugging)
-  ExerciseModifiers modifiers = 11;
+  ExerciseModifiers modifiers = 10;
 }
 
 // MuscleTarget represents a muscle engaged in the exercise with its role

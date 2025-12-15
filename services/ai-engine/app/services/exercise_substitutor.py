@@ -87,7 +87,7 @@ class ExerciseSubstitutor:
     
     def _get_primary_muscles(self, exercise: Exercise) -> Set[int]:
         """
-        Get primary muscle IDs for an exercise (activation >= 70%).
+        Get primary muscle IDs for an exercise (prime_mover role).
         
         Args:
             exercise: Exercise model
@@ -99,7 +99,7 @@ class ExerciseSubstitutor:
             self.db.query(ExerciseMuscle.muscle_group_id)
             .filter(
                 ExerciseMuscle.exercise_id == exercise.id,
-                ExerciseMuscle.activation_percent >= 70
+                ExerciseMuscle.role == "prime_mover"
             )
             .all()
         )
@@ -119,14 +119,23 @@ class ExerciseSubstitutor:
             Similarity score (0.0 - 1.0)
         """
         # Get muscle activations for both exercises
+        # Convert role to activation weight: prime_mover=85%, synergist=55%, stabilizer=20%
+        def role_to_weight(role: str) -> int:
+            if role == "prime_mover":
+                return 85
+            elif role == "synergist":
+                return 55
+            else:  # stabilizer
+                return 20
+        
         ex1_muscles = {}
         ex2_muscles = {}
         
         for link in self.db.query(ExerciseMuscle).filter(ExerciseMuscle.exercise_id == exercise1_id).all():
-            ex1_muscles[link.muscle_group_id] = link.activation_percent
+            ex1_muscles[link.muscle_group_id] = role_to_weight(link.role)
         
         for link in self.db.query(ExerciseMuscle).filter(ExerciseMuscle.exercise_id == exercise2_id).all():
-            ex2_muscles[link.muscle_group_id] = link.activation_percent
+            ex2_muscles[link.muscle_group_id] = role_to_weight(link.role)
         
         if not ex1_muscles or not ex2_muscles:
             return 0.0
@@ -202,7 +211,7 @@ class ExerciseSubstitutor:
             .filter(
                 ExerciseMuscle.exercise_id != original.id,
                 ExerciseMuscle.muscle_group_id.in_(original_muscles),
-                ExerciseMuscle.activation_percent >= 70
+                ExerciseMuscle.role == "prime_mover"
             )
             .group_by(ExerciseMuscle.exercise_id)
             .having(func.count(ExerciseMuscle.muscle_group_id) >= len(original_muscles) * 0.5)
@@ -253,7 +262,7 @@ class ExerciseSubstitutor:
             .filter(
                 ExerciseMuscle.exercise_id != original.id,
                 ExerciseMuscle.muscle_group_id.in_(original_muscles),
-                ExerciseMuscle.activation_percent >= 60
+                ExerciseMuscle.role.in_(["prime_mover", "synergist"])
             )
             .group_by(ExerciseMuscle.exercise_id)
             .all()
@@ -301,7 +310,7 @@ class ExerciseSubstitutor:
             .filter(
                 ExerciseMuscle.exercise_id != original.id,
                 ExerciseMuscle.muscle_group_id.in_(original_muscles),
-                ExerciseMuscle.activation_percent >= 60
+                ExerciseMuscle.role.in_(["prime_mover", "synergist"])
             )
             .first()
         )

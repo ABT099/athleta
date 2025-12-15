@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
 )
 
 // InitializeSchema creates the movement pattern hierarchy and modifier system in Neo4j
-func InitializeSchema(ctx context.Context, driver neo4j.DriverWithContext) error {
+func InitializeSchema(ctx context.Context, driver neo4j.Driver) error {
 	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer session.Close(ctx)
 
@@ -30,7 +30,7 @@ func InitializeSchema(ctx context.Context, driver neo4j.DriverWithContext) error
 	return nil
 }
 
-func createConstraints(ctx context.Context, session neo4j.SessionWithContext) error {
+func createConstraints(ctx context.Context, session neo4j.Session) error {
 	constraints := []string{
 		"CREATE CONSTRAINT IF NOT EXISTS FOR (p:Pattern) REQUIRE p.name IS UNIQUE",
 		"CREATE CONSTRAINT IF NOT EXISTS FOR (e:Exercise) REQUIRE e.name IS UNIQUE",
@@ -61,7 +61,7 @@ func createConstraints(ctx context.Context, session neo4j.SessionWithContext) er
 	return nil
 }
 
-func createMovementPatterns(ctx context.Context, session neo4j.SessionWithContext) error {
+func createMovementPatterns(ctx context.Context, session neo4j.Session) error {
 	query := `
 		// Create root node
 		MERGE (root:MovementRoot {name: 'Human Movement'})
@@ -91,7 +91,7 @@ func createMovementPatterns(ctx context.Context, session neo4j.SessionWithContex
 	return err
 }
 
-func createModifierSystem(ctx context.Context, session neo4j.SessionWithContext) error {
+func createModifierSystem(ctx context.Context, session neo4j.Session) error {
 	// Implement modifier category
 	implementQuery := `
 		MERGE (cat:ModifierCategory {name: 'Implement'})

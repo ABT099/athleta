@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 
@@ -84,7 +83,6 @@ func main() {
 		exerciseNode := &models.ExerciseNode{
 			Name:            ex.Name,
 			PostgresID:      ex.ID,
-			Description:     ex.Description,
 			Equipment:       ex.Equipment,
 			MovementPattern: ex.MovementPattern,
 			ExerciseType:    ex.ExerciseType,
@@ -114,4 +112,6 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
+
+
 

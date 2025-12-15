@@ -310,7 +310,7 @@ class IntensityTechniqueService:
             self.db.query(ExerciseMuscle.exercise_id)
             .filter(
                 ExerciseMuscle.muscle_group_id == muscle.id,
-                ExerciseMuscle.activation_percent >= 70  # Primary targets only
+                ExerciseMuscle.role == "prime_mover"  # Primary targets only
             )
             .all()
         )

@@ -212,7 +212,7 @@ class PrescriptionQualityAnalyzer:
             .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
             .filter(
                 ExerciseMuscle.exercise_id == exercise.id,
-                ExerciseMuscle.activation_percent >= 70  # Primary targets only
+                ExerciseMuscle.role == "prime_mover"  # Primary targets only
             )
             .all()
         )
