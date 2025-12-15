@@ -39,24 +39,23 @@ class MuscleGroupModel(Base):
 
 class ExerciseMuscle(Base):
     """
-    Junction table linking exercises to muscles with activation percentage.
+    Junction table linking exercises to muscles with functional roles.
     
-    Replaces binary primary/secondary with percentage-based activation:
-    - 80-100%: Primary target
-    - 50-79%: Heavy secondary
-    - 20-49%: Light secondary
-    - 1-19%: Stabilizer
+    Role-based muscle targeting:
+    - prime_mover: The muscle doing the majority of the work
+    - synergist: Assists the prime mover significantly
+    - stabilizer: Holds position, prevents unwanted movement
     """
     __tablename__ = "exercise_muscles"
     
     id = Column(Integer, primary_key=True)
     exercise_id = Column(Integer, ForeignKey("exercises.id", ondelete="CASCADE"), nullable=False, index=True)
     muscle_group_id = Column(Integer, ForeignKey("muscle_groups.id", ondelete="CASCADE"), nullable=False, index=True)
-    activation_percent = Column(Integer, nullable=False)
+    role = Column(Enum("prime_mover", "synergist", "stabilizer", name="muscle_role_enum"), nullable=False)
     
     # Relationships
     exercise = relationship("Exercise", back_populates="muscle_links")
     muscle_group = relationship("MuscleGroupModel", back_populates="exercise_links")
     
     def __repr__(self):
-        return f"<ExerciseMuscle(exercise_id={self.exercise_id}, muscle_id={self.muscle_group_id}, activation={self.activation_percent}%)>"
+        return f"<ExerciseMuscle(exercise_id={self.exercise_id}, muscle_id={self.muscle_group_id}, role={self.role})>"

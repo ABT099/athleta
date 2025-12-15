@@ -39,4 +39,3 @@ export class WorkoutsController {
     return { message: 'Exercise substituted successfully' };
   }
 }
-

@@ -98,13 +98,100 @@ export class MuscleSimilarityUtil {
   }
 
   /**
+   * Calculate pattern similarity between two exercises based on their biomechanical properties.
+   * Returns a score between 0 and 1.
+   */
+  static calculatePatternSimilarity(
+    exercise1: {
+      movementPattern: string;
+      equipment: string;
+      exerciseType: string;
+    },
+    exercise2: {
+      movementPattern: string;
+      equipment: string;
+      exerciseType: string;
+    },
+  ): number {
+    let score = 0;
+
+    // Same movement pattern: +0.5
+    if (exercise1.movementPattern === exercise2.movementPattern) {
+      score += 0.5;
+    } else if (
+      this.areSimilarMovementPatterns(
+        exercise1.movementPattern,
+        exercise2.movementPattern,
+      )
+    ) {
+      score += 0.3;
+    }
+
+    // Same equipment: +0.3
+    if (exercise1.equipment === exercise2.equipment) {
+      score += 0.3;
+    } else if (
+      this.areSimilarEquipment(exercise1.equipment, exercise2.equipment)
+    ) {
+      score += 0.15;
+    }
+
+    // Same exercise type: +0.2
+    if (exercise1.exerciseType === exercise2.exerciseType) {
+      score += 0.2;
+    }
+
+    return Math.min(score, 1.0);
+  }
+
+  /**
+   * Check if two equipment types are similar (e.g., barbell/dumbbell).
+   */
+  static areSimilarEquipment(equipment1: string, equipment2: string): boolean {
+    const similarEquipment: Record<string, string[]> = {
+      barbell: ['dumbbell', 'kettlebell'],
+      dumbbell: ['barbell', 'kettlebell'],
+      kettlebell: ['barbell', 'dumbbell'],
+      cable: ['band', 'machine'],
+      band: ['cable', 'bodyweight'],
+      machine: ['cable'],
+    };
+
+    return similarEquipment[equipment1]?.includes(equipment2) ?? false;
+  }
+
+  /**
+   * Map Neo4j pattern-based similar exercises to a score map.
+   * Exercises returned from Neo4j are already scored by relevance.
+   */
+  static mapPatternMatchesToScores(
+    similarExercises: string[],
+    limit: number = 20,
+  ): Map<string, number> {
+    const scoreMap = new Map<string, number>();
+
+    // Score decreases linearly based on position in results
+    // First result gets 1.0, last gets 0.5
+    similarExercises.slice(0, limit).forEach((exerciseName, index) => {
+      const score = 1.0 - index / (limit * 2);
+      scoreMap.set(exerciseName, Math.max(score, 0.5));
+    });
+
+    return scoreMap;
+  }
+
+  /**
    * Generate human-readable reason for substitution recommendation.
+   * Enhanced to include pattern-based matching details.
    */
   static generateSubstitutionReason(matchDetails: {
     muscleSimilarity: number;
     movementPatternMatch: number;
     exerciseTypeMatch: number;
     complexitySimilarity: number;
+    patternSimilarity?: number;
+    modifierMatch?: number;
+    hierarchyDistance?: number;
   }): string {
     const reasons: string[] = [];
 
@@ -126,6 +213,25 @@ export class MuscleSimilarityUtil {
 
     if (matchDetails.complexitySimilarity >= 0.9) {
       reasons.push('similar complexity level');
+    }
+
+    // NEW: Pattern-based reasons
+    if (
+      matchDetails.patternSimilarity &&
+      matchDetails.patternSimilarity >= 0.8
+    ) {
+      reasons.push('biomechanically similar movement');
+    }
+
+    if (matchDetails.modifierMatch && matchDetails.modifierMatch >= 0.7) {
+      reasons.push('uses similar equipment/setup');
+    }
+
+    if (
+      matchDetails.hierarchyDistance !== undefined &&
+      matchDetails.hierarchyDistance <= 1
+    ) {
+      reasons.push('variation of same exercise family');
     }
 
     return reasons.join(', ') || 'suitable alternative';

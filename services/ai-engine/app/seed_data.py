@@ -1,11 +1,29 @@
 """
-Seed data for exercises library with granular muscle activations.
+Seed data for exercises library with role-based muscle targeting.
 
-Contains common exercises with detailed muscle activation percentages.
+Contains common exercises with muscle roles (prime_mover, synergist, stabilizer).
 """
 from sqlalchemy.orm import Session
 from app.models import Exercise, MuscleGroupModel, ExerciseMuscle
 from app.database import SessionLocal
+
+
+def activation_to_role(activation_percent: int) -> str:
+    """
+    Convert activation percentage to muscle role.
+    
+    Args:
+        activation_percent: Activation percentage (0-100)
+    
+    Returns:
+        Role string: 'prime_mover', 'synergist', or 'stabilizer'
+    """
+    if activation_percent >= 70:
+        return "prime_mover"
+    elif activation_percent >= 40:
+        return "synergist"
+    else:
+        return "stabilizer"
 
 
 EXERCISE_SEED_DATA = [
@@ -523,16 +541,19 @@ def seed_exercises(db: Session):
         db.add(exercise)
         db.flush()  # Get the exercise ID
         
-        # Create muscle links
+        # Create muscle links with roles
         for muscle_name, activation_percent in muscle_activations:
             if muscle_name not in muscles:
                 print(f"WARNING: Muscle '{muscle_name}' not found for exercise '{exercise.name}'")
                 continue
             
+            # Convert activation percentage to role
+            role = activation_to_role(activation_percent)
+            
             link = ExerciseMuscle(
                 exercise_id=exercise.id,
                 muscle_group_id=muscles[muscle_name].id,
-                activation_percent=activation_percent
+                role=role
             )
             db.add(link)
     

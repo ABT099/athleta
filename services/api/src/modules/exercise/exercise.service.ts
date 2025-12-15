@@ -15,6 +15,7 @@ import {
   MuscleActivationDto,
 } from './dto/substitution-result.dto';
 import { SubstitutionFiltersDto } from './dto/substitution-filters.dto';
+import { InferenceService, type ExerciseData } from './inference.service';
 
 type ExerciseEntity = typeof exercisesTable.$inferSelect;
 
@@ -27,6 +28,7 @@ export class ExerciseService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly aiEngineIntegration: AIEngineIntegration,
+    private readonly inferenceService: InferenceService,
   ) {}
 
   async findSubstitutions(
@@ -91,20 +93,73 @@ export class ExerciseService {
     const exercisesWithMuscles =
       await this.getMultipleExercisesWithMuscles(candidateIds);
 
-    // Calculate similarity scores
+    // NEW: Get pattern-based similar exercises from Neo4j (automatic)
+    let patternScores = new Map<string, number>();
+    try {
+      const similarByPattern =
+        await this.inferenceService.findSimilarExercisesByPattern(
+          originalExercise.name,
+          { limit: 20 },
+        );
+      patternScores = MuscleSimilarityUtil.mapPatternMatchesToScores(
+        similarByPattern,
+        20,
+      );
+    } catch (error) {
+      console.warn(
+        'Pattern matching unavailable, using muscle-only scoring:',
+        error,
+      );
+      // Empty map = fallback to muscle-only scoring
+    }
+
+    // Calculate similarity scores with hybrid approach
     const scoredExercises = exercisesWithMuscles
       .map((exercise) => {
         const matchDetails = this.calculateMatchDetails(
           originalExercise,
           exercise,
         );
-        const similarityScore = this.calculateSimilarityScore(matchDetails);
+
+        // Get muscle-based similarity score
+        const muscleScore = this.calculateSimilarityScore(matchDetails);
+
+        // Get pattern-based similarity score from Neo4j results
+        const patternScore = patternScores.get(exercise.name) || 0;
+
+        // NEW: Calculate hybrid score (60% muscle + 40% pattern)
+        const hybridScore = muscleScore * 0.6 + patternScore * 0.4;
+
+        // NEW: Calculate pattern similarity for match details
+        const patternSimilarity =
+          MuscleSimilarityUtil.calculatePatternSimilarity(
+            {
+              movementPattern: originalExercise.movementPattern || '',
+              equipment: originalExercise.equipment || '',
+              exerciseType: originalExercise.exerciseType || '',
+            },
+            {
+              movementPattern: exercise.movementPattern || '',
+              equipment: exercise.equipment || '',
+              exerciseType: exercise.exerciseType || '',
+            },
+          );
+
+        // Enhanced match details with pattern information
+        const enhancedMatchDetails = {
+          ...matchDetails,
+          patternSimilarity,
+          modifierMatch: patternScore, // Neo4j score includes modifier matching
+        };
 
         return {
           exercise: this.mapToExerciseDto(exercise),
-          similarityScore,
-          reason: MuscleSimilarityUtil.generateSubstitutionReason(matchDetails),
-          matchDetails,
+          similarityScore: hybridScore, // Use hybrid score
+          reason:
+            MuscleSimilarityUtil.generateSubstitutionReason(
+              enhancedMatchDetails,
+            ),
+          matchDetails: enhancedMatchDetails,
         };
       })
       .sort((a, b) => b.similarityScore - a.similarityScore)
@@ -155,20 +210,25 @@ export class ExerciseService {
     }
 
     // Get muscle activations for this exercise
-    const muscles = await this.db
+    const musclesRaw = await this.db
       .select({
         id: muscleGroupsTable.id,
         name: muscleGroupsTable.name,
         displayName: muscleGroupsTable.displayName,
-        activationPercent: exerciseMusclesTable.activationPercent,
+        role: exerciseMusclesTable.role,
       })
       .from(exerciseMusclesTable)
       .innerJoin(
         muscleGroupsTable,
         eq(exerciseMusclesTable.muscleGroupId, muscleGroupsTable.id),
       )
-      .where(eq(exerciseMusclesTable.exerciseId, exerciseId))
-      .orderBy(exerciseMusclesTable.activationPercent);
+      .where(eq(exerciseMusclesTable.exerciseId, exerciseId));
+
+    // Convert role to activation percent for similarity calculations
+    const muscles = musclesRaw.map((m) => ({
+      ...m,
+      activationPercent: this.roleToActivationPercent(m.role),
+    }));
 
     return {
       ...exercise,
@@ -192,13 +252,13 @@ export class ExerciseService {
     });
 
     // Get all muscle activations for these exercises
-    const allMuscles = await this.db
+    const allMusclesRaw = await this.db
       .select({
         exerciseId: exerciseMusclesTable.exerciseId,
         id: muscleGroupsTable.id,
         name: muscleGroupsTable.name,
         displayName: muscleGroupsTable.displayName,
-        activationPercent: exerciseMusclesTable.activationPercent,
+        role: exerciseMusclesTable.role,
       })
       .from(exerciseMusclesTable)
       .innerJoin(
@@ -207,9 +267,9 @@ export class ExerciseService {
       )
       .where(inArray(exerciseMusclesTable.exerciseId, exerciseIds));
 
-    // Group muscles by exercise ID
+    // Group muscles by exercise ID and convert role to activation percent
     const musclesByExercise = new Map<number, MuscleActivationDto[]>();
-    allMuscles.forEach((muscle) => {
+    allMusclesRaw.forEach((muscle) => {
       if (!musclesByExercise.has(muscle.exerciseId)) {
         musclesByExercise.set(muscle.exerciseId, []);
       }
@@ -217,7 +277,7 @@ export class ExerciseService {
         id: muscle.id,
         name: muscle.name,
         displayName: muscle.displayName,
-        activationPercent: muscle.activationPercent,
+        activationPercent: this.roleToActivationPercent(muscle.role),
       });
     });
 
@@ -291,5 +351,146 @@ export class ExerciseService {
       exerciseType: exercise.exerciseType as 'compound' | 'isolation',
       complexityScore: exercise.complexityScore,
     };
+  }
+
+  /**
+   * Convert muscle role to activation percent for similarity calculations
+   */
+  private roleToActivationPercent(role: string): number {
+    switch (role) {
+      case 'prime_mover':
+        return 85;
+      case 'synergist':
+        return 55;
+      case 'stabilizer':
+        return 25;
+      default:
+        return 0;
+    }
+  }
+
+  /**
+   * Batch upsert exercises from exercise names
+   * This is called internally when creating workouts with custom exercise names
+   */
+  async batchUpsertExercises(exerciseNames: string[]): Promise<void> {
+    if (exerciseNames.length === 0) {
+      return;
+    }
+
+    // Get unique exercise names
+    const uniqueNames = [...new Set(exerciseNames)];
+
+    // Check which exercises already exist
+    const existingExercises = await this.db
+      .select({ name: exercisesTable.name })
+      .from(exercisesTable)
+      .where(inArray(exercisesTable.name, uniqueNames));
+
+    const existingNames = new Set(
+      existingExercises.map((ex) => ex.name.toLowerCase()),
+    );
+
+    // Filter out exercises that already exist
+    const missingNames = uniqueNames.filter(
+      (name) => !existingNames.has(name.toLowerCase()),
+    );
+
+    if (missingNames.length === 0) {
+      console.log('All exercises already exist in database');
+      return;
+    }
+
+    console.log(`Inferring ${missingNames.length} new exercises...`);
+
+    // Call gRPC inference service
+    const inferredExercises =
+      await this.inferenceService.batchParseExercises(missingNames);
+
+    // Get all muscle groups for mapping
+    const muscleGroups = await this.db
+      .select({ id: muscleGroupsTable.id, name: muscleGroupsTable.name })
+      .from(muscleGroupsTable);
+
+    const muscleMap = new Map(muscleGroups.map((mg) => [mg.name, mg.id]));
+
+    // Insert exercises and their muscle relationships
+    for (const exerciseData of inferredExercises) {
+      await this.upsertSingleExercise(exerciseData, muscleMap);
+    }
+
+    console.log(
+      `✓ Successfully upserted ${inferredExercises.length} exercises`,
+    );
+  }
+
+  /**
+   * Upsert a single exercise with its muscle relationships
+   */
+  private async upsertSingleExercise(
+    exerciseData: ExerciseData,
+    muscleMap: Map<string, number>,
+  ): Promise<void> {
+    // Insert or update exercise
+    const [exercise] = await this.db
+      .insert(exercisesTable)
+      .values({
+        name: exerciseData.name,
+        description: exerciseData.description,
+        equipment: exerciseData.equipment,
+        injuryRiskLevel: exerciseData.injuryRiskLevel,
+        jointStressAreas: exerciseData.jointStressAreas,
+        movementPattern: exerciseData.movementPattern,
+        exerciseType: exerciseData.exerciseType as 'compound' | 'isolation',
+        complexityScore: exerciseData.complexityScore,
+        intensityCategory: exerciseData.intensityCategory as
+          | 'compound_heavy'
+          | 'compound_moderate'
+          | 'isolation',
+      })
+      .onConflictDoUpdate({
+        target: exercisesTable.name,
+        set: {
+          description: exerciseData.description,
+          equipment: exerciseData.equipment,
+          injuryRiskLevel: exerciseData.injuryRiskLevel,
+          jointStressAreas: exerciseData.jointStressAreas,
+          movementPattern: exerciseData.movementPattern,
+          exerciseType: exerciseData.exerciseType as 'compound' | 'isolation',
+          complexityScore: exerciseData.complexityScore,
+          intensityCategory: exerciseData.intensityCategory as
+            | 'compound_heavy'
+            | 'compound_moderate'
+            | 'isolation',
+        },
+      })
+      .returning();
+
+    // Delete existing muscle relationships
+    await this.db
+      .delete(exerciseMusclesTable)
+      .where(eq(exerciseMusclesTable.exerciseId, exercise.id));
+
+    // Insert new muscle relationships
+    const muscleInserts = exerciseData.muscleTargets
+      .map((target) => {
+        const muscleId = muscleMap.get(target.muscleName);
+        if (!muscleId) {
+          console.warn(
+            `Muscle not found: ${target.muscleName} for exercise ${exerciseData.name}`,
+          );
+          return null;
+        }
+        return {
+          exerciseId: exercise.id,
+          muscleGroupId: muscleId,
+          role: target.role as 'prime_mover' | 'synergist' | 'stabilizer',
+        };
+      })
+      .filter((insert) => insert !== null);
+
+    if (muscleInserts.length > 0) {
+      await this.db.insert(exerciseMusclesTable).values(muscleInserts);
+    }
   }
 }

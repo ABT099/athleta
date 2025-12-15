@@ -1,8 +1,14 @@
 export class MatchDetailsDto {
+  // Existing muscle-based metrics
   muscleSimilarity: number; // Weighted similarity based on activation percentages
   movementPatternMatch: number;
   exerciseTypeMatch: number;
   complexitySimilarity: number;
+
+  // NEW: Pattern-based metrics from Neo4j
+  patternSimilarity?: number; // Biomechanical pattern similarity (0-1)
+  modifierMatch?: number; // Equipment/angle/laterality match (0-1)
+  hierarchyDistance?: number; // Distance in Neo4j exercise tree
 }
 
 export class MuscleActivationDto {

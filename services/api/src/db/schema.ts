@@ -98,7 +98,9 @@ export const exerciseMusclesTable = pgTable(
     muscleGroupId: integer()
       .references(() => muscleGroupsTable.id, { onDelete: 'cascade' })
       .notNull(),
-    activationPercent: integer().notNull(),
+    role: varchar({ length: 20 })
+      .notNull()
+      .$type<'prime_mover' | 'synergist' | 'stabilizer'>(),
   },
   (table) => [
     index('exercise_muscles_exercise_idx').on(table.exerciseId),
