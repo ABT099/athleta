@@ -1,5 +1,6 @@
 services:
   db:
+    restart: unless-stopped
     container_name: athleta_db
     image: postgres:18-alpine
     environment:
@@ -7,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: athleta
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,6 +18,7 @@ services:
       retries: 5
 
   neo4j:
+    restart: unless-stopped
     container_name: athleta_neo4j
     image: neo4j:5.26-community
     environment:
@@ -25,8 +27,8 @@ services:
       NEO4J_dbms_memory_heap_initial__size: 512M
       NEO4J_dbms_memory_heap_max__size: 1G
     ports:
-      - "7474:7474" # HTTP
-      - "7687:7687" # Bolt
+      - "127.0.0.1:7474:7474" # HTTP
+      - "127.0.0.1:7687:7687" # Bolt
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
@@ -39,6 +41,30 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  ai-engine:
+    container_name: athleta_ai_engine
+    build:
+      context: ./services/ai-engine
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
+    depends_on:
+      - db
+      - exercise-inference
+
+  api:
+    container_name: athleta_api
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    depends_on:
+      - ai-engine
+      - exercise-inference
 
   exercise-inference:
     container_name: athleta_exercise_inference
@@ -62,6 +88,8 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+      muscle-image-api:
+        condition: service_healthy
     restart: unless-stopped
 
   muscle-image-api:
@@ -70,10 +98,8 @@ services:
       context: ./services/muscle-image
       dockerfile: Dockerfile
     ports:
-      - "8081:80"
+      - "8082:80"
     restart: unless-stopped
-    depends_on:
-      - db
 
 volumes:
   postgres_data:
