@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models import Athlete, WorkoutSession
 from app.ml.model_selector import ModelSelector
 from app.ml.model_manager import ModelManager
+from app.auth import get_current_user
 
 # Import ML services with graceful degradation
 try:
@@ -28,6 +29,7 @@ router = APIRouter()
 @router.post("/ml/train/{athlete_id}")
 def train_athlete_model(
     athlete_id: int,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -86,6 +88,7 @@ def train_athlete_model(
 @router.get("/ml/status/{athlete_id}")
 def get_model_status(
     athlete_id: int,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -166,6 +169,7 @@ def get_model_status(
 def retrain_athlete_model(
     athlete_id: int,
     force: bool = False,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -224,6 +228,7 @@ def retrain_athlete_model(
 @router.get("/ml/predictions/{athlete_id}")
 def get_predictions_breakdown(
     athlete_id: int,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -293,6 +298,7 @@ def get_predictions_breakdown(
 @router.get("/ml/models")
 def list_all_models(
     athlete_id: Optional[int] = None,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -322,6 +328,7 @@ def list_all_models(
 def delete_athlete_models(
     athlete_id: int,
     keep_latest: int = 1,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -365,6 +372,7 @@ def delete_athlete_models(
 def generate_synthetic_data(
     n_athletes: int = 50,
     sessions_per_athlete: int = 50,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """

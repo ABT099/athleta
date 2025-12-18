@@ -19,7 +19,10 @@ import { ForgotPasswordService } from './services/forgot-password.service';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         secret: configService.getOrThrow<string>('JWT_SECRET'),
-        signOptions: { expiresIn: '15m' }, // 15 minutes for access token
+        signOptions: { 
+          expiresIn: '15m',
+          issuer: configService.get<string>('JWT_ISSUER', 'athleta-api'),
+        },
       }),
       inject: [ConfigService],
     }),

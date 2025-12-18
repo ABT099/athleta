@@ -1,7 +1,7 @@
 """
 Prescription generation API endpoints.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.schemas.prescription import (
     PrescriptionRequest,
     PrescriptionResponse,
@@ -9,12 +9,16 @@ from app.schemas.prescription import (
     BatchPrescriptionResponse,
 )
 from app.services.prescription_generator import PrescriptionGeneratorService
+from app.auth import get_current_user
 
 router = APIRouter()
 
 
 @router.post("/prescriptions/generate", response_model=PrescriptionResponse)
-def generate_prescription(request: PrescriptionRequest) -> PrescriptionResponse:
+def generate_prescription(
+    request: PrescriptionRequest,
+    current_user: dict = Depends(get_current_user)
+) -> PrescriptionResponse:
     """
     Generate target RPE, RIR, and rest period for a single exercise.
     
@@ -40,7 +44,10 @@ def generate_prescription(request: PrescriptionRequest) -> PrescriptionResponse:
 
 
 @router.post("/prescriptions/generate-batch", response_model=BatchPrescriptionResponse)
-def generate_batch_prescriptions(request: BatchPrescriptionRequest) -> BatchPrescriptionResponse:
+def generate_batch_prescriptions(
+    request: BatchPrescriptionRequest,
+    current_user: dict = Depends(get_current_user)
+) -> BatchPrescriptionResponse:
     """
     Generate prescriptions for multiple exercises at once.
     

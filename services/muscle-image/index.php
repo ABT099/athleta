@@ -75,5 +75,11 @@ Router::createRoute('get', '/test', function() {
     MuscleImageController::testCreateImage();
 });
 
+Router::createRoute('get', '/health', function() {
+    http_response_code(200);
+    header('Content-Type: application/json');
+    echo json_encode(['status' => 'healthy', 'service' => 'muscle-image-api']);
+});
+
 // Start the Router
 Router::run('/');

@@ -35,10 +35,13 @@ except ImportError:
 
 router = APIRouter()
 
+from app.auth import get_current_user
+
 
 @router.post("/workouts/complete", response_model=WorkoutCompletionResponse)
 def complete_workout(
     request: WorkoutCompletionRequest,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -340,6 +343,7 @@ def complete_workout(
 @router.get("/athletes/{athlete_id}/next-workout")
 def get_next_workout(
     athlete_id: int,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -400,6 +404,7 @@ def get_next_workout(
 @router.get("/athletes/{athlete_id}/rpe-calibration")
 def get_rpe_calibration_status(
     athlete_id: int,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -428,6 +433,7 @@ def get_rpe_calibration_status(
 @router.post("/athletes/{athlete_id}/rpe-calibration/train-ml")
 def train_rpe_ml_model(
     athlete_id: int,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -461,6 +467,7 @@ def train_rpe_ml_model(
 @router.get("/athletes/{athlete_id}/ml-models")
 def get_ml_model_status(
     athlete_id: int,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -503,6 +510,7 @@ def get_ml_model_status(
 @router.post("/athletes/{athlete_id}/ml-models/train")
 def train_workout_ml_model(
     athlete_id: int,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -543,6 +551,7 @@ def train_workout_ml_model(
 @router.get("/athletes/{athlete_id}/analytics")
 def get_athlete_analytics(
     athlete_id: int,
+    current_user: dict = Depends(get_current_user),
     days: int = 30,
     db: Session = Depends(get_db)
 ):

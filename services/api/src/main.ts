@@ -4,7 +4,7 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
+
   // Enable global validation pipe for automatic DTO validation
   app.useGlobalPipes(
     new ValidationPipe({
@@ -17,8 +17,18 @@ async function bootstrap() {
     }),
   );
 
-  app.enableCors();
-  
+  app.enableCors({
+    origin: true, // Allow all origins (or use '*' but true is better with credentials)
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'X-Requested-With',
+    ],
+  });
+
   await app.listen(process.env.PORT ?? 8080);
 }
 

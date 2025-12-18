@@ -33,6 +33,11 @@ class Settings(BaseSettings):
             )
         return v
     
+    # JWT - already present in env vars
+    JWT_SECRET: str
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ISSUER: str = "athleta-api"
+    
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
     

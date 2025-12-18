@@ -1,70 +1,97 @@
 services:
+  traefik:
+    container_name: traefik
+    image: traefik:v3.6
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=INFO"
+      - "--accesslog=true"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/letsencrypt
+    networks:
+      - public
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      # Dashboard (protect with basic auth)
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
+
   db:
-    restart: unless-stopped
     container_name: athleta_db
     image: postgres:18-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: athleta
-    ports:
-      - "127.0.0.1:5432"
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.utf8"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    networks:
+      - backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 10s
-      timeout: 5s
+      interval: 30s
+      timeout: 10s
       retries: 5
+      start_period: 30s
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   neo4j:
-    restart: unless-stopped
     container_name: athleta_neo4j
     image: neo4j:5.26-community
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
-      NEO4J_dbms_memory_pagecache_size: 512M
-      NEO4J_dbms_memory_heap_initial__size: 512M
-      NEO4J_dbms_memory_heap_max__size: 1G
-    ports:
-      - "127.0.0.1:7474:7474" # HTTP
-      - "127.0.0.1:7687:7687" # Bolt
+      NEO4J_dbms_memory_pagecache_size: 256M
+      NEO4J_dbms_memory_heap_initial__size: 256M
+      NEO4J_dbms_memory_heap_max__size: 512M
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_connector_bolt_listen__address: 0.0.0.0:7687
+      NEO4J_dbms_connector_http_listen__address: 0.0.0.0:7474
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
+    networks:
+      - backend
     healthcheck:
       test:
         [
           "CMD-SHELL",
           "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1",
         ]
-      interval: 10s
-      timeout: 5s
+      interval: 30s
+      timeout: 10s
       retries: 5
-
-  ai-engine:
-    container_name: athleta_ai_engine
-    build:
-      context: ./services/ai-engine
-      dockerfile: Dockerfile
-    ports:
-      - "8001:8000"
-    restart: unless-stopped
-    depends_on:
-      - db
-      - exercise-inference
-
-  api:
-    container_name: athleta_api
-    build:
-      context: ./services/api
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    restart: unless-stopped
-    depends_on:
-      - ai-engine
-      - exercise-inference
+      start_period: 40s
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   exercise-inference:
     container_name: athleta_exercise_inference
@@ -81,8 +108,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: athleta
       GRPC_PORT: 50051
-    ports:
-      - "50051:50051"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - backend
     depends_on:
       db:
         condition: service_healthy
@@ -90,18 +118,214 @@ services:
         condition: service_healthy
       muscle-image-api:
         condition: service_healthy
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=:50051"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   muscle-image-api:
     container_name: muscle-image-api
     build:
       context: ./services/muscle-image
       dockerfile: Dockerfile
-    ports:
-      - "8082:80"
-    restart: unless-stopped
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  ai-engine:
+    container_name: athleta_ai_engine
+    build:
+      context: ./services/ai-engine
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/athleta
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_ISSUER: athleta-api
+    networks:
+      - public
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+      exercise-inference:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ai-engine.rule=Host(`ai.${DOMAIN}`)"
+      - "traefik.http.routers.ai-engine.entrypoints=websecure"
+      - "traefik.http.routers.ai-engine.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ai-engine.loadbalancer.server.port=8000"
+      # Security headers for mobile clients
+      - "traefik.http.middlewares.ai-security.headers.accessControlAllowMethods=GET,POST,PUT,DELETE,OPTIONS"
+      - "traefik.http.middlewares.ai-security.headers.accessControlAllowHeaders=Authorization,Content-Type,Accept"
+      - "traefik.http.middlewares.ai-security.headers.accessControlAllowOriginList=*"
+      - "traefik.http.middlewares.ai-security.headers.accessControlMaxAge=3600"
+      - "traefik.http.middlewares.ai-security.headers.contentTypeNosniff=true"
+      - "traefik.http.routers.ai-engine.middlewares=ai-security,ai-rate-limit"
+      # Rate limiting for AI endpoints (more generous due to longer processing)
+      - "traefik.http.middlewares.ai-rate-limit.ratelimit.average=50"
+      - "traefik.http.middlewares.ai-rate-limit.ratelimit.burst=30"
+
+  api:
+    container_name: athleta_api
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/athleta
+      AI_ENGINE_URL: http://ai-engine:8000
+      EXERCISE_INFERENCE_URL: exercise-inference:50051
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # JWT Configuration - this service issues tokens
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_ISSUER: athleta-api
+    networks:
+      - public
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+      ai-engine:
+        condition: service_healthy
+      exercise-inference:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.${DOMAIN}`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
+      # CORS headers for mobile clients
+      - "traefik.http.middlewares.api-cors.headers.accessControlAllowMethods=GET,POST,PUT,DELETE,PATCH,OPTIONS"
+      - "traefik.http.middlewares.api-cors.headers.accessControlAllowHeaders=Authorization,Content-Type,Accept,X-Requested-With"
+      - "traefik.http.middlewares.api-cors.headers.accessControlAllowOriginList=*"
+      - "traefik.http.middlewares.api-cors.headers.accessControlMaxAge=3600"
+      - "traefik.http.middlewares.api-cors.headers.contentTypeNosniff=true"
+      - "traefik.http.routers.api.middlewares=api-cors,api-rate-limit"
+      # Rate limiting
+      - "traefik.http.middlewares.api-rate-limit.ratelimit.average=100"
+      - "traefik.http.middlewares.api-rate-limit.ratelimit.burst=50"
+
+  prometheus:
+    profiles: ["monitoring"]
+    container_name: athleta_prometheus
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    networks:
+      - backend
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  grafana:
+    profiles: ["monitoring"]
+    container_name: athleta_grafana
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_SERVER_ROOT_URL: https://grafana.${DOMAIN}
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - backend
+      - public
+    depends_on:
+      - prometheus
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+networks:
+  public:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
 
 volumes:
   postgres_data:
+    driver: local
   neo4j_data:
+    driver: local
   neo4j_logs:
+    driver: local
+  traefik_certs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

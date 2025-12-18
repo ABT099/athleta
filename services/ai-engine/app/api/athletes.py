@@ -7,6 +7,7 @@ from typing import List
 
 from app.database import get_db
 from app.models import Athlete, WorkoutPlan, WorkoutSession
+from app.auth import get_current_user
 
 
 router = APIRouter()
@@ -14,6 +15,7 @@ router = APIRouter()
 @router.get("/athletes/{athlete_id}/current-plan", response_model=dict)
 def get_current_plan(
     athlete_id: int,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -59,6 +61,7 @@ def get_current_plan(
 def get_athlete_progress(
     athlete_id: int,
     days: int = 30,
+    current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
