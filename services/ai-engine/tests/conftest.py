@@ -13,6 +13,7 @@ from sqlalchemy.dialects import sqlite
 # Set test database URL before importing app modules
 # Use a named in-memory database with shared cache so all connections share the same database
 os.environ["DATABASE_URL"] = "sqlite:///file::memory:?cache=shared&uri=true"
+os.environ["JWT_SECRET"] = "test-jwt-secret-for-testing"
 
 from app.database import Base
 from app.utils.constants import (
@@ -176,6 +177,19 @@ def db_session():
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+@pytest.fixture
+def mock_auth():
+    """
+    Mock authentication for tests.
+    Returns a function that can be used to override get_current_user dependency.
+    """
+    def mock_get_current_user():
+        """Mock authentication that returns a test user."""
+        return {"user_id": "test-user-123"}
+    
+    return mock_get_current_user
 
 
 @pytest.fixture

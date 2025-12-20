@@ -1,11 +1,11 @@
 from fastapi import Security, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 from app.config import settings
 
 security = HTTPBearer()
 
-def verify_token(credentials: HTTPAuthCredentials = Security(security)) -> dict:
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)) -> dict:
     """
     Verify JWT token from Authorization header.
     Used by both mobile clients and API service.

@@ -21,7 +21,7 @@ from tests.factories import (
 
 
 @pytest.fixture
-def client(db_session):
+def client(db_session, mock_auth):
     """Create a test client with database override."""
     def override_get_db():
         try:
@@ -29,7 +29,10 @@ def client(db_session):
         finally:
             pass
     
+    from app.auth import get_current_user
+    
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = mock_auth
     yield TestClient(app)
     app.dependency_overrides.clear()
 
