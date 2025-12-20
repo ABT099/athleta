@@ -21,7 +21,6 @@ export class MuscleActivationDto {
 export class ExerciseDto {
   id: number;
   name: string;
-  description: string;
   equipment: string;
   muscles: MuscleActivationDto[]; // Replaces primaryMuscles and secondaryMuscles
   injuryRiskLevel: number;

@@ -30,7 +30,6 @@ EXERCISE_SEED_DATA = [
     # === CHEST EXERCISES ===
     {
         "name": "Barbell Bench Press",
-        "description": "Compound chest exercise",
         "equipment": "Barbell",
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["shoulder", "elbow"],
@@ -48,7 +47,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Incline Dumbbell Press",
-        "description": "Upper chest focused press",
         "equipment": "Dumbbells",
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder"],
@@ -65,7 +63,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Cable Fly",
-        "description": "Isolation chest exercise",
         "equipment": "Cable Machine",
         "injury_risk_level": 1.0,
         "joint_stress_areas": ["shoulder"],
@@ -81,7 +78,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Push-Ups",
-        "description": "Bodyweight chest exercise",
         "equipment": "None",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -100,7 +96,6 @@ EXERCISE_SEED_DATA = [
     # === BACK EXERCISES ===
     {
         "name": "Barbell Deadlift",
-        "description": "Full body posterior chain exercise",
         "equipment": "Barbell",
         "injury_risk_level": 2.5,
         "joint_stress_areas": ["lower_back", "hip"],
@@ -119,7 +114,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Pull-Ups",
-        "description": "Bodyweight back exercise",
         "equipment": "Pull-up Bar",
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder", "elbow"],
@@ -137,7 +131,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Bent-Over Barbell Row",
-        "description": "Compound back exercise",
         "equipment": "Barbell",
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["lower_back"],
@@ -155,7 +148,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Lat Pulldown",
-        "description": "Machine back exercise",
         "equipment": "Cable Machine",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -171,7 +163,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Cable Row",
-        "description": "Cable machine rowing",
         "equipment": "Cable Machine",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -190,7 +181,6 @@ EXERCISE_SEED_DATA = [
     # === SHOULDER EXERCISES ===
     {
         "name": "Overhead Press",
-        "description": "Compound shoulder exercise",
         "equipment": "Barbell",
         "injury_risk_level": 2.5,
         "joint_stress_areas": ["shoulder", "lower_back"],
@@ -208,7 +198,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Dumbbell Lateral Raise",
-        "description": "Shoulder isolation",
         "equipment": "Dumbbells",
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder"],
@@ -223,7 +212,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Face Pulls",
-        "description": "Rear delt and upper back",
         "equipment": "Cable Machine",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -241,7 +229,6 @@ EXERCISE_SEED_DATA = [
     # === LEG EXERCISES ===
     {
         "name": "Barbell Back Squat",
-        "description": "Compound leg exercise",
         "equipment": "Barbell",
         "injury_risk_level": 2.5,
         "joint_stress_areas": ["knee", "hip", "lower_back"],
@@ -259,7 +246,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Romanian Deadlift",
-        "description": "Hamstring focused hinge",
         "equipment": "Barbell",
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["lower_back", "hip"],
@@ -276,7 +262,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Leg Press",
-        "description": "Machine leg exercise",
         "equipment": "Leg Press Machine",
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
@@ -292,7 +277,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Leg Extension",
-        "description": "Quad isolation",
         "equipment": "Machine",
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
@@ -306,7 +290,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Leg Curl",
-        "description": "Hamstring isolation",
         "equipment": "Machine",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -320,7 +303,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Bulgarian Split Squat",
-        "description": "Single leg squat variation",
         "equipment": "Dumbbells",
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
@@ -336,7 +318,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Walking Lunges",
-        "description": "Dynamic leg exercise",
         "equipment": "Dumbbells",
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["knee"],
@@ -354,7 +335,6 @@ EXERCISE_SEED_DATA = [
     # === ARM EXERCISES ===
     {
         "name": "Barbell Curl",
-        "description": "Bicep exercise",
         "equipment": "Barbell",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -369,7 +349,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Hammer Curl",
-        "description": "Bicep and forearm exercise",
         "equipment": "Dumbbells",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -384,7 +363,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Tricep Dips",
-        "description": "Bodyweight tricep exercise",
         "equipment": "Dip Station",
         "injury_risk_level": 2.0,
         "joint_stress_areas": ["shoulder", "elbow"],
@@ -400,7 +378,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Tricep Pushdown",
-        "description": "Cable tricep isolation",
         "equipment": "Cable Machine",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -414,7 +391,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Skull Crushers",
-        "description": "Tricep isolation exercise",
         "equipment": "Barbell/EZ Bar",
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["elbow"],
@@ -430,7 +406,6 @@ EXERCISE_SEED_DATA = [
     # === CORE EXERCISES ===
     {
         "name": "Plank",
-        "description": "Core stabilization",
         "equipment": "None",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -446,7 +421,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Hanging Leg Raise",
-        "description": "Advanced ab exercise",
         "equipment": "Pull-up Bar",
         "injury_risk_level": 1.5,
         "joint_stress_areas": ["shoulder"],
@@ -462,7 +436,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Cable Crunch",
-        "description": "Weighted ab exercise",
         "equipment": "Cable Machine",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -478,7 +451,6 @@ EXERCISE_SEED_DATA = [
     # === CALF EXERCISES ===
     {
         "name": "Standing Calf Raise",
-        "description": "Calf isolation",
         "equipment": "Machine",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],
@@ -492,7 +464,6 @@ EXERCISE_SEED_DATA = [
     },
     {
         "name": "Seated Calf Raise",
-        "description": "Soleus focused",
         "equipment": "Machine",
         "injury_risk_level": 1.0,
         "joint_stress_areas": [],

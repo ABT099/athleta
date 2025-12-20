@@ -342,7 +342,6 @@ export class ExerciseService {
     return {
       id: exercise.id,
       name: exercise.name,
-      description: exercise.description || '',
       equipment: exercise.equipment || '',
       muscles: exercise.muscles,
       injuryRiskLevel: exercise.injuryRiskLevel,
@@ -436,7 +435,6 @@ export class ExerciseService {
       .insert(exercisesTable)
       .values({
         name: exerciseData.name,
-        description: exerciseData.description,
         equipment: exerciseData.equipment,
         injuryRiskLevel: exerciseData.injuryRiskLevel,
         jointStressAreas: exerciseData.jointStressAreas,
@@ -451,7 +449,6 @@ export class ExerciseService {
       .onConflictDoUpdate({
         target: exercisesTable.name,
         set: {
-          description: exerciseData.description,
           equipment: exerciseData.equipment,
           injuryRiskLevel: exerciseData.injuryRiskLevel,
           jointStressAreas: exerciseData.jointStressAreas,

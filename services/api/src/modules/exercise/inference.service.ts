@@ -18,7 +18,6 @@ interface ExerciseModifiers {
 
 export interface ExerciseData {
   name: string;
-  description: string;
   equipment: string;
   movementPattern: string;
   exerciseType: string;
