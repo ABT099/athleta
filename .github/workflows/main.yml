@@ -28,11 +28,11 @@ jobs:
 
       - name: Install Python Dependencies
         working-directory: services/ai-engine
-        run: uv sync --dev
+        run: uv sync --all-extras
 
       - name: Test AI Engine
         working-directory: services/ai-engine
-        run: uv run pytest
+        run: uv run python -m pytest
 
   build-and-push:
     needs: test
