@@ -10,6 +10,8 @@ import (
 	"syscall"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
 	grpcService "github.com/athleta/exercise-inference/internal/grpc"
@@ -59,6 +61,15 @@ func main() {
 	grpcServer := grpc.NewServer()
 	pb.RegisterExerciseInferenceServiceServer(grpcServer, service)
 
+	// Register health check service
+	healthServer := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
+	
+	// Set the overall server health status to serving
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	// Optionally set specific service health (use your actual proto service name)
+	healthServer.SetServingStatus("inference.ExerciseInferenceService", grpc_health_v1.HealthCheckResponse_SERVING)
+
 	// Register reflection service (for debugging with grpcurl)
 	reflection.Register(grpcServer)
 
@@ -75,6 +86,8 @@ func main() {
 		<-sigChan
 
 		log.Println("\nShutting down gracefully...")
+		// Mark service as not serving before shutdown
+		healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
 		grpcServer.GracefulStop()
 		log.Println("✓ Server stopped")
 	}()
@@ -94,6 +107,3 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
-
-
-
