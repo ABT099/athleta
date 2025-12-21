@@ -36,3 +36,11 @@ Whenever you add a new SQL file to the `migrator/sql` folder, run this command t
 ```bash
 docker compose up --build migrator
 ```
+
+### Syncing with Drizzle
+
+When you make changes and want to reflect those changes to the drizzle schema to use it in the api, you should run:
+
+```bash
+npm run db:introspect
+```

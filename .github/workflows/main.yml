@@ -46,9 +46,19 @@ jobs:
       packages: write
 
     strategy:
+      fail-fast: false
       matrix:
-        service: [ai-engine, api, exercise-inference, muscle-image, migrator]
-
+        include:
+          - service: ai-engine
+            context: ./services/ai-engine
+          - service: api
+            context: ./services/api
+          - service: exercise-inference
+            context: ./services/exercise-inference
+          - service: muscle-image
+            context: ./services/muscle-image
+          - service: migrator
+            context: ./migrator
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -75,7 +85,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./services/${{ matrix.service }}
+          context: ${{ matrix.context }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
