@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -24,11 +24,11 @@ jobs:
           cache-suffix: "ai-engine"
 
       - name: Set up Python
-        run: uv python install 3.13
+        run: uv python install 3.11
 
       - name: Install Python Dependencies
         working-directory: services/ai-engine
-        run: uv sync --all-extras
+        run: uv sync --extra dev
 
       - name: Test AI Engine
         working-directory: services/ai-engine
@@ -55,18 +55,18 @@ jobs:
             context: ./services/api
           - service: exercise-inference
             context: ./services/exercise-inference
-          - service: muscle-image
+          - service: muscle-image-api
             context: ./services/muscle-image
           - service: migrator
             context: ./migrator
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to the Container registery
+      - name: Login to the Container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -97,55 +97,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Copy files via SCP
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HETZNER_HOST }}
           username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
-          # NOTICE: We are copying docker-compose.prod.yml now too
-          source: "./docker-compose.yml,./docker-compose.prod.yml,./monitoring"
+          # UPDATED: Only copy the main compose file
+          source: "./docker-compose.yml,./monitoring"
           target: "/root/athleta"
           strip_components: 0
 
       - name: SSH and Deploy
-        uses: appleboy/ssh-action@v1.2.4
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HETZNER_HOST }}
           username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
           envs: GHCR_PAT,GITHUB_ACTOR
           script: |
+            # 1. Log in to Registry
             echo $GHCR_PAT | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
+
             cd /root/athleta
 
-            # Setup Environment
+            # 2. Setup Environment
             echo "${{ secrets.ENV_FILE }}" > .env
             echo "DOCKER_REGISTRY=ghcr.io" >> .env
             echo "GITHUB_REPOSITORY=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> .env
             echo "IMAGE_TAG=latest" >> .env
 
-            # Create Directories
+            # 3. Create Directories
             mkdir -p backups
             mkdir -p monitoring/grafana/provisioning
 
-            # Permission Fix for Prometheus
+            # 4. Permission Fix for Prometheus
             docker run --rm -v $(pwd)/prometheus_data:/data alpine chown -R 65534:65534 /data || true
 
-            # Login to Registry
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            # 5. PULL
+            docker compose pull
 
-            # PULL (Using Both Files)
-            # This looks at prod.yml to find the "image:" links and pulls them
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+            # 6. START (Single file command!)
+            # We add --no-build to guarantee it doesn't try to compile anything
+            docker compose --profile monitoring up -d --remove-orphans --no-build
 
-            # START (Using Both Files + Monitoring Profile)
-            # --profile monitoring: Ensures Grafana/Prometheus start even if hidden locally
-            docker compose --profile monitoring -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
-
-            # Cleanup
+            # 7. Cleanup
             docker image prune -a -f
         env:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
