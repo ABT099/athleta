@@ -122,7 +122,7 @@ jobs:
             # Setup Environment
             echo "${{ secrets.ENV_FILE }}" > .env
             echo "DOCKER_REGISTRY=ghcr.io" >> .env
-            echo "GITHUB_REPOSITORY=${{ github.repository }}" >> .env
+            echo "GITHUB_REPOSITORY=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> .env
             echo "IMAGE_TAG=latest" >> .env
 
             # Create Directories
