@@ -42,6 +42,16 @@ services:
           cpus: "0.5"
           memory: 256M
 
+  muscle-image-api:
+    image: ghcr.io/${GITHUB_REPOSITORY}/muscle-image:latest
+    restart: always
+    env_file: ".env"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
   neo4j:
     deploy:
       resources:

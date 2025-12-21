@@ -116,7 +116,9 @@ jobs:
           host: ${{ secrets.HETZNER_HOST }}
           username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
+          envs: GHCR_PAT,GITHUB_ACTOR
           script: |
+            echo $GHCR_PAT | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
             cd /root/athleta
 
             # Setup Environment
@@ -145,3 +147,6 @@ jobs:
 
             # Cleanup
             docker image prune -a -f
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GITHUB_ACTOR: ${{ github.actor }}
