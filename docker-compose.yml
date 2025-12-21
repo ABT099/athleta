@@ -34,6 +34,21 @@ services:
       - "traefik.http.routers.dashboard.middlewares=auth"
       - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
 
+  migrator:
+    container_name: athleta_migrator
+    build:
+      context: ./migrator
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: jdbc:postgresql://db:5432/athleta
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+
   db:
     container_name: athleta_db
     image: postgres:18-alpine
@@ -170,6 +185,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
       exercise-inference:
         condition: service_healthy
     healthcheck:
@@ -221,6 +238,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
       ai-engine:
         condition: service_healthy
       exercise-inference:

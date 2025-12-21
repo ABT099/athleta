@@ -1,12 +1,11 @@
 import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
-import { workoutDayExercisesTable, exercisesTable } from '../../db/schema';
+import { workoutDayExercises, exercises } from 'src/db/schema';
 import { eq, and } from 'drizzle-orm';
 
 @Injectable()
 export class WorkoutsService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
-
 
   async substituteExercise(
     workoutDayId: number,
@@ -14,13 +13,12 @@ export class WorkoutsService {
     substituteExerciseId: number,
   ): Promise<void> {
     // Verify workout day exercise exists
-    const workoutExercise =
-      await this.db.query.workoutDayExercisesTable.findFirst({
-        where: and(
-          eq(workoutDayExercisesTable.workoutDayId, workoutDayId),
-          eq(workoutDayExercisesTable.exerciseId, exerciseId),
-        ),
-      });
+    const workoutExercise = await this.db.query.workoutDayExercises.findFirst({
+      where: and(
+        eq(workoutDayExercises.workoutDayId, workoutDayId),
+        eq(workoutDayExercises.exerciseId, exerciseId),
+      ),
+    });
 
     if (!workoutExercise) {
       throw new NotFoundException(
@@ -29,8 +27,8 @@ export class WorkoutsService {
     }
 
     // Verify substitute exercise exists
-    const substituteExercise = await this.db.query.exercisesTable.findFirst({
-      where: eq(exercisesTable.id, substituteExerciseId),
+    const substituteExercise = await this.db.query.exercises.findFirst({
+      where: eq(exercises.id, substituteExerciseId),
     });
 
     if (!substituteExercise) {
@@ -41,8 +39,8 @@ export class WorkoutsService {
 
     // Update the exercise ID, keeping all other parameters
     await this.db
-      .update(workoutDayExercisesTable)
+      .update(workoutDayExercises)
       .set({ exerciseId: substituteExerciseId })
-      .where(eq(workoutDayExercisesTable.id, workoutExercise.id));
+      .where(eq(workoutDayExercises.id, workoutExercise.id));
   }
 }

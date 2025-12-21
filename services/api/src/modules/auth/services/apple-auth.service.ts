@@ -1,12 +1,17 @@
-import { Inject, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
-import { DRIZZLE } from "src/modules/database/database.provider";
-import type { DrizzleDB } from "src/modules/database/database.provider";
-import type { OAuthUserProfile } from "./oauth.service";
-import { athletesTable, usersTable } from "src/db/schema";
-import { eq, or } from "drizzle-orm";
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { DRIZZLE } from 'src/modules/database/database.provider';
+import type { DrizzleDB } from 'src/modules/database/database.provider';
+import type { OAuthUserProfile } from './oauth.service';
+import { eq, or } from 'drizzle-orm';
 import * as jwt from 'jsonwebtoken';
 import * as jwksClient from 'jwks-rsa';
-import { ConfigService } from "@nestjs/config";
+import { ConfigService } from '@nestjs/config';
+import { athletes, users } from 'src/db/schema';
 
 @Injectable()
 export class AppleAuthService {
@@ -35,15 +40,15 @@ export class AppleAuthService {
 
     const existingUser = await this.db
       .select({
-        id: usersTable.id,
-        appleId: usersTable.appleId,
-        hasInitialPlan: usersTable.hasInitialPlan,
+        id: users.id,
+        appleId: users.appleId,
+        hasInitialPlan: users.hasInitialPlan,
       })
-      .from(usersTable)
+      .from(users)
       .where(
         email
-          ? or(eq(usersTable.appleId, appleId), eq(usersTable.email, email))
-          : eq(usersTable.appleId, appleId),
+          ? or(eq(users.appleId, appleId), eq(users.email, email))
+          : eq(users.appleId, appleId),
       )
       .limit(1)
       .then((rows) => rows[0]);
@@ -53,25 +58,34 @@ export class AppleAuthService {
     }
 
     if (existingUser.appleId === appleId) {
-      return { id: existingUser.id, hasInitialPlan: existingUser.hasInitialPlan };
+      return {
+        id: existingUser.id,
+        hasInitialPlan: existingUser.hasInitialPlan,
+      };
     }
 
     await this.db
-      .update(usersTable)
+      .update(users)
       .set({ appleId })
-      .where(eq(usersTable.id, existingUser.id))
-      .returning({ id: usersTable.id, hasInitialPlan: usersTable.hasInitialPlan })
+      .where(eq(users.id, existingUser.id))
+      .returning({
+        id: users.id,
+        hasInitialPlan: users.hasInitialPlan,
+      })
       .then((rows) => rows[0]);
 
     return { id: existingUser.id, hasInitialPlan: existingUser.hasInitialPlan };
   }
 
-  async registerWithApple(identifier: string, athlete: {
-    age: number,
-    gender: 'male' | 'female',
-    weight: number,
-    trainingExperience: 'beginner' | 'intermediate' | 'advanced',
-  }) {
+  async registerWithApple(
+    identifier: string,
+    athlete: {
+      age: number;
+      gender: 'male' | 'female';
+      weight: number;
+      trainingExperience: 'beginner' | 'intermediate' | 'advanced';
+    },
+  ) {
     const profile = await this.verifyAppleIdToken(identifier);
     const appleId = profile.id;
     const email = profile.email;
@@ -80,61 +94,66 @@ export class AppleAuthService {
 
     const existingUser = await this.db
       .select({
-        id: usersTable.id,
-        appleId: usersTable.appleId,
-        hasInitialPlan: usersTable.hasInitialPlan,
+        id: users.id,
+        appleId: users.appleId,
+        hasInitialPlan: users.hasInitialPlan,
       })
-      .from(usersTable)
-      .where(or(eq(usersTable.appleId, appleId), eq(usersTable.email, email)))
+      .from(users)
+      .where(or(eq(users.appleId, appleId), eq(users.email, email)))
       .limit(1)
       .then((rows) => rows[0]);
 
     if (existingUser) {
       return await this.db.transaction(async (tx) => {
         if (existingUser.appleId !== appleId) {
-          await tx.update(usersTable)
+          await tx
+            .update(users)
             .set({
               appleId,
             })
-            .where(eq(usersTable.id, existingUser.id));
+            .where(eq(users.id, existingUser.id));
         }
 
         // Check if athlete record exists
         const existingAthlete = await tx
-          .select({ id: athletesTable.id })
-          .from(athletesTable)
-          .where(eq(athletesTable.userId, existingUser.id))
+          .select({ id: athletes.id })
+          .from(athletes)
+          .where(eq(athletes.userId, existingUser.id))
           .limit(1)
           .then((rows) => rows[0]);
 
         if (existingAthlete) {
           // Update existing athlete record
-          await tx.update(athletesTable)
+          await tx
+            .update(athletes)
             .set({
               age: athlete.age,
               gender: athlete.gender,
               trainingExperience: athlete.trainingExperience,
               bodyWeightKg: athlete.weight,
             })
-            .where(eq(athletesTable.userId, existingUser.id));
+            .where(eq(athletes.userId, existingUser.id));
         } else {
           // Insert new athlete record
-          await tx.insert(athletesTable)
-            .values({
-              userId: existingUser.id,
-              age: athlete.age,
-              gender: athlete.gender,
-              trainingExperience: athlete.trainingExperience,
-              bodyWeightKg: athlete.weight,
-            });
+          await tx.insert(athletes).values({
+            userId: existingUser.id,
+            age: athlete.age,
+            gender: athlete.gender,
+            trainingExperience: athlete.trainingExperience,
+            bodyWeightKg: athlete.weight,
+          });
         }
 
-        return { id: existingUser.id, hasInitialPlan: existingUser.hasInitialPlan };
+        return {
+          id: existingUser.id,
+          hasInitialPlan: existingUser.hasInitialPlan,
+        };
       });
     }
 
     return await this.db.transaction(async (tx) => {
-      const newUserId = await tx.insert(usersTable)
+      const newUserId = await tx
+        .insert(users)
         .values({
           email,
           firstName,
@@ -142,10 +161,10 @@ export class AppleAuthService {
           role: 'user',
           appleId,
         })
-        .returning({ id: usersTable.id })
+        .returning({ id: users.id })
         .then((rows) => rows[0].id);
 
-      await tx.insert(athletesTable).values({
+      await tx.insert(athletes).values({
         userId: newUserId,
         age: athlete.age,
         gender: athlete.gender,

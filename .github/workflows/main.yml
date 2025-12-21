@@ -47,7 +47,7 @@ jobs:
 
     strategy:
       matrix:
-        service: [ai-engine, api, exercise-inference, muscle-image]
+        service: [ai-engine, api, exercise-inference, muscle-image, migrator]
 
     steps:
       - name: Checkout repository

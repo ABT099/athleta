@@ -1,0 +1,47 @@
+name: Validate Database Migrations
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      # Only run this if migration files or config change
+      - "migrator/**"
+      - "docker-compose.yml"
+
+jobs:
+  validate-sql:
+    name: Test Flyway Migrations
+    runs-on: ubuntu-latest
+
+    # 1. Create a temporary Postgres service inside the CI runner
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      # 2. Run the Migrations against the temporary DB
+      - name: Run Flyway Migrate
+        uses: docker://flyway/flyway:11-alpine
+        with:
+          args: -url=jdbc:postgresql://postgres:5432/testdb -user=testuser -password=testpassword -locations=filesystem:./central-db-migrations/sql -connectRetries=10 migrate
+
+      # 3. (Optional) Verify Clean State
+      # This ensures your "undo" or "clean" logic works if you use it
+      - name: Run Flyway Info
+        uses: docker://flyway/flyway:10-alpine
+        with:
+          args: -url=jdbc:postgresql://postgres:5432/testdb -user=testuser -password=testpassword -locations=filesystem:./migrator/sql info

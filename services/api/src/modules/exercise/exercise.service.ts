@@ -1,10 +1,6 @@
 import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
-import {
-  exercisesTable,
-  muscleGroupsTable,
-  exerciseMusclesTable,
-} from '../../db/schema';
+import { exercises, muscleGroups, exerciseMuscles } from 'src/db/schema';
 import { eq, ne, lte, inArray, and } from 'drizzle-orm';
 import { MuscleSimilarityUtil } from './utils/muscle-similarity.util';
 import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
@@ -17,7 +13,7 @@ import {
 import { SubstitutionFiltersDto } from './dto/substitution-filters.dto';
 import { InferenceService, type ExerciseData } from './inference.service';
 
-type ExerciseEntity = typeof exercisesTable.$inferSelect;
+type ExerciseEntity = typeof exercises.$inferSelect;
 
 interface ExerciseWithMuscles extends ExerciseEntity {
   muscles: MuscleActivationDto[];
@@ -46,34 +42,28 @@ export class ExerciseService {
     }
 
     // Build query conditions
-    const conditions = [ne(exercisesTable.id, originalExerciseId)];
+    const conditions = [ne(exercises.id, originalExerciseId)];
 
     if (filters?.availableEquipment && filters.availableEquipment.length > 0) {
-      conditions.push(
-        inArray(exercisesTable.equipment, filters.availableEquipment),
-      );
+      conditions.push(inArray(exercises.equipment, filters.availableEquipment));
     }
 
     if (filters?.maxComplexity !== undefined) {
-      conditions.push(
-        lte(exercisesTable.complexityScore, filters.maxComplexity),
-      );
+      conditions.push(lte(exercises.complexityScore, filters.maxComplexity));
     }
 
     if (filters?.maxInjuryRisk !== undefined) {
-      conditions.push(
-        lte(exercisesTable.injuryRiskLevel, filters.maxInjuryRisk),
-      );
+      conditions.push(lte(exercises.injuryRiskLevel, filters.maxInjuryRisk));
     }
 
     if (filters?.excludeIds && filters.excludeIds.length > 0) {
       filters.excludeIds.forEach((id) => {
-        conditions.push(ne(exercisesTable.id, id));
+        conditions.push(ne(exercises.id, id));
       });
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-    const candidateExercises = await this.db.query.exercisesTable.findMany({
+    const candidateExercises = await this.db.query.exercises.findMany({
       where: whereClause,
     });
 
@@ -201,8 +191,8 @@ export class ExerciseService {
   private async getExerciseWithMuscles(
     exerciseId: number,
   ): Promise<ExerciseWithMuscles | null> {
-    const exercise = await this.db.query.exercisesTable.findFirst({
-      where: eq(exercisesTable.id, exerciseId),
+    const exercise = await this.db.query.exercises.findFirst({
+      where: eq(exercises.id, exerciseId),
     });
 
     if (!exercise) {
@@ -212,17 +202,17 @@ export class ExerciseService {
     // Get muscle activations for this exercise
     const musclesRaw = await this.db
       .select({
-        id: muscleGroupsTable.id,
-        name: muscleGroupsTable.name,
-        displayName: muscleGroupsTable.displayName,
-        role: exerciseMusclesTable.role,
+        id: muscleGroups.id,
+        name: muscleGroups.name,
+        displayName: muscleGroups.displayName,
+        role: exerciseMuscles.role,
       })
-      .from(exerciseMusclesTable)
+      .from(exerciseMuscles)
       .innerJoin(
-        muscleGroupsTable,
-        eq(exerciseMusclesTable.muscleGroupId, muscleGroupsTable.id),
+        muscleGroups,
+        eq(exerciseMuscles.muscleGroupId, muscleGroups.id),
       )
-      .where(eq(exerciseMusclesTable.exerciseId, exerciseId));
+      .where(eq(exerciseMuscles.exerciseId, exerciseId));
 
     // Convert role to activation percent for similarity calculations
     const muscles = musclesRaw.map((m) => ({
@@ -247,25 +237,25 @@ export class ExerciseService {
     }
 
     // Get all exercises
-    const exercises = await this.db.query.exercisesTable.findMany({
-      where: inArray(exercisesTable.id, exerciseIds),
+    const exercisesData = await this.db.query.exercises.findMany({
+      where: inArray(exercises.id, exerciseIds),
     });
 
     // Get all muscle activations for these exercises
     const allMusclesRaw = await this.db
       .select({
-        exerciseId: exerciseMusclesTable.exerciseId,
-        id: muscleGroupsTable.id,
-        name: muscleGroupsTable.name,
-        displayName: muscleGroupsTable.displayName,
-        role: exerciseMusclesTable.role,
+        exerciseId: exerciseMuscles.exerciseId,
+        id: muscleGroups.id,
+        name: muscleGroups.name,
+        displayName: muscleGroups.displayName,
+        role: exerciseMuscles.role,
       })
-      .from(exerciseMusclesTable)
+      .from(exerciseMuscles)
       .innerJoin(
-        muscleGroupsTable,
-        eq(exerciseMusclesTable.muscleGroupId, muscleGroupsTable.id),
+        muscleGroups,
+        eq(exerciseMuscles.muscleGroupId, muscleGroups.id),
       )
-      .where(inArray(exerciseMusclesTable.exerciseId, exerciseIds));
+      .where(inArray(exerciseMuscles.exerciseId, exerciseIds));
 
     // Group muscles by exercise ID and convert role to activation percent
     const musclesByExercise = new Map<number, MuscleActivationDto[]>();
@@ -282,7 +272,7 @@ export class ExerciseService {
     });
 
     // Combine exercises with their muscles
-    return exercises.map((exercise) => ({
+    return exercisesData.map((exercise) => ({
       ...exercise,
       muscles: musclesByExercise.get(exercise.id) || [],
     }));
@@ -382,9 +372,9 @@ export class ExerciseService {
 
     // Check which exercises already exist
     const existingExercises = await this.db
-      .select({ name: exercisesTable.name })
-      .from(exercisesTable)
-      .where(inArray(exercisesTable.name, uniqueNames));
+      .select({ name: exercises.name })
+      .from(exercises)
+      .where(inArray(exercises.name, uniqueNames));
 
     const existingNames = new Set(
       existingExercises.map((ex) => ex.name.toLowerCase()),
@@ -407,11 +397,11 @@ export class ExerciseService {
       await this.inferenceService.batchParseExercises(missingNames);
 
     // Get all muscle groups for mapping
-    const muscleGroups = await this.db
-      .select({ id: muscleGroupsTable.id, name: muscleGroupsTable.name })
-      .from(muscleGroupsTable);
+    const muscleGroupsData = await this.db
+      .select({ id: muscleGroups.id, name: muscleGroups.name })
+      .from(muscleGroups);
 
-    const muscleMap = new Map(muscleGroups.map((mg) => [mg.name, mg.id]));
+    const muscleMap = new Map(muscleGroupsData.map((mg) => [mg.name, mg.id]));
 
     // Insert exercises and their muscle relationships
     for (const exerciseData of inferredExercises) {
@@ -432,7 +422,7 @@ export class ExerciseService {
   ): Promise<void> {
     // Insert or update exercise
     const [exercise] = await this.db
-      .insert(exercisesTable)
+      .insert(exercises)
       .values({
         name: exerciseData.name,
         equipment: exerciseData.equipment,
@@ -447,7 +437,7 @@ export class ExerciseService {
           | 'isolation',
       })
       .onConflictDoUpdate({
-        target: exercisesTable.name,
+        target: exercises.name,
         set: {
           equipment: exerciseData.equipment,
           injuryRiskLevel: exerciseData.injuryRiskLevel,
@@ -465,8 +455,8 @@ export class ExerciseService {
 
     // Delete existing muscle relationships
     await this.db
-      .delete(exerciseMusclesTable)
-      .where(eq(exerciseMusclesTable.exerciseId, exercise.id));
+      .delete(exerciseMuscles)
+      .where(eq(exerciseMuscles.exerciseId, exercise.id));
 
     // Insert new muscle relationships
     const muscleInserts = exerciseData.muscleTargets
@@ -487,7 +477,7 @@ export class ExerciseService {
       .filter((insert) => insert !== null);
 
     if (muscleInserts.length > 0) {
-      await this.db.insert(exerciseMusclesTable).values(muscleInserts);
+      await this.db.insert(exerciseMuscles).values(muscleInserts);
     }
   }
 }

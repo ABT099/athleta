@@ -1,9 +1,17 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { TokenManagementService } from './token-management.service';
 import { compare, hash } from 'bcrypt';
-import { DRIZZLE, type DrizzleDB } from 'src/modules/database/database.provider';
-import { athletesTable, usersTable } from 'src/db/schema';
+import {
+  DRIZZLE,
+  type DrizzleDB,
+} from 'src/modules/database/database.provider';
+import { athletes, users } from 'src/db/schema';
 import { eq } from 'drizzle-orm';
 
 @Injectable()
@@ -14,17 +22,20 @@ export class AuthenticationService {
     private readonly tokenManagementService: TokenManagementService,
   ) {}
 
-  async validateUser(email: string, password: string): Promise<{ id: number, hasInitialPlan: boolean } | null> {
+  async validateUser(
+    email: string,
+    password: string,
+  ): Promise<{ id: number; hasInitialPlan: boolean } | null> {
     const user = await this.db
       .select({
-        id: usersTable.id,
-        password: usersTable.password,
-        hasInitialPlan: usersTable.hasInitialPlan,
+        id: users.id,
+        password: users.password,
+        hasInitialPlan: users.hasInitialPlan,
       })
-      .from(usersTable)
-      .where(eq(usersTable.email, email))
+      .from(users)
+      .where(eq(users.email, email))
       .limit(1)
-      .then(rows => rows[0]);
+      .then((rows) => rows[0]);
 
     if (!user) {
       throw new NotFoundException();
@@ -41,12 +52,12 @@ export class AuthenticationService {
     return { id: user.id, hasInitialPlan: user.hasInitialPlan };
   }
 
-  async login(user: { id: number, hasInitialPlan: boolean }): Promise<{
+  async login(user: { id: number; hasInitialPlan: boolean }): Promise<{
     access_token: string;
     refresh_token: string;
     hasInitialPlan: boolean;
   }> {
-    const payload = { sub: user.id};
+    const payload = { sub: user.id };
     const access_token = this.jwtService.sign(payload);
     const refresh_token =
       await this.tokenManagementService.generateRefreshToken(user.id);
@@ -58,34 +69,38 @@ export class AuthenticationService {
     };
   }
 
-  async register(user: {
-    firstName: string,
-    lastName: string,
-    email: string,
-    password: string,
-  }, athlete: {
-    age: number,
-    gender: 'male' | 'female',
-    weight: number,
-    trainingExperience: 'beginner' | 'intermediate' | 'advanced',
-  }) {
+  async register(
+    user: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      password: string;
+    },
+    athlete: {
+      age: number;
+      gender: 'male' | 'female';
+      weight: number;
+      trainingExperience: 'beginner' | 'intermediate' | 'advanced';
+    },
+  ) {
     const existingUser = await this.db
-    .select({
-      id: usersTable.id,
-    })
-    .from(usersTable)
-    .where(eq(usersTable.email, user.email))
-    .limit(1)
-    .then(rows => rows[0]);
+      .select({
+        id: users.id,
+      })
+      .from(users)
+      .where(eq(users.email, user.email))
+      .limit(1)
+      .then((rows) => rows[0]);
 
     if (existingUser) {
       throw new BadRequestException('User already exists');
     }
 
     const passwordHash = await hash(user.password, 10);
-    
+
     const newUserId = await this.db.transaction(async (tx) => {
-      const userInfo = await tx.insert(usersTable)
+      const userInfo = await tx
+        .insert(users)
         .values({
           email: user.email,
           password: passwordHash,
@@ -93,19 +108,18 @@ export class AuthenticationService {
           lastName: user.lastName,
           role: 'user',
         })
-        .returning({ id: usersTable.id, hasInitialPlan: usersTable.hasInitialPlan })
-        .then(rows => rows[0]);
+        .returning({ id: users.id, hasInitialPlan: users.hasInitialPlan })
+        .then((rows) => rows[0]);
 
-        await tx.insert(athletesTable)
-        .values({
-          userId: userInfo.id,
-          age: athlete.age,
-          gender: athlete.gender,
-          trainingExperience: athlete.trainingExperience,
-          bodyWeightKg: athlete.weight,
-        });
+      await tx.insert(athletes).values({
+        userId: userInfo.id,
+        age: athlete.age,
+        gender: athlete.gender,
+        trainingExperience: athlete.trainingExperience,
+        bodyWeightKg: athlete.weight,
+      });
 
-        return userInfo;
+      return userInfo;
     });
 
     return this.login(newUserId);

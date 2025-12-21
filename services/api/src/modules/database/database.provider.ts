@@ -2,7 +2,7 @@ import { Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
-import * as schema from '../../db/schema';
+import * as schema from 'src/db/schema';
 
 export const DRIZZLE = Symbol('DRIZZLE');
 export type DrizzleDB = NodePgDatabase<typeof schema>;
@@ -30,4 +30,3 @@ export const drizzleProvider: Provider = {
     return db;
   },
 };
-

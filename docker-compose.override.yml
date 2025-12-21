@@ -1,0 +1,17 @@
+services:
+  db:
+    ports:
+      - "5432:5432"
+
+  neo4j:
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+
+  traefik:
+    ports:
+      - "8080:8080"
+
+networks:
+  backend:
+    internal: false

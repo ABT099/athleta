@@ -1,3 +1,6 @@
 /.cursor
 /.vscode
 .env*
+
+# Ignore database backups
+backups/

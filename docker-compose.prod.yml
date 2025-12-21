@@ -12,6 +12,7 @@ services:
 
   api:
     image: ghcr.io/${GITHUB_REPOSITORY}/api:latest
+    env_file: ".env"
     deploy:
       resources:
         limits:
@@ -32,6 +33,14 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
+
+  migrator:
+    image: ghcr.io/${GITHUB_REPOSITORY}/migrator:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
   neo4j:
     deploy:

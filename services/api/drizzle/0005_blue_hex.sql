@@ -1,1 +1,0 @@
-DROP TABLE "form_quality_trends" CASCADE;

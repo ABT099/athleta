@@ -1,10 +1,18 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { createHash, randomInt } from "crypto";
-import { passwordResetTokensTable, usersTable } from "src/db/schema";
-import { DRIZZLE, type DrizzleDB } from "src/modules/database/database.provider";
-import { and, eq, gt } from "drizzle-orm";
-import { EmailService } from "src/modules/common/email/email.service";
-import { hash } from "bcrypt";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { createHash, randomInt } from 'crypto';
+import { passwordResetTokens, users } from 'src/db/schema';
+import {
+  DRIZZLE,
+  type DrizzleDB,
+} from 'src/modules/database/database.provider';
+import { and, eq, gt } from 'drizzle-orm';
+import { EmailService } from 'src/modules/common/email/email.service';
+import { hash } from 'bcrypt';
 
 @Injectable()
 export class ForgotPasswordService {
@@ -16,12 +24,12 @@ export class ForgotPasswordService {
   async sendResetPasswordEmail(email: string) {
     const user = await this.db
       .select({
-        id: usersTable.id,
+        id: users.id,
       })
-      .from(usersTable)
-      .where(eq(usersTable.email, email))
+      .from(users)
+      .where(eq(users.email, email))
       .limit(1)
-      .then(rows => rows[0]);
+      .then((rows) => rows[0]);
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -34,13 +42,13 @@ export class ForgotPasswordService {
     // Delete existing token and insert new one in a single transaction
     await this.db.transaction(async (tx) => {
       await tx
-        .delete(passwordResetTokensTable)
-        .where(eq(passwordResetTokensTable.userId, user.id));
+        .delete(passwordResetTokens)
+        .where(eq(passwordResetTokens.userId, user.id));
 
-      await tx.insert(passwordResetTokensTable).values({
+      await tx.insert(passwordResetTokens).values({
         userId: user.id,
         code: hashed,
-        expiresAt,
+        expiresAt: expiresAt.toISOString(),
       });
     });
 
@@ -52,27 +60,32 @@ export class ForgotPasswordService {
 
     const result = await this.db
       .select({
-        id: passwordResetTokensTable.id,
-        userId: passwordResetTokensTable.userId,
+        id: passwordResetTokens.id,
+        userId: passwordResetTokens.userId,
       })
-      .from(passwordResetTokensTable)
-      .where(and(eq(passwordResetTokensTable.code, hashed), gt(passwordResetTokensTable.expiresAt, new Date())))
+      .from(passwordResetTokens)
+      .where(
+        and(
+          eq(passwordResetTokens.code, hashed),
+          gt(passwordResetTokens.expiresAt, new Date().toISOString()),
+        ),
+      )
       .limit(1)
-      .then(rows => rows[0]);
+      .then((rows) => rows[0]);
 
     if (!result) {
       // Clean up any expired tokens with this code
       await this.db
-        .delete(passwordResetTokensTable)
-        .where(eq(passwordResetTokensTable.code, hashed));
+        .delete(passwordResetTokens)
+        .where(eq(passwordResetTokens.code, hashed));
 
       throw new BadRequestException('Invalid or expired code');
     }
 
     await this.db
-      .update(passwordResetTokensTable)
+      .update(passwordResetTokens)
       .set({ verified: true })
-      .where(eq(passwordResetTokensTable.id, result.id));
+      .where(eq(passwordResetTokens.id, result.id));
 
     return { userId: result.userId };
   }
@@ -81,32 +94,33 @@ export class ForgotPasswordService {
     // Single query to verify user exists and has a verified reset token
     const result = await this.db
       .select({
-        tokenId: passwordResetTokensTable.id,
-        email: usersTable.email,
+        tokenId: passwordResetTokens.id,
+        email: users.email,
       })
-      .from(passwordResetTokensTable)
-      .innerJoin(usersTable, eq(passwordResetTokensTable.userId, usersTable.id))
-      .where(and(
-        eq(usersTable.email, email),
-        eq(passwordResetTokensTable.verified, true)
-      ))
+      .from(passwordResetTokens)
+      .innerJoin(users, eq(passwordResetTokens.userId, users.id))
+      .where(
+        and(eq(users.email, email), eq(passwordResetTokens.verified, true)),
+      )
       .limit(1)
-      .then(rows => rows[0]);
+      .then((rows) => rows[0]);
 
     if (!result) {
-      throw new BadRequestException("Invalid or unverified reset request");
+      throw new BadRequestException('Invalid or unverified reset request');
     }
 
     // Hash password before storing
     const hashedPassword = await hash(password, 10);
 
     await this.db.transaction(async (tx) => {
-      await tx.update(usersTable)
+      await tx
+        .update(users)
         .set({ password: hashedPassword })
-        .where(eq(usersTable.email, result.email));
+        .where(eq(users.email, result.email));
 
-      await tx.delete(passwordResetTokensTable)
-        .where(eq(passwordResetTokensTable.id, result.tokenId));
+      await tx
+        .delete(passwordResetTokens)
+        .where(eq(passwordResetTokens.id, result.tokenId));
     });
   }
-} 
+}
