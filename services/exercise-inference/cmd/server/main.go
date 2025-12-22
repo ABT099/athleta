@@ -14,8 +14,10 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
+	"github.com/athleta/exercise-inference/internal/config"
 	grpcService "github.com/athleta/exercise-inference/internal/grpc"
 	"github.com/athleta/exercise-inference/internal/inference"
+	"github.com/athleta/exercise-inference/internal/matcher"
 	"github.com/athleta/exercise-inference/internal/neo4j"
 	pb "github.com/athleta/exercise-inference/proto"
 )
@@ -50,12 +52,29 @@ func main() {
 		log.Println("✓ Neo4j schema ready")
 	}
 
+	// Load configuration
+	configPath := getEnv("CONFIG_PATH", "./config")
+	exercisesPath := fmt.Sprintf("%s/exercises.json", configPath)
+	scoringWeightsPath := fmt.Sprintf("%s/scoring_weights.json", configPath)
+	
+	log.Println("Loading configuration...")
+	configLoader, err := config.NewLoader(exercisesPath, scoringWeightsPath)
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+	defer configLoader.Close()
+	log.Println("✓ Configuration loaded")
+
+	// Create matcher
+	exerciseMatcher := matcher.NewMatcher(configLoader)
+	log.Println("✓ Matcher initialized")
+
 	// Create inference engine
 	engine := inference.NewEngine(neo4jRepo)
 	log.Println("✓ Inference engine initialized")
 
 	// Create gRPC service
-	service := grpcService.NewService(engine)
+	service := grpcService.NewService(engine, exerciseMatcher)
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer()

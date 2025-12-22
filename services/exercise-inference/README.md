@@ -1,6 +1,6 @@
 # Exercise Inference Service
 
-A high-performance Go microservice that provides intelligent exercise parsing and biomechanical inference using Neo4j graph database.
+A high-performance Go microservice that provides intelligent exercise parsing and biomechanical inference using Neo4j graph database, with robust exercise matching system that handles typos, word order variations, slang, abbreviations, and conversational input
 
 ## Architecture
 
@@ -14,21 +14,6 @@ A high-performance Go microservice that provides intelligent exercise parsing an
 - **Biomechanical Inference**: Automatically determines muscle targets with roles (prime_mover, synergist, stabilizer)
 - **Safety Metadata Generation**: Auto-generates injury_risk_level, complexity_score, joint_stress_areas, intensity_category
 - **Hierarchical Knowledge**: Exercises inherit properties from archetypal parents
-
-## Project Structure
-
-```
-cmd/
-  server/       - gRPC server entry point
-  migrate/      - Data migration tool
-internal/
-  grpc/         - gRPC service handlers
-  inference/    - Parsing and inference logic
-  neo4j/        - Neo4j repository layer
-  postgres/     - PostgreSQL client
-  models/       - Domain models
-proto/          - Protocol buffer definitions
-```
 
 ## Development
 

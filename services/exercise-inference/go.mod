@@ -3,6 +3,7 @@ module github.com/athleta/exercise-inference
 go 1.25
 
 require (
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/lib/pq v1.10.9
 	github.com/neo4j/neo4j-go-driver/v6 v6.0.0
 	google.golang.org/grpc v1.77.0

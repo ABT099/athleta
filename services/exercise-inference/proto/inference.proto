@@ -12,6 +12,9 @@ service ExerciseInferenceService {
   // ParseSingleExercise parses a single exercise name
   rpc ParseSingleExercise(ParseRequest) returns (ExerciseData);
   
+  // ParseExerciseWithMatching parses an exercise name with detailed matching results including ambiguity handling
+  rpc ParseExerciseWithMatching(ParseRequest) returns (ParseResponse);
+  
   // FindSimilarExercises finds exercises with similar movement patterns and modifiers
   rpc FindSimilarExercises(SimilarityRequest) returns (SimilarityResponse);
 }
@@ -82,5 +85,30 @@ message SimilarityRequest {
 // SimilarityResponse contains names of similar exercises
 message SimilarityResponse {
   repeated string exercise_names = 1;  // List of similar exercise names
+}
+
+// ResultType represents the type of match result
+enum ResultType {
+  MATCH = 0;
+  AMBIGUOUS = 1;
+  LOW_CONFIDENCE = 2;
+  NO_MATCH = 3;
+}
+
+// MatchCandidate represents a ranked exercise candidate
+message MatchCandidate {
+  string exercise_id = 1;
+  string canonical_name = 2;
+  float confidence = 3;
+  string match_method = 4;
+  repeated string muscle_groups = 5;
+}
+
+// ParseResponse represents the result of parsing an exercise name with matching
+message ParseResponse {
+  ResultType result_type = 1;
+  MatchCandidate top_match = 2;           // Primary result (for MATCH)
+  repeated MatchCandidate candidates = 3;  // Top 3 alternatives (for AMBIGUOUS/LOW_CONFIDENCE)
+  string normalized_input = 4;             // What we actually matched against
 }
 

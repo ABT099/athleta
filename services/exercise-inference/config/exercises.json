@@ -1,0 +1,172 @@
+{
+  "exercises": [
+    {
+      "id": "bench_press",
+      "canonical_name": "Barbell Bench Press",
+      "aliases": [
+        "bench press",
+        "flat bench",
+        "bb bench",
+        "barbell bench",
+        "chest press",
+        "press bench"
+      ],
+      "slang": ["benching", "bench"],
+      "common_typos": ["bech press", "bench pres", "bnech press", "benchprss"],
+      "equipment": "barbell",
+      "muscle_groups": ["chest", "triceps", "anterior_delt"],
+      "movement_pattern": "push",
+      "phonetic_key": "BNK PRS",
+      "popularity_score": 0.95
+    },
+    {
+      "id": "incline_bench_press",
+      "canonical_name": "Incline Barbell Bench Press",
+      "aliases": [
+        "incline bench press",
+        "incline bench",
+        "incline bb bench",
+        "incline barbell bench",
+        "chest press"
+      ],
+      "slang": ["incline benching"],
+      "common_typos": ["inclin bench press", "incline bech press"],
+      "equipment": "barbell",
+      "muscle_groups": ["upper_chest", "anterior_delt", "triceps"],
+      "movement_pattern": "push",
+      "phonetic_key": "NKLN BNK PRS",
+      "popularity_score": 0.9
+    },
+    {
+      "id": "dumbbell_bench_press",
+      "canonical_name": "Dumbbell Bench Press",
+      "aliases": [
+        "dumbbell bench press",
+        "db bench press",
+        "db bench",
+        "dumbbell bench"
+      ],
+      "slang": ["db benching"],
+      "common_typos": [
+        "dumbell bench press",
+        "dumbbel bench press",
+        "db bech press"
+      ],
+      "equipment": "dumbbell",
+      "muscle_groups": ["chest", "triceps", "anterior_delt"],
+      "movement_pattern": "push",
+      "phonetic_key": "DMBL BNK PRS",
+      "popularity_score": 0.88
+    },
+    {
+      "id": "overhead_press",
+      "canonical_name": "Overhead Press",
+      "aliases": [
+        "overhead press",
+        "ohp",
+        "shoulder press",
+        "military press",
+        "standing press"
+      ],
+      "slang": ["pressing", "ohp"],
+      "common_typos": ["overhead pres", "overhed press"],
+      "equipment": "barbell",
+      "muscle_groups": ["anterior_delt", "lateral_delt", "triceps"],
+      "movement_pattern": "push",
+      "phonetic_key": "VRHD PRS",
+      "popularity_score": 0.85
+    },
+    {
+      "id": "squat",
+      "canonical_name": "Barbell Back Squat",
+      "aliases": ["squat", "back squat", "barbell squat", "bb squat"],
+      "slang": ["squats", "squatting"],
+      "common_typos": ["sqaut", "squat", "sqat"],
+      "equipment": "barbell",
+      "muscle_groups": ["quadriceps", "glutes", "hamstrings"],
+      "movement_pattern": "squat",
+      "phonetic_key": "SKWT",
+      "popularity_score": 0.95
+    },
+    {
+      "id": "deadlift",
+      "canonical_name": "Conventional Deadlift",
+      "aliases": ["deadlift", "dead lift", "conventional deadlift", "dl"],
+      "slang": ["deadlifting", "pulling"],
+      "common_typos": ["deadlif", "deadlit", "dedlift"],
+      "equipment": "barbell",
+      "muscle_groups": ["hamstrings", "glutes", "erector_spinae"],
+      "movement_pattern": "hinge",
+      "phonetic_key": "DDLFT",
+      "popularity_score": 0.95
+    },
+    {
+      "id": "barbell_row",
+      "canonical_name": "Barbell Row",
+      "aliases": ["barbell row", "bb row", "bent over row", "bor"],
+      "slang": ["rowing"],
+      "common_typos": ["barbell ro", "barbel row"],
+      "equipment": "barbell",
+      "muscle_groups": ["lats", "mid_back", "biceps"],
+      "movement_pattern": "pull",
+      "phonetic_key": "BRBL R",
+      "popularity_score": 0.88
+    },
+    {
+      "id": "pull_up",
+      "canonical_name": "Pull Up",
+      "aliases": [
+        "pull up",
+        "pullup",
+        "pull-up",
+        "chin up",
+        "chinup",
+        "chin-up"
+      ],
+      "slang": ["pulling up"],
+      "common_typos": ["pullup", "pullp", "pul up"],
+      "equipment": "bodyweight",
+      "muscle_groups": ["lats", "biceps", "mid_back"],
+      "movement_pattern": "pull",
+      "phonetic_key": "PL P",
+      "popularity_score": 0.9
+    },
+    {
+      "id": "lying_tricep_extension",
+      "canonical_name": "Lying Tricep Extension",
+      "aliases": [
+        "lying tricep extension",
+        "skull crushers",
+        "skull crusher",
+        "skullcrushers",
+        "lying triceps extension",
+        "french press"
+      ],
+      "slang": ["skull crushers", "skull crusher", "crushers"],
+      "common_typos": ["lying tricep extention", "skul crushers"],
+      "equipment": "barbell",
+      "muscle_groups": ["triceps"],
+      "movement_pattern": "push",
+      "phonetic_key": "LYNG TRSP XTNSHN",
+      "popularity_score": 0.8
+    },
+    {
+      "id": "bicep_curl",
+      "canonical_name": "Barbell Bicep Curl",
+      "aliases": [
+        "bicep curl",
+        "bicep curls",
+        "barbell curl",
+        "bb curl",
+        "biceps curl"
+      ],
+      "slang": ["curling", "curls"],
+      "common_typos": ["bicep cur", "bicep curll", "bice curl"],
+      "equipment": "barbell",
+      "muscle_groups": ["biceps"],
+      "movement_pattern": "pull",
+      "phonetic_key": "BSP KRL",
+      "popularity_score": 0.85
+    }
+  ]
+}
