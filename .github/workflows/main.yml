@@ -37,8 +37,28 @@ jobs:
           JWT_ALGORITHM: "HS256"
         run: uv run python -m pytest
 
+  test-exercise-inference:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache-dependency-path: services/exercise-inference/go.sum
+
+      - name: Install Go dependencies
+        working-directory: services/exercise-inference
+        run: go mod download
+
+      - name: Run tests
+        working-directory: services/exercise-inference
+        run: go test -v ./...
+
   build-and-push:
-    needs: test
+    needs: [test, test-exercise-inference]
     runs-on: ubuntu-latest
 
     permissions:
