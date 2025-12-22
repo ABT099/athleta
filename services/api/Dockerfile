@@ -37,5 +37,5 @@ USER app
 
 EXPOSE 8000
 
-CMD ["node", "dist/main"]
+CMD ["node", "dist/src/main.js"]
 
