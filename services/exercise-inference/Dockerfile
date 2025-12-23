@@ -36,6 +36,9 @@ WORKDIR /root/
 # Copy the binary from builder
 COPY --from=builder /app/main .
 
+# Copy config files
+COPY --from=builder /app/config ./config
+
 # Download and install grpc_health_probe
 RUN wget -qO/bin/grpc_health_probe https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/v0.4.19/grpc_health_probe-linux-amd64 && \
     chmod +x /bin/grpc_health_probe
