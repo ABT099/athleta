@@ -125,8 +125,8 @@ jobs:
           host: ${{ secrets.HETZNER_HOST }}
           username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
-          # UPDATED: Only copy the main compose file
-          source: "./docker-compose.yml,./monitoring"
+          # Added traefik-dynamic.yml to the deployment
+          source: "./docker-compose.yml,./traefik-dynamic.yml,./monitoring"
           target: "/root/athleta"
           strip_components: 0
 
@@ -149,22 +149,31 @@ jobs:
             echo "GITHUB_REPOSITORY=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> .env
             echo "IMAGE_TAG=latest" >> .env
 
-            # 3. Create Directories
+            # 3. Setup Cloudflare Certificates (one-time, will be skipped if exists)
+            if [ ! -f certs/cloudflare-cert.pem ] || [ ! -f certs/cloudflare-key.pem ]; then
+              echo "⚠️  Warning: Cloudflare certificates not found in certs/ directory"
+              echo "Please create them manually if using Cloudflare SSL"
+            fi
+
+            # 4. Create Directories
             mkdir -p backups
             mkdir -p monitoring/grafana/provisioning
 
-            # 4. Permission Fix for Prometheus
+            # 5. Permission Fix for Prometheus
             docker run --rm -v $(pwd)/prometheus_data:/data alpine chown -R 65534:65534 /data || true
 
-            # 5. PULL
+            # 6. PULL
             docker compose pull
 
-            # 6. START (Single file command!)
-            # We add --no-build to guarantee it doesn't try to compile anything
+            # 7. START
             docker compose --profile monitoring up -d --remove-orphans --no-build
 
-            # 7. Cleanup
+            # 8. Cleanup
             docker image prune -a -f
+
+            # 9. Verify deployment
+            echo "✅ Deployment complete. Checking service status..."
+            docker compose ps
         env:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
           GITHUB_ACTOR: ${{ github.actor }}

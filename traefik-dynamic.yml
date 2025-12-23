@@ -1,0 +1,11 @@
+tls:
+  certificates:
+    - certFile: /certs/cloudflare-cert.pem
+      keyFile: /certs/cloudflare-key.pem
+      stores:
+        - default
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /certs/cloudflare-cert.pem
+        keyFile: /certs/cloudflare-key.pem

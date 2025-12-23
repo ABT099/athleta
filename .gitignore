@@ -4,3 +4,5 @@
 
 # Ignore database backups
 backups/
+
+certs/

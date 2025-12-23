@@ -4,25 +4,24 @@ services:
     image: traefik:v3.6
     command:
       - "--api.dashboard=true"
-      - "--api.insecure=true" # Needed for local dev access (overridden by auth in prod)
+      - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
       - "--log.level=INFO"
       - "--accesslog=true"
     ports:
       - "80:80"
       - "443:443"
-      # 8080 is exposed in override.yml for dev
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik_certs:/letsencrypt
+      - ./certs:/certs:ro
+      - ./traefik-dynamic.yml:/etc/traefik/dynamic/certs.yml:ro
     networks:
       - public
     restart: always
@@ -31,10 +30,9 @@ services:
       - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN}`)"
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.entrypoints=websecure"
-      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.tls=true"
       - "traefik.http.routers.dashboard.middlewares=auth"
       - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
-
   migrator:
     container_name: athleta_migrator
     image: ghcr.io/${GITHUB_REPOSITORY}/migrator:latest
@@ -208,7 +206,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.ai-engine.rule=Host(`ai.${DOMAIN}`)"
       - "traefik.http.routers.ai-engine.entrypoints=websecure"
-      - "traefik.http.routers.ai-engine.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ai-engine.tls=true"
       - "traefik.http.services.ai-engine.loadbalancer.server.port=8000"
       - "traefik.http.middlewares.ai-security.headers.accessControlAllowMethods=GET,POST,PUT,DELETE,OPTIONS"
       - "traefik.http.middlewares.ai-security.headers.accessControlAllowHeaders=Authorization,Content-Type,Accept"
@@ -262,7 +260,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.api.rule=Host(`api.${DOMAIN}`)"
       - "traefik.http.routers.api.entrypoints=websecure"
-      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api.tls=true"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
       - "traefik.http.middlewares.api-cors.headers.accessControlAllowMethods=GET,POST,PUT,DELETE,PATCH,OPTIONS"
       - "traefik.http.middlewares.api-cors.headers.accessControlAllowHeaders=Authorization,Content-Type,Accept,X-Requested-With"
