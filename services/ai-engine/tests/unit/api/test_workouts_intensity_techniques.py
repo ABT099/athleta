@@ -62,8 +62,7 @@ def setup_basic_data(db_session):
     workout_day = WorkoutDayFactory.create(
         db_session,
         workout_plan_id=plan.id,
-        name="Arm Day",
-        target_muscle_groups=["biceps", "triceps"]
+        name="Arm Day"
     )
     
     # Add exercise to workout day

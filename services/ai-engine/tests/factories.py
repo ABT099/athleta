@@ -279,7 +279,6 @@ class WorkoutDayFactory:
         name: str = "Test Day",
         day_of_week: int = 0,
         order_in_week: int = 1,
-        target_muscle_groups: List[str] = None,
         **kwargs
     ) -> WorkoutDay:
         """
@@ -291,21 +290,16 @@ class WorkoutDayFactory:
             name: Day name
             day_of_week: Day of week (0=Monday, 6=Sunday)
             order_in_week: Order in weekly split
-            target_muscle_groups: List of target muscle groups
             **kwargs: Additional fields to set
             
         Returns:
             Created WorkoutDay instance
         """
-        if target_muscle_groups is None:
-            target_muscle_groups = ["mid_chest"]
-        
         workout_day = WorkoutDay(
             workout_plan_id=workout_plan_id,
             name=name,
             day_of_week=day_of_week,
             order_in_week=order_in_week,
-            target_muscle_groups=target_muscle_groups,
             **kwargs
         )
         db.add(workout_day)

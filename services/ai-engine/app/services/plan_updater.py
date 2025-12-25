@@ -200,7 +200,7 @@ class PlanUpdaterService:
             
             # Generate warm-up sets if auto-generate is enabled
             warmup_sets = None
-            if prescribed.auto_generate_warmups == 1 and adjusted_weight:
+            if adjusted_weight:
                 # Determine number of warm-up sets if not set
                 num_warmup_sets = prescribed.warm_up_sets
                 if num_warmup_sets == 0:
@@ -263,7 +263,6 @@ class PlanUpdaterService:
                 adjusted_reps_max=adjusted_reps_max,
                 adjustment_reason=ex_adj.get("reason", ai_adjustments.get("reasoning", "Standard progression")),
                 warm_up_sets=prescribed.warm_up_sets,
-                auto_generate_warmups=bool(prescribed.auto_generate_warmups),
                 warmup_sets=warmup_sets,
                 # Include intensity techniques from AI recommendations or prescribed values
                 # Use explicit None checks to preserve empty dicts (which are falsy but valid)
@@ -288,7 +287,6 @@ class PlanUpdaterService:
             name=workout_day.name,
             day_of_week=workout_day.day_of_week,
             order_in_week=workout_day.order_in_week,
-            target_muscle_groups=workout_day.target_muscle_groups,
             exercises=adjusted_exercises,
             created_at=workout_day.created_at
         )

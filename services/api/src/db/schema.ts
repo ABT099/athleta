@@ -189,12 +189,14 @@ export const workoutPlans = pgTable(
       .notNull(),
     frequency: integer().notNull(),
     durationWeeks: integer('duration_weeks').notNull(),
-    startDate: timestamp('start_date', { mode: 'string' }),
+    startDate: timestamp('start_date', { mode: 'string' })
+      .defaultNow()
+      .notNull(),
     endDate: timestamp('end_date', { mode: 'string' }),
     createdAt: timestamp('created_at', { mode: 'string' })
       .defaultNow()
       .notNull(),
-    isActive: boolean('is_active').notNull(),
+    isActive: boolean('is_active').notNull().default(true),
     focusAreas: jsonb('focus_areas'),
   },
   (table) => [
@@ -230,7 +232,7 @@ export const workoutDays = pgTable(
     name: varchar({ length: 255 }).notNull(),
     dayOfWeek: integer('day_of_week'),
     orderInWeek: integer('order_in_week').notNull(),
-    targetMuscleGroups: jsonb('target_muscle_groups').notNull(),
+    muscleImageUrl: varchar('muscle_image_url', { length: 512 }),
   },
   (table) => [
     foreignKey({
@@ -245,10 +247,6 @@ export const workoutDays = pgTable(
     ),
     check('workout_days_name_not_null', sql`NOT NULL name`),
     check('workout_days_order_in_week_not_null', sql`NOT NULL order_in_week`),
-    check(
-      'workout_days_target_muscle_groups_not_null',
-      sql`NOT NULL target_muscle_groups`,
-    ),
   ],
 );
 
@@ -266,12 +264,10 @@ export const workoutDayExercises = pgTable(
     targetRpe: real('target_rpe'),
     targetRir: integer('target_rir'),
     restPeriodSeconds: integer('rest_period_seconds'),
-    tempo: varchar({ length: 20 }),
     notes: text(),
     isPrimary: boolean('is_primary').notNull(),
     progressionScheme: varchar('progression_scheme', { length: 50 }),
     warmUpSets: integer('warm_up_sets').notNull(),
-    autoGenerateWarmups: boolean('auto_generate_warmups').notNull(),
     setType: setTypeEnum('set_type').default('straight').notNull(),
     repStyle: repStyleEnum('rep_style').default('normal').notNull(),
     setTypeParams: jsonb('set_type_params'),
@@ -324,10 +320,6 @@ export const workoutDayExercises = pgTable(
     check(
       'workout_day_exercises_warm_up_sets_not_null',
       sql`NOT NULL warm_up_sets`,
-    ),
-    check(
-      'workout_day_exercises_auto_generate_warmups_not_null',
-      sql`NOT NULL auto_generate_warmups`,
     ),
     check('workout_day_exercises_set_type_not_null', sql`NOT NULL set_type`),
     check('workout_day_exercises_rep_style_not_null', sql`NOT NULL rep_style`),

@@ -72,7 +72,6 @@ class TestExtendedBreakDetection:
             name="Test Day",
             day_of_week=0,
             order_in_week=1,
-            target_muscle_groups='["chest"]'
         )
         db_session.add(workout_day)
         db_session.flush()
@@ -160,7 +159,6 @@ class TestBreakDetectionIntegration:
             name="Test Day",
             day_of_week=0,
             order_in_week=1,
-            target_muscle_groups='["chest"]'
         )
         db_session.add(workout_day)
         db_session.flush()
@@ -255,7 +253,6 @@ class TestBreakDetectionIntegration:
             name="Test Day",
             day_of_week=0,
             order_in_week=1,
-            target_muscle_groups='["chest"]'
         )
         db_session.add(workout_day)
         db_session.flush()
@@ -353,7 +350,6 @@ class TestBreakDetectionPriority:
             name="Test Day",
             day_of_week=0,
             order_in_week=1,
-            target_muscle_groups='["chest"]'
         )
         db_session.add(workout_day)
         db_session.flush()
@@ -447,7 +443,6 @@ class TestBreakDetectionPriority:
             name="Test Day",
             day_of_week=0,
             order_in_week=1,
-            target_muscle_groups='["chest"]'
         )
         db_session.add(workout_day)
         db_session.flush()
@@ -541,7 +536,6 @@ class TestBreakDetectionPriority:
             name="Test Day",
             day_of_week=0,
             order_in_week=1,
-            target_muscle_groups='["chest"]'
         )
         db_session.add(workout_day)
         db_session.flush()

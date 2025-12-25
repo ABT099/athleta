@@ -152,7 +152,6 @@ class WorkoutDayExerciseBase(BaseModel):
     is_primary: bool = True
     progression_scheme: Optional[str] = None
     warm_up_sets: int = Field(0, ge=0, le=4)  # Number of warm-up sets (0-4)
-    auto_generate_warmups: bool = True  # Auto-generate warm-up weights/reps
     set_type: Optional[SetType] = SetType.STRAIGHT  # Intensity technique set type
     rep_style: Optional[RepStyle] = RepStyle.NORMAL  # Intensity technique rep style
     set_type_params: Optional[Dict] = None  # Technique-specific parameters
@@ -183,7 +182,7 @@ class WorkoutDayExerciseResponse(WorkoutDayExerciseBase):
     adjusted_reps_max: Optional[int] = None
     adjustment_reason: Optional[str] = None
     
-    # Warm-up sets (generated if auto_generate_warmups is True)
+    # Warm-up sets (always generated when adjusted_weight is available)
     warmup_sets: Optional[List[WarmupSetSchema]] = None
     
     class Config:
@@ -197,7 +196,6 @@ class WorkoutDayBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     day_of_week: Optional[int] = Field(None, ge=0, le=6)
     order_in_week: int = Field(..., ge=1, le=7)
-    target_muscle_groups: List[str]
 
 
 class WorkoutDayResponse(WorkoutDayBase):

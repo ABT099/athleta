@@ -362,9 +362,13 @@ export class ExerciseService {
    * Batch upsert exercises from exercise names
    * This is called internally when creating workouts with custom exercise names
    */
-  async batchUpsertExercises(exerciseNames: string[]): Promise<void> {
+  async batchUpsertExercises(
+    exerciseNames: string[],
+  ): Promise<
+    Array<{ id: number; muscles: Array<{ name: string; role: string }> }>
+  > {
     if (exerciseNames.length === 0) {
-      return;
+      return [];
     }
 
     // Get unique exercise names
@@ -385,32 +389,92 @@ export class ExerciseService {
       (name) => !existingNames.has(name.toLowerCase()),
     );
 
-    if (missingNames.length === 0) {
+    // Build a map to store exercise IDs (name -> id)
+    const exerciseIdMap = new Map<string, number>();
+
+    // Fetch IDs for existing exercises
+    if (existingExercises.length > 0) {
+      const existingWithIds = await this.db
+        .select({ id: exercises.id, name: exercises.name })
+        .from(exercises)
+        .where(inArray(exercises.name, uniqueNames));
+
+      for (const ex of existingWithIds) {
+        exerciseIdMap.set(ex.name.toLowerCase(), ex.id);
+      }
+    }
+
+    // Insert new exercises if needed
+    if (missingNames.length > 0) {
+      console.log(`Inferring ${missingNames.length} new exercises...`);
+
+      // Call gRPC inference service
+      const inferredExercises =
+        await this.inferenceService.batchParseExercises(missingNames);
+
+      // Get all muscle groups for mapping
+      const muscleGroupsData = await this.db
+        .select({ id: muscleGroups.id, name: muscleGroups.name })
+        .from(muscleGroups);
+
+      const muscleMap = new Map(muscleGroupsData.map((mg) => [mg.name, mg.id]));
+
+      // Insert exercises and collect their IDs
+      for (const exerciseData of inferredExercises) {
+        const id = await this.upsertSingleExercise(exerciseData, muscleMap);
+        exerciseIdMap.set(exerciseData.name.toLowerCase(), id);
+      }
+
+      console.log(
+        `✓ Successfully upserted ${inferredExercises.length} exercises`,
+      );
+    } else {
       console.log('All exercises already exist in database');
-      return;
     }
 
-    console.log(`Inferring ${missingNames.length} new exercises...`);
+    // Get all exercise IDs
+    const allExerciseIds = Array.from(exerciseIdMap.values());
 
-    // Call gRPC inference service
-    const inferredExercises =
-      await this.inferenceService.batchParseExercises(missingNames);
+    // Fetch muscle data for all exercises
+    const muscleData = await this.db
+      .select({
+        exerciseId: exerciseMuscles.exerciseId,
+        muscleName: muscleGroups.name,
+        role: exerciseMuscles.role,
+      })
+      .from(exerciseMuscles)
+      .innerJoin(
+        muscleGroups,
+        eq(exerciseMuscles.muscleGroupId, muscleGroups.id),
+      )
+      .where(inArray(exerciseMuscles.exerciseId, allExerciseIds));
 
-    // Get all muscle groups for mapping
-    const muscleGroupsData = await this.db
-      .select({ id: muscleGroups.id, name: muscleGroups.name })
-      .from(muscleGroups);
-
-    const muscleMap = new Map(muscleGroupsData.map((mg) => [mg.name, mg.id]));
-
-    // Insert exercises and their muscle relationships
-    for (const exerciseData of inferredExercises) {
-      await this.upsertSingleExercise(exerciseData, muscleMap);
+    // Build a map of exercise ID to muscles
+    const exerciseMusclesMap = new Map<
+      number,
+      Array<{ name: string; role: string }>
+    >();
+    for (const row of muscleData) {
+      if (!exerciseMusclesMap.has(row.exerciseId)) {
+        exerciseMusclesMap.set(row.exerciseId, []);
+      }
+      exerciseMusclesMap.get(row.exerciseId)!.push({
+        name: row.muscleName,
+        role: row.role,
+      });
     }
 
-    console.log(
-      `✓ Successfully upserted ${inferredExercises.length} exercises`,
-    );
+    // Return data in same order as input
+    return exerciseNames.map((name) => {
+      const id = exerciseIdMap.get(name.toLowerCase());
+      if (!id) {
+        throw new Error(`Exercise not found after upsert: ${name}`);
+      }
+      return {
+        id,
+        muscles: exerciseMusclesMap.get(id) || [],
+      };
+    });
   }
 
   /**
@@ -419,7 +483,7 @@ export class ExerciseService {
   private async upsertSingleExercise(
     exerciseData: ExerciseData,
     muscleMap: Map<string, number>,
-  ): Promise<void> {
+  ): Promise<number> {
     // Insert or update exercise
     const [exercise] = await this.db
       .insert(exercises)
@@ -479,5 +543,7 @@ export class ExerciseService {
     if (muscleInserts.length > 0) {
       await this.db.insert(exerciseMuscles).values(muscleInserts);
     }
+
+    return exercise.id;
   }
 }

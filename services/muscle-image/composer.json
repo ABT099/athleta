@@ -1,0 +1,14 @@
+{
+    "name": "athleta/muscle-image-service",
+    "description": "Muscle image generation service with R2 storage",
+    "type": "project",
+    "require": {
+        "aws/aws-sdk-php": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "": "util/"
+        }
+    }
+}
+

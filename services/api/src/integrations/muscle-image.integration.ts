@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class MuscleImageIntegration {
@@ -16,112 +17,133 @@ export class MuscleImageIntegration {
       'http://localhost:8081';
   }
 
-  getImage(builder: MuscleImageBuilder) {}
-}
+  /**
+   * Map database muscle names to muscle-image service names
+   */
+  private mapMuscleNameToImageService(dbMuscleName: string): string | null {
+    const mapping: Record<string, string> = {
+      // Chest - map all chest variations to generic 'chest'
+      upper_chest: 'chest',
+      mid_chest: 'chest',
+      lower_chest: 'chest',
 
-type MuscleGroup =
-  | 'all'
-  | 'all_lower'
-  | 'all_upper'
-  | 'abductors'
-  | 'abs'
-  | 'adductors'
-  | 'back'
-  | 'back_lower'
-  | 'back_upper'
-  | 'biceps'
-  | 'calfs'
-  | 'chest'
-  | 'core'
-  | 'core_lower'
-  | 'core_upper'
-  | 'forearms'
-  | 'gluteus'
-  | 'hamstring'
-  | 'latissimus'
-  | 'legs'
-  | 'neck'
-  | 'quadriceps'
-  | 'shoulders'
-  | 'shoulders_back'
-  | 'shoulders_front'
-  | 'triceps';
+      // Back
+      lats: 'latissimus',
+      upper_traps: 'back_upper',
+      mid_back: 'back',
+      lower_traps: 'back_lower',
 
-export class MuscleImageBuilder {
-  private primaryMuscles: MuscleGroup[] = [];
-  private secondaryMuscles: MuscleGroup[] = [];
-  withChest(activationPercentage: number) {
-    if (this.isPrimary(activationPercentage)) {
-      this.primaryMuscles.push('chest');
-    } else {
-      this.secondaryMuscles.push('chest');
-    }
-  }
+      // Shoulders
+      anterior_delt: 'shoulders_front',
+      lateral_delt: 'shoulders',
+      posterior_delt: 'shoulders_back',
 
-  withShouldersFront(activationPercentage: number) {
-    if (this.isPrimary(activationPercentage)) {
-      this.primaryMuscles.push('shoulders_front');
-    } else {
-      this.secondaryMuscles.push('shoulders_front');
-    }
-  }
+      // Arms
+      biceps: 'biceps',
+      triceps: 'triceps',
+      forearms: 'forearms',
 
-  withShouldersBack(activationPercentage: number) {
-    if (this.isPrimary(activationPercentage)) {
-      this.primaryMuscles.push('shoulders_back');
-    } else {
-      this.secondaryMuscles.push('shoulders_back');
-    }
-  }
+      // Legs
+      quadriceps: 'quadriceps',
+      hamstrings: 'hamstring',
+      glutes: 'gluteus',
+      hip_flexors: 'core_lower', // No direct match, use core_lower
+      calves: 'calfs',
 
-  withShoulders(activationPercentage: number) {
-    if (this.isPrimary(activationPercentage)) {
-      this.primaryMuscles.push('shoulders');
-    } else {
-      this.secondaryMuscles.push('shoulders');
-    }
-  }
-
-  withBiceps(activationPercentage: number) {
-    if (this.isPrimary(activationPercentage)) {
-      this.primaryMuscles.push('biceps');
-    } else {
-      this.secondaryMuscles.push('biceps');
-    }
-  }
-
-  withTriceps(activationPercentage: number) {
-    if (this.isPrimary(activationPercentage)) {
-      this.primaryMuscles.push('triceps');
-    } else {
-      this.secondaryMuscles.push('triceps');
-    }
-  }
-
-  withForearms(activationPercentage: number) {
-    if (this.isPrimary(activationPercentage)) {
-      this.primaryMuscles.push('forearms');
-    } else {
-      this.secondaryMuscles.push('forearms');
-    }
-  }
-
-  withLats(activationPercentage: number) {
-    if (this.isPrimary(activationPercentage)) {
-      this.primaryMuscles.push('latissimus');
-    } else {
-      this.secondaryMuscles.push('latissimus');
-    }
-  }
-
-  build() {
-    return {
-      primaryMuscles: this.primaryMuscles,
-      secondaryMuscles: this.secondaryMuscles,
+      // Core
+      abs: 'abs',
+      erector_spinae: 'back_lower', // Lower back muscles
     };
+
+    const mapped = mapping[dbMuscleName];
+    if (!mapped) {
+      this.logger.warn(
+        `Unknown muscle name: ${dbMuscleName}, skipping in image generation`,
+      );
+      return null;
+    }
+    return mapped;
   }
 
-  private isPrimary(activationPercentage: number) {
-    return activationPercentage > 0.7;
+  async generateAndSaveImage(
+    workoutDayId: number,
+    musclesWithRoles: Array<{ name: string; role: string }>,
+  ): Promise<string> {
+    try {
+      // Map database muscle names to muscle-image service names
+      const mappedMuscles = musclesWithRoles.map((m) => ({
+        name: this.mapMuscleNameToImageService(m.name),
+        role: m.role,
+      }));
+
+      // Separate muscles by role and remove duplicates
+      const primaryMuscles = [
+        ...new Set(
+          mappedMuscles
+            .filter((m) => m.role === 'prime_mover' && m.name !== null)
+            .map((m) => m.name as string),
+        ),
+      ];
+      const secondaryMuscles = [
+        ...new Set(
+          mappedMuscles
+            .filter(
+              (m) =>
+                (m.role === 'synergist' || m.role === 'stabilizer') &&
+                m.name !== null,
+            )
+            .map((m) => m.name as string),
+        ),
+      ];
+
+      // Check if we have any valid muscles
+      const allMuscles = [...primaryMuscles, ...secondaryMuscles];
+      if (allMuscles.length === 0) {
+        this.logger.warn(
+          `No valid muscles found for workout day ${workoutDayId}, skipping image generation`,
+        );
+        throw new Error(
+          `No valid muscles found for workout day ${workoutDayId}`,
+        );
+      }
+
+      // Call PHP service - it handles generation and R2 upload
+      this.logger.log(
+        `Requesting muscle image generation for workout day ${workoutDayId}`,
+      );
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${this.baseURL}/generateAndStore`,
+          {
+            workoutDayId,
+            primaryMuscleGroups: primaryMuscles.join(','),
+            secondaryMuscleGroups: secondaryMuscles.join(','),
+            primaryColor: '255,89,94',
+            secondaryColor: '138,201,38',
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      );
+
+      // PHP returns { url: "https://pub-xxx.r2.dev/muscle-images/123.png" }
+      if (!response.data || !response.data.url) {
+        throw new Error('Invalid response from muscle image service');
+      }
+
+      this.logger.log(
+        `Successfully generated muscle image: ${response.data.url}`,
+      );
+      return response.data.url;
+    } catch (error) {
+      this.logger.error(
+        `Failed to generate muscle image for workout day ${workoutDayId}:`,
+        error,
+      );
+      throw error;
+    }
   }
 }

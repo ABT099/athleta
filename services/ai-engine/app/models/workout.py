@@ -110,9 +110,6 @@ class WorkoutDay(Base):
     # Order in the weekly split
     order_in_week = Column(Integer, nullable=False)
     
-    # Target muscle groups for this day
-    target_muscle_groups = Column(JSON, nullable=False)
-    
     # Relationships
     workout_plan = relationship("WorkoutPlan", back_populates="workout_days")
     exercises = relationship("WorkoutDayExercise", back_populates="workout_day", cascade="all, delete-orphan")
@@ -160,7 +157,6 @@ class WorkoutDayExercise(Base):
     
     # Warm-up sets configuration
     warm_up_sets = Column(Integer, default=0, nullable=False)  # 0-4 warm-up sets
-    auto_generate_warmups = Column(Integer, default=1, nullable=False)  # 1 = auto-generate, 0 = manual
     
     # Intensity techniques
     set_type = Column(Enum("straight", "drop_set", "rest_pause", "myo_reps", "cluster_set", "superset_antagonist", "pre_exhaust", name="set_type_enum"), default="straight", nullable=False)

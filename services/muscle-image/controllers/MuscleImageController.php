@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/../util/R2Uploader.php';
+
 class MuscleImageController {
 
     static array $availableMuscleGroups = array(
@@ -262,5 +264,128 @@ class MuscleImageController {
             exit; //Invalid hex color code
         }
         return $returnAsString ? implode($separator, $rgbArray) : $rgbArray; // returns the rgb string or the associative array
+    }
+
+    /**
+     * Generate muscle image at 800x800 and upload to R2
+     * Returns JSON with R2 URL
+     */
+    public static function generateAndStoreImage($workoutDayId, $primaryMuscleGroupsQuery, $secondaryMuscleGroupsQuery, $primaryColorQuery, $secondaryColorQuery) {
+        header('Content-Type: application/json');
+        header("Access-Control-Allow-Origin: *");
+
+        try {
+            // Try to load 800x800 base image, fallback to 1920x1920 and resize
+            $baseImagePath800 = './resources/images/baseImage_800.png';
+            $baseImagePath = './resources/images/baseImage.png';
+            
+            if (file_exists($baseImagePath800)) {
+                $baseImage = imagecreatefrompng($baseImagePath800);
+            } else {
+                // Load 1920x1920 and resize to 800x800
+                $sourceImage = imagecreatefrompng($baseImagePath);
+                $baseImage = imagecreatetruecolor(800, 800);
+                imagealphablending($baseImage, false);
+                imagesavealpha($baseImage, true);
+                imagecopyresampled($baseImage, $sourceImage, 0, 0, 0, 0, 800, 800, 1920, 1920);
+                imagedestroy($sourceImage);
+            }
+
+            if (!$baseImage) {
+                http_response_code(500);
+                echo json_encode(['error' => 'Failed to create base image']);
+                exit;
+            }
+
+            $primaryColorRgb = explode(",", $primaryColorQuery);
+            $secondaryColorRgb = explode(",", $secondaryColorQuery);
+
+            // Process primary muscles
+            if (!empty($primaryMuscleGroupsQuery)) {
+                $primaryMuscles = explode(",", $primaryMuscleGroupsQuery);
+                foreach ($primaryMuscles as $muscleGroup) {
+                    $muscleGroup = trim($muscleGroup);
+                    if (empty($muscleGroup)) continue;
+
+                    if (!in_array($muscleGroup, self::$availableMuscleGroups)) {
+                        http_response_code(400);
+                        echo json_encode(['error' => "Invalid muscle group: {$muscleGroup}"]);
+                        imagedestroy($baseImage);
+                        exit;
+                    }
+
+                    $muscleGroupImage = imagecreatefrompng('./resources/images/' . $muscleGroup . '.png');
+                    
+                    // Scale overlay to 800x800
+                    $scaledMuscleImage = imagecreatetruecolor(800, 800);
+                    imagealphablending($scaledMuscleImage, false);
+                    imagesavealpha($scaledMuscleImage, true);
+                    imagecopyresampled($scaledMuscleImage, $muscleGroupImage, 0, 0, 0, 0, 800, 800, 1920, 1920);
+                    
+                    // Apply color
+                    $index = imagecolorexact($scaledMuscleImage, 89, 136, 255);
+                    if ($index !== -1) {
+                        imagecolorset($scaledMuscleImage, $index, (int)$primaryColorRgb[0], (int)$primaryColorRgb[1], (int)$primaryColorRgb[2]);
+                    }
+                    
+                    // Merge
+                    imagealphablending($baseImage, false);
+                    imagesavealpha($baseImage, true);
+                    imagecopymerge($baseImage, $scaledMuscleImage, 0, 0, 0, 0, 800, 800, 100);
+                    
+                    imagedestroy($muscleGroupImage);
+                    imagedestroy($scaledMuscleImage);
+                }
+            }
+
+            // Process secondary muscles
+            if (!empty($secondaryMuscleGroupsQuery)) {
+                $secondaryMuscles = explode(",", $secondaryMuscleGroupsQuery);
+                foreach ($secondaryMuscles as $muscleGroup) {
+                    $muscleGroup = trim($muscleGroup);
+                    if (empty($muscleGroup)) continue;
+
+                    if (!in_array($muscleGroup, self::$availableMuscleGroups)) {
+                        http_response_code(400);
+                        echo json_encode(['error' => "Invalid muscle group: {$muscleGroup}"]);
+                        imagedestroy($baseImage);
+                        exit;
+                    }
+
+                    $muscleGroupImage = imagecreatefrompng('./resources/images/' . $muscleGroup . '.png');
+                    
+                    // Scale overlay to 800x800
+                    $scaledMuscleImage = imagecreatetruecolor(800, 800);
+                    imagealphablending($scaledMuscleImage, false);
+                    imagesavealpha($scaledMuscleImage, true);
+                    imagecopyresampled($scaledMuscleImage, $muscleGroupImage, 0, 0, 0, 0, 800, 800, 1920, 1920);
+                    
+                    // Apply color
+                    $index = imagecolorexact($scaledMuscleImage, 89, 136, 255);
+                    if ($index !== -1) {
+                        imagecolorset($scaledMuscleImage, $index, (int)$secondaryColorRgb[0], (int)$secondaryColorRgb[1], (int)$secondaryColorRgb[2]);
+                    }
+                    
+                    // Merge
+                    imagealphablending($baseImage, false);
+                    imagesavealpha($baseImage, true);
+                    imagecopymerge($baseImage, $scaledMuscleImage, 0, 0, 0, 0, 800, 800, 100);
+                    
+                    imagedestroy($muscleGroupImage);
+                    imagedestroy($scaledMuscleImage);
+                }
+            }
+
+            // Upload to R2
+            $r2Uploader = new R2Uploader();
+            $imageUrl = $r2Uploader->uploadImage($baseImage, "muscle-images/{$workoutDayId}.png");
+            
+            imagedestroy($baseImage);
+            
+            echo json_encode(['url' => $imageUrl]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to generate and upload image: ' . $e->getMessage()]);
+        }
     }
 }

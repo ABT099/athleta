@@ -81,5 +81,40 @@ Router::createRoute('get', '/health', function() {
     echo json_encode(['status' => 'healthy', 'service' => 'muscle-image-api']);
 });
 
+// POST endpoint for generating and storing images to R2
+Router::createRoute('post', '/generateAndStore', function() {
+    // Read JSON body
+    $json = file_get_contents('php://input');
+    $data = json_decode($json, true);
+    
+    if (!$data) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Invalid JSON']);
+        exit;
+    }
+    
+    $workoutDayId = $data['workoutDayId'] ?? null;
+    $primaryMuscleGroups = $data['primaryMuscleGroups'] ?? '';
+    $secondaryMuscleGroups = $data['secondaryMuscleGroups'] ?? '';
+    $primaryColor = $data['primaryColor'] ?? '255,89,94';
+    $secondaryColor = $data['secondaryColor'] ?? '138,201,38';
+    
+    if (!$workoutDayId) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'workoutDayId is required']);
+        exit;
+    }
+    
+    MuscleImageController::generateAndStoreImage(
+        $workoutDayId,
+        $primaryMuscleGroups,
+        $secondaryMuscleGroups,
+        $primaryColor,
+        $secondaryColor
+    );
+});
+
 // Start the Router
 Router::run('/');

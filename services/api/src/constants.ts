@@ -18,3 +18,15 @@ export enum WeightUnit {
   KG = 'kg',
   LBS = 'lbs',
 }
+
+export enum TrainingType {
+  HYPERTRPHY = 'hypertrophy',
+  STRENGTH = 'strength',
+  HYBRID = 'hybrid',
+}
+
+export enum PeriodizationModel {
+  LINEAR = 'linear',
+  UNDULATING = 'undulating',
+  BLOCK = 'block',
+}

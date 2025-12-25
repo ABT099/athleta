@@ -58,7 +58,6 @@ class TestPRDetection:
             workout_plan_id=plan.id,
             name="Push Day",
             order_in_week=1,
-            target_muscle_groups=["chest"]
         )
         db_session.add(workout_day)
         db_session.flush()
@@ -144,8 +143,7 @@ class TestPRDetection:
         workout_day = WorkoutDay(
             workout_plan_id=plan.id,
             name="Leg Day",
-            order_in_week=1,
-            target_muscle_groups=["quadriceps"]
+            order_in_week=1
         )
         db_session.add(workout_day)
         db_session.flush()
@@ -245,8 +243,7 @@ class TestPRDetection:
         workout_day = WorkoutDay(
             workout_plan_id=plan.id,
             name="Pull Day",
-            order_in_week=1,
-            target_muscle_groups=["back"]
+            order_in_week=1
         )
         db_session.add(workout_day)
         db_session.flush()
@@ -336,7 +333,6 @@ class TestPRDetection:
             workout_plan_id=plan.id,
             name="Push Day",
             order_in_week=1,
-            target_muscle_groups=["chest"]
         )
         db_session.add(workout_day)
         db_session.flush()
@@ -779,7 +775,6 @@ class TestPRIntegration:
             workout_plan_id=plan.id,
             name="Push Day",
             order_in_week=1,
-            target_muscle_groups=["chest"]
         )
         db_session.add(workout_day)
         db_session.flush()

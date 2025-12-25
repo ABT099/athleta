@@ -82,8 +82,7 @@ def setup_athlete_with_plan(db_session):
     workout_day = WorkoutDayFactory.create(
         db_session,
         workout_plan_id=plan.id,
-        name="Push Day",
-        target_muscle_groups=["chest", "shoulders", "triceps"]
+        name="Push Day"
     )
     
     # Add exercises to workout day

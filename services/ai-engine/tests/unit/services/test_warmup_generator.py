@@ -276,13 +276,12 @@ class TestWarmupIntegration:
             workout_plan_id=plan.id,
             name="Push Day",
             day_of_week=0,
-            order_in_week=1,
-            target_muscle_groups=["chest", "shoulders", "triceps"]
+            order_in_week=1
         )
         db_session.add(workout_day)
         db_session.flush()
         
-        # Create workout day exercise with auto-generate enabled
+        # Create workout day exercise (warmups always generated)
         workout_exercise = WorkoutDayExercise(
             workout_day_id=workout_day.id,
             exercise_id=exercise.id,
@@ -293,8 +292,7 @@ class TestWarmupIntegration:
             target_reps_max=12,
             target_rpe=8.0,
             is_primary=1,
-            warm_up_sets=3,  # 3 warm-up sets
-            auto_generate_warmups=1  # Auto-generate enabled
+            warm_up_sets=3  # 3 warm-up sets
         )
         db_session.add(workout_exercise)
         db_session.commit()
@@ -326,7 +324,6 @@ class TestWarmupIntegration:
         assert len(result["workout_day"].exercises) > 0
         exercise_response = result["workout_day"].exercises[0]
         assert exercise_response.warm_up_sets == 3
-        assert exercise_response.auto_generate_warmups is True
         # Warm-up sets will be None if adjusted_weight is None (no previous workout)
         # This is expected behavior
     
@@ -377,8 +374,7 @@ class TestWarmupIntegration:
             workout_plan_id=plan.id,
             name="Pull Day",
             day_of_week=0,
-            order_in_week=1,
-            target_muscle_groups=["back", "biceps"]
+            order_in_week=1
         )
         db_session.add(workout_day)
         db_session.flush()
@@ -394,8 +390,7 @@ class TestWarmupIntegration:
             target_reps_max=5,
             target_rpe=8.0,
             is_primary=1,
-            warm_up_sets=0,  # Not set - should auto-determine
-            auto_generate_warmups=1
+            warm_up_sets=0  # Not set - should auto-determine
         )
         db_session.add(workout_exercise)
         db_session.flush()
@@ -442,8 +437,7 @@ class TestWarmupIntegration:
         # Check that warm-up sets were generated
         exercise_response = result["workout_day"].exercises[0]
         assert exercise_response.adjusted_weight is not None
-        # Warm-up sets should be generated since auto_generate_warmups is True
-        # and adjusted_weight is available
+        # Warm-up sets should be generated since adjusted_weight is available
         if exercise_response.warmup_sets:
             assert len(exercise_response.warmup_sets) > 0
             assert all(warmup.is_warmup for warmup in exercise_response.warmup_sets)
