@@ -15,29 +15,6 @@ from app.utils.constants import (
 )
 
 
-# ============ Workout Plan Schemas ============
-
-class WorkoutPlanBase(BaseModel):
-    """Base workout plan schema."""
-    name: str = Field(..., min_length=1, max_length=255)
-    training_type: TrainingType
-    periodization_model: PeriodizationModel
-    frequency: int = Field(..., ge=1, le=7)
-    duration_weeks: int = Field(..., ge=1, le=52)
-
-
-class WorkoutPlanResponse(WorkoutPlanBase):
-    """Schema for workout plan response."""
-    model_config = ConfigDict(from_attributes=True)
-    
-    id: int
-    athlete_id: int
-    start_date: datetime
-    end_date: Optional[datetime]
-    is_active: bool
-    created_at: datetime
-
-
 # ============ Exercise Set Schemas ============
 
 class ExerciseSetData(BaseModel):

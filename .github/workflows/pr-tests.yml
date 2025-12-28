@@ -1,0 +1,42 @@
+name: PR Tests (Fast + Smoke)
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "services/ai-engine/**"
+      - ".github/workflows/pr-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./services/ai-engine
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run smoke tests (Priority 1)
+        run: uv run pytest -m "smoke" --verbose
+
+      - name: Run fast unit tests (Priority 2)
+        run: uv run pytest -m "not slow" --verbose
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-pr
+          path: services/ai-engine/htmlcov/

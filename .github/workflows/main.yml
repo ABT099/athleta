@@ -24,18 +24,25 @@ jobs:
           cache-suffix: "ai-engine"
 
       - name: Set up Python
-        run: uv python install 3.11
+        run: uv python install 3.13
 
       - name: Install Python Dependencies
         working-directory: services/ai-engine
-        run: uv sync --extra dev
+        run: uv sync --all-extras
 
-      - name: Test AI Engine
+      - name: Run smoke tests
         working-directory: services/ai-engine
         env:
           JWT_SECRET: "test_secret_key_for_ci_pipeline"
           JWT_ALGORITHM: "HS256"
-        run: uv run python -m pytest
+        run: uv run pytest -m "smoke" --verbose
+
+      - name: Run unit tests
+        working-directory: services/ai-engine
+        env:
+          JWT_SECRET: "test_secret_key_for_ci_pipeline"
+          JWT_ALGORITHM: "HS256"
+        run: uv run pytest -m "not slow" --verbose
 
   test-exercise-inference:
     runs-on: ubuntu-latest

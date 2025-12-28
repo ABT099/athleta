@@ -132,20 +132,6 @@ class TestWorkoutsAPI:
         response = client.post("/api/workouts/complete", json=request_data)
         assert response.status_code == 422  # Validation error
     
-    def test_get_next_workout_athlete_not_found(self, client, db_session):
-        """Test that getting next workout for non-existent athlete returns 404."""
-        response = client.get("/api/athletes/99999/next-workout")
-        assert response.status_code == 404
-    
-    def test_get_next_workout_no_plan(self, client, db_session):
-        """Test that getting next workout for athlete without plan returns 404."""
-        athlete = AthleteFactory.create(db_session)
-        db_session.commit()
-        
-        response = client.get(f"/api/athletes/{athlete.id}/next-workout")
-        assert response.status_code == 404
-        assert "no active training plan" in response.json()["detail"].lower()
-    
     def test_get_athlete_analytics_athlete_not_found(self, client, db_session):
         """Test that getting analytics for non-existent athlete returns 404."""
         response = client.get("/api/athletes/99999/analytics")

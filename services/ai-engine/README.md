@@ -108,10 +108,7 @@ API documentation: `http://localhost:8000/docs`
 - `POST /api/workouts/complete`: Submit completed workout and receive next workout adjustments
 - `POST /api/prescriptions/generate`: Generate target RPE, RIR, and rest period for an exercise
 - `POST /api/prescriptions/generate-batch`: Generate prescriptions for multiple exercises
-- `GET /api/athletes/{id}/current-plan`: Get current weekly training plan
-- `GET /api/athletes/{id}/next-workout`: Get next scheduled workout with updated parameters
-- `POST /api/athletes`: Create new athlete profile
-- `GET /api/athletes/{id}/progress`: View training progression analytics
+- `GET /api/athletes/{id}/analytics`: View training progression analytics
 
 ## Scientific Principles
 
@@ -149,4 +146,3 @@ mypy app/
 ## License
 
 MIT License
-

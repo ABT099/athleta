@@ -2,7 +2,6 @@
 Pydantic schemas for request/response validation.
 """
 from app.schemas.workout import (
-    WorkoutPlanResponse,
     ExerciseSetData,
     RecoveryMetricsData,
     RecoveryMetricsResponse,
@@ -16,7 +15,6 @@ from app.schemas.workout import (
 )
 
 __all__ = [
-    "WorkoutPlanResponse",
     "ExerciseSetData",
     "RecoveryMetricsData",
     "RecoveryMetricsResponse",

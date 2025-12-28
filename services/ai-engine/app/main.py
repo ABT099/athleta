@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from app.config import settings
-from app.api import athletes, workouts, periodization, ml, prescriptions
+from app.api import workouts, periodization, ml, prescriptions
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,6 @@ async def startup_event():
     logger.info("✓ AthleteAI API started successfully")
 
 # Include API routers
-app.include_router(athletes.router, prefix="/api", tags=["athletes"])
 app.include_router(workouts.router, prefix="/api", tags=["workouts"])
 app.include_router(periodization.router, prefix="/api", tags=["periodization"])
 app.include_router(ml.router, prefix="/api", tags=["ml"])
