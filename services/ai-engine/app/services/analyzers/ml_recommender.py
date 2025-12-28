@@ -99,19 +99,25 @@ class MLRecommendationService:
             performance_score = recent_trend.performance_score
             
             # Simple heuristic-based recommendations
-            if avg_rpe > 9.0:
-                volume_mult = 0.95
-                intensity_mult = 0.95
-            elif avg_rpe < 7.0:
-                volume_mult = 1.05
-                intensity_mult = 1.05
+            from app.utils.constants import (
+                HIGH_RPE_THRESHOLD, LOW_RPE_THRESHOLD,
+                ML_HIGH_RPE_VOLUME_MULT, ML_HIGH_RPE_INTENSITY_MULT,
+                ML_LOW_RPE_VOLUME_MULT, ML_LOW_RPE_INTENSITY_MULT
+            )
+            if avg_rpe > HIGH_RPE_THRESHOLD:
+                volume_mult = ML_HIGH_RPE_VOLUME_MULT
+                intensity_mult = ML_HIGH_RPE_INTENSITY_MULT
+            elif avg_rpe < LOW_RPE_THRESHOLD:
+                volume_mult = ML_LOW_RPE_VOLUME_MULT
+                intensity_mult = ML_LOW_RPE_INTENSITY_MULT
             else:
                 volume_mult = 1.0
                 intensity_mult = 1.0
             
-            if performance_score and performance_score < 0.6:
-                volume_mult *= 0.95
-                intensity_mult *= 0.95
+            from app.utils.constants import PERFORMANCE_SCORE_POOR_THRESHOLD, PERFORMANCE_POOR_VOLUME_MULT, PERFORMANCE_POOR_INTENSITY_MULT
+            if performance_score and performance_score < PERFORMANCE_SCORE_POOR_THRESHOLD:
+                volume_mult *= PERFORMANCE_POOR_VOLUME_MULT
+                intensity_mult *= PERFORMANCE_POOR_INTENSITY_MULT
             
             return {
                 "status": "full_ml",
@@ -128,14 +134,16 @@ class MLRecommendationService:
         """Generate human-readable recommendation."""
         recommendations = []
         
+        from app.utils.constants import ML_LOW_RPE_VOLUME_MULT, ML_HIGH_RPE_VOLUME_MULT
         if volume_mult > 1.05:
             recommendations.append(f"Increase volume by {(volume_mult - 1.0) * 100:.0f}%")
-        elif volume_mult < 0.95:
+        elif volume_mult < ML_HIGH_RPE_VOLUME_MULT:
             recommendations.append(f"Reduce volume by {(1.0 - volume_mult) * 100:.0f}%")
         
+        from app.utils.constants import ML_HIGH_RPE_INTENSITY_MULT
         if intensity_mult > 1.05:
             recommendations.append(f"Increase intensity by {(intensity_mult - 1.0) * 100:.0f}%")
-        elif intensity_mult < 0.95:
+        elif intensity_mult < ML_HIGH_RPE_INTENSITY_MULT:
             recommendations.append(f"Reduce intensity by {(1.0 - intensity_mult) * 100:.0f}%")
         
         if not recommendations:
@@ -163,10 +171,13 @@ class MLRecommendationService:
         }
         
         # Slight adjustments based on training type
+        from app.utils.constants import (
+            ML_DEFAULT_STRENGTH_INTENSITY_MULT, ML_DEFAULT_HYPERTROPHY_VOLUME_MULT
+        )
         if training_type == "strength":
-            defaults["intensity_multiplier"] = 0.95  # Start slightly lower for strength
+            defaults["intensity_multiplier"] = ML_DEFAULT_STRENGTH_INTENSITY_MULT
         elif training_type == "hypertrophy":
-            defaults["volume_multiplier"] = 0.95  # Start slightly lower for hypertrophy
+            defaults["volume_multiplier"] = ML_DEFAULT_HYPERTROPHY_VOLUME_MULT
         
         return defaults
     
@@ -201,19 +212,25 @@ class MLRecommendationService:
         performance_score = recent_trend.performance_score
         
         # More conservative adjustments (smaller changes)
-        if avg_rpe > 9.0:
-            volume_mult = 0.97  # Smaller reduction
-            intensity_mult = 0.97
-        elif avg_rpe < 7.0:
-            volume_mult = 1.03  # Smaller increase
-            intensity_mult = 1.03
+        from app.utils.constants import (
+            HIGH_RPE_THRESHOLD, LOW_RPE_THRESHOLD,
+            ML_CONSERVATIVE_HIGH_RPE_VOLUME_MULT, ML_CONSERVATIVE_HIGH_RPE_INTENSITY_MULT,
+            ML_CONSERVATIVE_LOW_RPE_VOLUME_MULT, ML_CONSERVATIVE_LOW_RPE_INTENSITY_MULT
+        )
+        if avg_rpe > HIGH_RPE_THRESHOLD:
+            volume_mult = ML_CONSERVATIVE_HIGH_RPE_VOLUME_MULT
+            intensity_mult = ML_CONSERVATIVE_HIGH_RPE_INTENSITY_MULT
+        elif avg_rpe < LOW_RPE_THRESHOLD:
+            volume_mult = ML_CONSERVATIVE_LOW_RPE_VOLUME_MULT
+            intensity_mult = ML_CONSERVATIVE_LOW_RPE_INTENSITY_MULT
         else:
             volume_mult = 1.0
             intensity_mult = 1.0
         
-        if performance_score and performance_score < 0.6:
-            volume_mult *= 0.97
-            intensity_mult *= 0.97
+        from app.utils.constants import PERFORMANCE_SCORE_POOR_THRESHOLD, PERFORMANCE_POOR_VOLUME_MULT, PERFORMANCE_POOR_INTENSITY_MULT
+        if performance_score and performance_score < PERFORMANCE_SCORE_POOR_THRESHOLD:
+            volume_mult *= PERFORMANCE_POOR_VOLUME_MULT
+            intensity_mult *= PERFORMANCE_POOR_INTENSITY_MULT
         
         return {
             "volume_multiplier": round(volume_mult, 3),

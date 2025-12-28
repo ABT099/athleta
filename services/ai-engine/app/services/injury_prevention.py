@@ -466,7 +466,8 @@ class InjuryPreventionService:
                 ex_analysis["high_rpe_poor_form_sets"] += metrics["high_rpe_poor_form_count"]
                 
                 # Track degradation events
-                if metrics["degradation_rate"] and metrics["degradation_rate"] >= 0.20:
+                from app.utils.constants import FORM_DEGRADATION_THRESHOLD
+                if metrics["degradation_rate"] and metrics["degradation_rate"] >= FORM_DEGRADATION_THRESHOLD:
                     ex_analysis["degradation_events"] += 1
                 
                 total_sets += metrics["sets_analyzed"]

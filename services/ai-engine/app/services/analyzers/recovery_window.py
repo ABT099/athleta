@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session
 from app.models import MuscleGroupModel
 from app.utils.constants import (
     CNS_HEAVY_PATTERNS, CNS_MODERATE_PATTERNS,
-    CNS_RECOVERY_HOURS_HEAVY, CNS_RECOVERY_HOURS_MODERATE,
+    CNS_RECOVERY_HOURS_HEAVY,
     CNS_FATIGUE_PER_HEAVY_COMPOUND, CNS_FATIGUE_PER_MODERATE_COMPOUND,
-    CNS_FATIGUE_RECOVERY_PER_REST_DAY, FOCUS_AREA_RECOVERY_BONUS,
+    FOCUS_AREA_RECOVERY_BONUS,
     FocusArea
 )
 
@@ -327,39 +327,50 @@ class RecoveryWindowAnalyzer:
         """
         muscle_to_days = {}
         
+        all_exercise_ids = []
+        exercise_to_day = {}
         for workout_day in workout_days:
             day_number = workout_day.get("order_in_week", 0)
             if day_number == 0:
                 continue
             
             exercises = workout_day.get("exercises", [])
-            
             for exercise in exercises:
                 exercise_id = exercise.get("exercise_id")
-                if not exercise_id:
-                    continue
-                
-                # Get muscle activations for this exercise via junction table
-                from app.models import ExerciseMuscle
-                
-                # Get primary muscles (prime_mover role)
-                muscle_links = (
-                    self.db.query(ExerciseMuscle, MuscleGroupModel)
-                    .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
-                    .filter(
-                        ExerciseMuscle.exercise_id == exercise_id,
-                        ExerciseMuscle.role == "prime_mover"  # Primary targets
-                    )
-                    .all()
-                )
-                
-                # Add primary muscles to the day
-                for link, muscle in muscle_links:
-                    muscle_name = muscle.name
-                    if muscle_name not in muscle_to_days:
-                        muscle_to_days[muscle_name] = []
-                    if day_number not in muscle_to_days[muscle_name]:
-                        muscle_to_days[muscle_name].append(day_number)
+                if exercise_id:
+                    all_exercise_ids.append(exercise_id)
+                    exercise_to_day[exercise_id] = day_number
+        
+        if not all_exercise_ids:
+            return muscle_to_days
+        
+        # Load all ExerciseMuscle links in one query
+        from app.models import ExerciseMuscle
+        all_muscle_links = (
+            self.db.query(ExerciseMuscle, MuscleGroupModel)
+            .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
+            .filter(
+                ExerciseMuscle.exercise_id.in_(all_exercise_ids),
+                ExerciseMuscle.role == "prime_mover"  # Primary targets
+            )
+            .all()
+        )
+        
+        # Create map: exercise_id -> list of muscle names
+        exercise_to_muscles = {}
+        for link, muscle in all_muscle_links:
+            if link.exercise_id not in exercise_to_muscles:
+                exercise_to_muscles[link.exercise_id] = []
+            exercise_to_muscles[link.exercise_id].append(muscle.name)
+        
+        # Map muscles to days using pre-loaded data
+        for exercise_id, day_number in exercise_to_day.items():
+            muscle_names = exercise_to_muscles.get(exercise_id, [])
+            for muscle_name in muscle_names:
+                if muscle_name not in muscle_to_days:
+                    muscle_to_days[muscle_name] = []
+                if day_number not in muscle_to_days[muscle_name]:
+                    muscle_to_days[muscle_name].append(day_number)
         
         # Sort day lists
         for muscle_name in muscle_to_days:

@@ -723,4 +723,396 @@ CONSTRAINT_CNS_FATIGUE_MAX = 0.8  # Max CNS fatigue before constraint violation
 CONSTRAINT_MIN_VOLUME_MULT = 0.7  # Minimum volume multiplier
 CONSTRAINT_MIN_INTENSITY_MULT = 0.8  # Minimum intensity multiplier
 
+# ==============================
+# RECOVERY AND READINESS THRESHOLDS
+# ==============================
+
+# Readiness score thresholds
+LOW_READINESS_THRESHOLD = 0.7  # Below this = poor recovery
+EXCELLENT_READINESS_THRESHOLD = 0.85  # Above this = excellent recovery
+CRITICAL_READINESS_THRESHOLD = 0.4  # Below this = critical, immediate deload needed
+READINESS_DELOAD_THRESHOLD = 0.5  # Below this for consecutive days triggers deload
+
+# Recovery-based adjustment multipliers
+POOR_RECOVERY_VOLUME_REDUCTION = 0.95  # Reduce volume by 5% when recovery is poor
+POOR_RECOVERY_INTENSITY_REDUCTION = 0.98  # Reduce intensity by 2% when recovery is poor
+EXCELLENT_RECOVERY_VOLUME_INCREASE = 1.02  # Increase volume by 2% when recovery is excellent
+
+# ==============================
+# ACWR (ACUTE:CHRONIC WORKLOAD RATIO) THRESHOLDS
+# ==============================
+
+# ACWR safe zone (Gabbett, 2016)
+ACWR_SAFE_ZONE_MIN = 0.8  # Minimum safe ACWR
+ACWR_SAFE_ZONE_MAX = 1.3  # Maximum safe ACWR
+ACWR_HIGH_RISK_THRESHOLD = 1.5  # Above this = high injury risk, deload recommended
+ACWR_UNDERTRAINING_THRESHOLD = 0.8  # Below this = undertraining (not a deload trigger)
+
+# ==============================
+# DELOAD MULTIPLIERS
+# ==============================
+
+# Deload week multipliers
+DELOAD_VOLUME_MULTIPLIER = 0.5  # 50% volume during deload
+DELOAD_INTENSITY_MULTIPLIER = 0.9  # 90% intensity during deload
+
+# Extended break detraining multipliers
+EXTENDED_BREAK_7_13_DAYS_VOLUME = 0.85  # 15% reduction for 7-13 day breaks
+EXTENDED_BREAK_7_13_DAYS_INTENSITY = 0.85
+EXTENDED_BREAK_14_20_DAYS_VOLUME = 0.75  # 25% reduction for 14-20 day breaks
+EXTENDED_BREAK_14_20_DAYS_INTENSITY = 0.75
+EXTENDED_BREAK_21_PLUS_DAYS_VOLUME = 0.60  # 40% reduction for 21+ day breaks
+EXTENDED_BREAK_21_PLUS_DAYS_INTENSITY = 0.60
+
+# ==============================
+# ML CONFIDENCE THRESHOLDS
+# ==============================
+
+# ML prediction confidence thresholds
+ML_HIGH_CONFIDENCE_THRESHOLD = 0.7  # High confidence threshold
+ML_MEDIUM_CONFIDENCE_THRESHOLD = 0.5  # Medium confidence threshold
+ML_LOW_CONFIDENCE_THRESHOLD = 0.3  # Low confidence threshold
+
+# ML uncertainty thresholds
+ML_LOW_UNCERTAINTY_THRESHOLD = 0.1  # Low uncertainty threshold
+ML_MEDIUM_UNCERTAINTY_THRESHOLD = 0.15  # Medium uncertainty threshold
+ML_HIGH_UNCERTAINTY_THRESHOLD = 0.2  # High uncertainty threshold
+
+# ML prediction weights (for hybrid ML + rules)
+ML_HIGH_CONFIDENCE_WEIGHT = 0.8  # 80% ML when high confidence
+ML_MEDIUM_CONFIDENCE_WEIGHT = 0.5  # 50% ML when medium confidence
+ML_LOW_CONFIDENCE_WEIGHT = 0.3  # 30% ML when low confidence
+
+# ==============================
+# PROGRESSION MULTIPLIERS
+# ==============================
+
+# Volume estimation multiplier
+VOLUME_ESTIMATION_MULTIPLIER = 1.05  # Estimate next volume as 105% of current
+
+# Maximum adjustment multipliers (safety caps)
+MAX_VOLUME_MULTIPLIER = 1.15  # Maximum volume increase per workout
+MAX_INTENSITY_MULTIPLIER = 1.05  # Maximum intensity increase per workout
+MIN_VOLUME_MULTIPLIER = 0.80  # Minimum volume multiplier
+MIN_INTENSITY_MULTIPLIER = 0.85  # Minimum intensity multiplier
+
+# Session RPE spike threshold
+SESSION_RPE_SPIKE_THRESHOLD_PERCENT = 20  # 20% increase in sRPE triggers deload warning
+
+# ==============================
+# INJURY RISK ADJUSTMENT MULTIPLIERS
+# ==============================
+
+# Injury risk adjustment multipliers
+INJURY_RISK_HIGH_VOLUME_MULTIPLIER = 0.5
+INJURY_RISK_HIGH_INTENSITY_MULTIPLIER = 0.85
+INJURY_RISK_MODERATE_VOLUME_MULTIPLIER = 0.8
+INJURY_RISK_MODERATE_INTENSITY_MULTIPLIER = 0.95
+
+# Additional recovery-based adjustment multipliers
+POOR_READINESS_VOLUME_MULTIPLIER = 0.7
+POOR_READINESS_INTENSITY_MULTIPLIER = 0.9
+MODERATE_READINESS_VOLUME_MULTIPLIER = 0.85
+MODERATE_READINESS_INTENSITY_MULTIPLIER = 0.95
+
+# ==============================
+# MUSCLE ROLE ACTIVATION WEIGHTS
+# ==============================
+
+# Muscle activation weights by role (for volume calculations)
+# References: Contreras, Helms - Muscle activation research
+MUSCLE_ROLE_WEIGHTS = {
+    "prime_mover": 0.85,    # Primary muscle activation
+    "synergist": 0.55,      # Secondary muscle activation
+    "stabilizer": 0.20      # Stabilizing muscle activation
+}
+
+# ==============================
+# RPE DIFFERENCE THRESHOLDS FOR LOAD ADJUSTMENT
+# ==============================
+
+# RPE difference thresholds for optimal load calculation
+RPE_DIFF_LARGE_THRESHOLD = 1.5      # Large RPE difference threshold
+RPE_DIFF_SMALL_THRESHOLD = 0.5      # Small RPE difference threshold
+
+# Load adjustment multipliers based on RPE difference
+RPE_DIFF_LARGE_INCREASE_MULT = 2.0   # Large increase multiplier (too easy)
+RPE_DIFF_SMALL_INCREASE_MULT = 0.5   # Small increase multiplier (perfect)
+RPE_DIFF_LARGE_DECREASE_MULT = 1.5   # Large decrease multiplier (too hard)
+RPE_DIFF_SMALL_DECREASE_MULT = 0.75  # Small decrease multiplier (slightly too hard)
+
+# ==============================
+# RECOVERY-BASED SET ADJUSTMENTS
+# ==============================
+
+# Recovery score thresholds for set adjustments
+POOR_RECOVERY_THRESHOLD = 0.4        # Below this = poor recovery
+EXCELLENT_RECOVERY_THRESHOLD = 0.7  # Above this = excellent recovery
+
+# Set adjustment values based on recovery
+POOR_RECOVERY_SET_REDUCTION_LARGE = -2  # Large reduction for poor recovery
+POOR_RECOVERY_SET_REDUCTION_SMALL = -1  # Small reduction for poor recovery
+EXCELLENT_RECOVERY_SET_INCREASE = 1      # Increase for excellent recovery
+
+# ==============================
+# FORM QUALITY SCORES AND THRESHOLDS
+# ==============================
+
+# Form quality to score mapping
+FORM_SCORE_EXCELLENT = 1.0
+FORM_SCORE_GOOD = 0.75
+FORM_SCORE_FAIR = 0.5
+FORM_SCORE_POOR = 0.25
+
+# Form quality thresholds
+FORM_DEGRADATION_THRESHOLD = 0.20  # 20% degradation within session
+FORM_CHRONIC_ISSUE_THRESHOLD = 0.40  # 40% of sets fair/poor over 2 weeks
+FORM_MIN_SCORE_FOR_PROGRESSION = 0.6  # Below "good" blocks progression
+
+# ==============================
+# RPE CALIBRATION CONSTANTS
+# ==============================
+
+# Calibration factor smoothing weights
+RPE_CALIBRATION_NEW_FACTOR_WEIGHT = 0.7  # Weight for new calculation
+RPE_CALIBRATION_OLD_FACTOR_WEIGHT = 0.3  # Weight for old factor (smoothing)
+
+# Calibration factor bounds
+RPE_CALIBRATION_FACTOR_MIN = 0.7  # Minimum calibration factor
+RPE_CALIBRATION_FACTOR_MAX = 1.3  # Maximum calibration factor
+
+# ==============================
+# PR TRACKING CONSTANTS
+# ==============================
+
+# PR percentage by context
+PR_DELOAD_PERCENTAGE = 0.75  # 75% of PR for deload weeks
+PR_MAX_PERCENTAGE = 0.95  # Maximum PR percentage cap
+PR_DEFAULT_PERCENTAGE = 0.80  # Default fallback percentage
+PR_WEEK_ADJUSTMENT_CAP = 0.05  # Maximum weekly adjustment
+PR_WEEK_ADJUSTMENT_RATE = 0.005  # Weekly adjustment increment
+
+# ==============================
+# DELOAD RPE CONSTANTS
+# ==============================
+
+# Target RPE during deload
+DELOAD_TARGET_RPE = 6.0  # Very conservative RPE for deload weeks
+
+# ==============================
+# RPE THRESHOLDS FOR PERFORMANCE ANALYSIS
+# ==============================
+
+# High RPE thresholds for struggle detection and form quality
+HIGH_RPE_THRESHOLD = 9.0  # High RPE threshold for form quality and performance concerns
+STRUGGLE_RPE_THRESHOLD = 9.5  # RPE threshold indicating struggle/struggling
+LOW_RPE_THRESHOLD = 7.0  # Low RPE threshold (too easy)
+
+# ==============================
+# ML RECOMMENDER ADJUSTMENT MULTIPLIERS
+# ==============================
+
+# ML recommender adjustment multipliers for high/low RPE
+ML_HIGH_RPE_VOLUME_MULT = 0.95  # Volume reduction for high RPE
+ML_HIGH_RPE_INTENSITY_MULT = 0.95  # Intensity reduction for high RPE
+ML_LOW_RPE_VOLUME_MULT = 1.05  # Volume increase for low RPE
+ML_LOW_RPE_INTENSITY_MULT = 1.05  # Intensity increase for low RPE
+
+# Conservative ML adjustments (smaller changes)
+ML_CONSERVATIVE_HIGH_RPE_VOLUME_MULT = 0.97  # Conservative volume reduction
+ML_CONSERVATIVE_HIGH_RPE_INTENSITY_MULT = 0.97  # Conservative intensity reduction
+ML_CONSERVATIVE_LOW_RPE_VOLUME_MULT = 1.03  # Conservative volume increase
+ML_CONSERVATIVE_LOW_RPE_INTENSITY_MULT = 1.03  # Conservative intensity increase
+
+# ML default multipliers
+ML_DEFAULT_STRENGTH_INTENSITY_MULT = 0.95  # Default intensity multiplier for strength
+ML_DEFAULT_HYPERTROPHY_VOLUME_MULT = 0.95  # Default volume multiplier for hypertrophy
+
+# ==============================
+# RECOVERY ANALYZER CONSTANTS
+# ==============================
+
+# Duration scoring
+DURATION_SCORE_DEFAULT = 0.75  # Default duration score
+ADVANCED_RECOVERY_MODIFIER = 0.85  # Recovery modifier for advanced athletes
+
+# Training age recovery boosts
+TRAINING_AGE_EXPERIENCED_THRESHOLD = 5  # Years to be considered experienced
+TRAINING_AGE_VETERAN_THRESHOLD = 10  # Years to be considered veteran
+TRAINING_AGE_BOOST_CAP = 0.05  # Maximum training age boost (5%)
+TRAINING_AGE_BOOST_RATE = 0.01  # Boost per year of training
+
+# Age offset for experienced athletes
+AGE_PENALTY_OFFSET_EXPERIENCED = 0.1  # 10% offset for experienced
+AGE_PENALTY_OFFSET_VETERAN = 0.2  # 20% offset for veteran
+AGE_PENALTY_OFFSET_RATE_EXPERIENCED = 0.01  # 1% per year over threshold
+AGE_PENALTY_OFFSET_RATE_VETERAN = 0.02  # 2% per year over threshold
+
+# Combined modifier clamp
+RECOVERY_MODIFIER_MIN = 0.7  # Minimum recovery modifier
+RECOVERY_MODIFIER_MAX = 1.2  # Maximum recovery modifier
+
+# ==============================
+# WARMUP SET PERCENTAGES
+# ==============================
+
+# Warmup intensity adjustment
+WARMUP_MAX_WEIGHT_PERCENTAGE = 0.95  # Maximum warmup weight percentage cap
+WARMUP_PEAK_INTENSITY_BOOST_MIN = 0.02  # Minimum intensity boost for peak weeks
+WARMUP_PEAK_INTENSITY_BOOST_MAX = 0.05  # Maximum intensity boost for peak weeks
+WARMUP_EARLY_INTENSITY_REDUCTION_MIN = 0.01  # Minimum reduction for early weeks
+WARMUP_EARLY_INTENSITY_REDUCTION_MAX = 0.02  # Maximum reduction for early weeks
+WARMUP_PEAK_PHASE_THRESHOLD = 0.8  # Sets range position threshold for peak
+WARMUP_EARLY_PHASE_THRESHOLD = 0.2  # Sets range position threshold for early
+WARMUP_MIN_WEIGHT_PERCENTAGE = 0.50  # Minimum warmup weight percentage
+
+# ==============================
+# PR PERCENTAGE BY PHASE
+# ==============================
+
+# Percentage of PR to use by training phase
+PR_ACCUMULATION_PERCENTAGE = 0.80  # 80% of PR during accumulation
+PR_INTENSIFICATION_PERCENTAGE = 0.85  # 85% of PR during intensification
+PR_REALIZATION_PERCENTAGE = 0.90  # 90% of PR during realization (peak week)
+
+# ==============================
+# VOLUME MULTIPLIER THRESHOLDS
+# ==============================
+
+# Thresholds for volume change detection
+VOLUME_MULTIPLIER_INCREASE_THRESHOLD = 1.05  # Threshold for volume increase
+VOLUME_MULTIPLIER_DECREASE_THRESHOLD = 0.95  # Threshold for volume decrease
+VOLUME_MULTIPLIER_SMALL_CHANGE = 1.03  # Small change threshold
+VOLUME_MULTIPLIER_MINOR_DECREASE = 0.97  # Minor decrease threshold
+
+# ==============================
+# PERFORMANCE-BASED ADJUSTMENT MULTIPLIERS
+# ==============================
+
+# Performance level adjustment multipliers
+PERFORMANCE_STRUGGLING_VOLUME_MULT = 0.85  # Volume reduction for struggling
+PERFORMANCE_STRUGGLING_INTENSITY_MULT = 0.90  # Intensity reduction for struggling
+PERFORMANCE_POOR_VOLUME_MULT = 0.98  # Volume reduction for poor performance
+PERFORMANCE_POOR_INTENSITY_MULT = 0.98  # Intensity reduction for poor performance
+
+# ==============================
+# PROGRESSIVE OVERLOAD FINE-TUNING MULTIPLIERS
+# ==============================
+
+# Performance-based fine-tuning
+INTENSITY_SMALL_INCREASE_MULT = 1.025  # Small intensity increase (2.5%)
+INTENSITY_MEDIUM_INCREASE_MULT = 1.05  # Medium intensity increase (5%)
+VOLUME_SMALL_INCREASE_MULT = 1.02  # Small volume increase (2%)
+VOLUME_MEDIUM_INCREASE_MULT = 1.05  # Medium volume increase (5%)
+
+INTENSITY_SMALL_DECREASE_MULT = 0.98  # Small intensity decrease (2%)
+INTENSITY_MEDIUM_DECREASE_MULT = 0.95  # Medium intensity decrease (5%)
+VOLUME_SMALL_DECREASE_MULT = 0.95  # Small volume decrease (5%)
+VOLUME_MEDIUM_DECREASE_MULT = 0.90  # Medium volume decrease (10%)
+
+# Phase adjustments
+INTENSITY_PHASE_SMALL_INCREASE = 1.01  # Small phase-based intensity increase
+VOLUME_PHASE_SMALL_DECREASE = 0.95  # Small phase-based volume decrease
+
+# Form quality gate caps
+FORM_GATE_INTENSITY_CAP = 0.95  # Cap intensity at 95% when form is poor
+FORM_GATE_VOLUME_CAP = 0.95  # Cap volume at 95% when form is poor
+
+# Conservative adjustment scaling
+CONSERVATIVE_ADJUSTMENT_SCALING = 0.8  # Scale down adjustments for primary exercises
+
+# ==============================
+# PLAN ANALYZER SCORING CONSTANTS
+# ==============================
+
+# Score deductions by severity
+SCORE_DEDUCTION_CRITICAL = 20  # Points deducted for critical warnings
+SCORE_DEDUCTION_HIGH = 15  # Points deducted for high severity warnings
+SCORE_DEDUCTION_MEDIUM = 10  # Points deducted for medium severity warnings
+SCORE_DEDUCTION_LOW = 5  # Points deducted for low severity warnings
+
+# Score deductions by impact
+SCORE_DEDUCTION_HIGH_IMPACT = 5  # Points deducted for high impact suggestions
+SCORE_DEDUCTION_MEDIUM_IMPACT = 3  # Points deducted for medium impact suggestions
+SCORE_DEDUCTION_LOW_IMPACT = 1  # Points deducted for low impact suggestions
+
+# Score bonuses
+SCORE_BONUS_EXCELLENT_ORDER = 5  # Bonus for excellent exercise order (>=90)
+SCORE_BONUS_GOOD_ORDER = 2  # Bonus for good exercise order (>=80)
+SCORE_BONUS_OPTIMAL_PUSH_PULL = 3  # Bonus for optimal push/pull balance
+SCORE_BONUS_OPTIMAL_UPPER_LOWER = 2  # Bonus for optimal upper/lower balance
+
+# Score thresholds
+ORDER_SCORE_EXCELLENT_THRESHOLD = 90  # Threshold for excellent order score
+ORDER_SCORE_GOOD_THRESHOLD = 80  # Threshold for good order score
+
+# ==============================
+# VOLUME MANAGER CONSTANTS
+# ==============================
+
+# Volume position percentage calculations
+VOLUME_PERCENTAGE_BELOW_MEV_SCALE = 50  # Scale factor for volume below MEV (0-50%)
+VOLUME_PERCENTAGE_MEV_TO_MRV_BASE = 50  # Base percentage between MEV and MRV
+VOLUME_PERCENTAGE_MEV_TO_MRV_SCALE = 50  # Scale factor for MEV to MRV range
+VOLUME_PERCENTAGE_ABOVE_MRV_BASE = 100  # Base percentage above MRV
+VOLUME_PERCENTAGE_ABOVE_MRV_SCALE = 50  # Scale factor for volume above MRV
+
+# ==============================
+# PERFORMANCE SCORE THRESHOLDS
+# ==============================
+
+# Performance score evaluation thresholds
+PERFORMANCE_SCORE_POOR_THRESHOLD = 0.6  # Below this = poor performance
+PERFORMANCE_SCORE_GOOD_THRESHOLD = 0.8  # Above this = good performance
+
+# Struggle ratio thresholds
+STRUGGLE_RATIO_FAILED_THRESHOLD = 0.5  # Above this = failed performance
+STRUGGLE_RATIO_STRUGGLING_THRESHOLD = 0.3  # Above this = struggling performance
+
+# Default readiness score
+DEFAULT_READINESS_SCORE = 0.5  # Default readiness score when not available
+
+# Hybrid training small adjustments
+HYBRID_SMALL_ADJUSTMENT_MULT = 1.015  # Small adjustment multiplier for hybrid training
+
+# Progression rate scaling factor
+PROGRESSION_RATE_SCALING_FACTOR = 0.5  # Scale progression rate by this factor for on-target performance
+
+# ==============================
+# WAVE LOADING MULTIPLIERS
+# ==============================
+
+# Wave loading adjustments by week number
+WAVE_WEEK_1_VOLUME_MULT = 1.0  # Baseline volume for week 1
+WAVE_WEEK_1_INTENSITY_MULT = 1.0  # Baseline intensity for week 1
+WAVE_WEEK_2_VOLUME_MULT = 1.10  # 10% volume increase for week 2
+WAVE_WEEK_2_INTENSITY_MULT = 1.05  # 5% intensity increase for week 2
+WAVE_WEEK_3_VOLUME_MULT = 1.05  # 5% volume increase for week 3 (step back from week 2)
+WAVE_WEEK_3_INTENSITY_MULT = 1.03  # 3% intensity increase for week 3
+WAVE_WEEK_4_PLUS_VOLUME_MULT = 1.15  # 15% volume increase for week 4+
+WAVE_WEEK_4_PLUS_INTENSITY_MULT = 1.08  # 8% intensity increase for week 4+
+
+# ==============================
+# INTENSITY TECHNIQUE SERVICE CONSTANTS
+# ==============================
+
+# Plateau detection threshold
+PLATEAU_IMPROVEMENT_THRESHOLD = 0.02  # 2% improvement threshold for plateau detection
+
+# Struggling detection RPE threshold (lower than HIGH_RPE_THRESHOLD for early detection)
+STRUGGLING_DETECTION_RPE_THRESHOLD = 8.0  # RPE threshold for struggling detection in intensity techniques
+
+# MRV ceiling threshold
+MRV_CEILING_THRESHOLD = 0.9  # 90% of MRV considered at ceiling
+
+# Partial effectiveness weight for sets
+PARTIAL_EFFECTIVE_SET_WEIGHT = 0.5  # Weight for RIR 5-6 sets (partially effective)
+
+# ==============================
+# PRESCRIPTION GENERATOR CONSTANTS
+# ==============================
+
+# Default microcycle RPE modifier fallback
+MICROCYCLE_RPE_MODIFIER_DEFAULT = 0.5  # Default fallback when week modifier not found
+
 

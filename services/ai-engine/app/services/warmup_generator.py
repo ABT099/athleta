@@ -5,6 +5,12 @@ Generates appropriate warm-up sets based on working weight and exercise characte
 """
 from typing import List, Dict, Optional
 from app.models import Exercise
+from app.utils.constants import (
+    WARMUP_MAX_WEIGHT_PERCENTAGE, WARMUP_PEAK_INTENSITY_BOOST_MIN,
+    WARMUP_PEAK_INTENSITY_BOOST_MAX, WARMUP_EARLY_INTENSITY_REDUCTION_MIN,
+    WARMUP_EARLY_INTENSITY_REDUCTION_MAX, WARMUP_PEAK_PHASE_THRESHOLD,
+    WARMUP_EARLY_PHASE_THRESHOLD, WARMUP_MIN_WEIGHT_PERCENTAGE
+)
 
 
 class WarmupGenerator:
@@ -176,11 +182,11 @@ class WarmupGenerator:
         adjusted_pyramid = [config.copy() for config in pyramid]
         
         # Peak phase: increase final warmup intensity slightly
-        if sets_range_position >= 0.8 and len(adjusted_pyramid) > 0:
+        if sets_range_position >= WARMUP_PEAK_PHASE_THRESHOLD and len(adjusted_pyramid) > 0:
             # Increase final warmup set intensity by 2-5% for better preparation
             final_set = adjusted_pyramid[-1]
-            intensity_boost = 0.02 + (sets_range_position - 0.8) * 0.15  # 2% to 5% boost
-            final_set["weight_percentage"] = min(0.95, final_set["weight_percentage"] + intensity_boost)
+            intensity_boost = WARMUP_PEAK_INTENSITY_BOOST_MIN + (sets_range_position - WARMUP_PEAK_PHASE_THRESHOLD) * ((WARMUP_PEAK_INTENSITY_BOOST_MAX - WARMUP_PEAK_INTENSITY_BOOST_MIN) / (1.0 - WARMUP_PEAK_PHASE_THRESHOLD))
+            final_set["weight_percentage"] = min(WARMUP_MAX_WEIGHT_PERCENTAGE, final_set["weight_percentage"] + intensity_boost)
             # Slightly reduce reps for higher intensity
             if final_set["reps_min"] > 2:
                 final_set["reps_min"] = max(2, final_set["reps_min"] - 1)
@@ -188,11 +194,11 @@ class WarmupGenerator:
                 final_set["reps_max"] = max(3, final_set["reps_max"] - 1)
         
         # Early phase: can slightly reduce final intensity for easier transition
-        elif sets_range_position <= 0.2 and len(adjusted_pyramid) > 0:
+        elif sets_range_position <= WARMUP_EARLY_PHASE_THRESHOLD and len(adjusted_pyramid) > 0:
             final_set = adjusted_pyramid[-1]
             # Reduce final warmup intensity slightly (1-2%)
-            intensity_reduction = 0.01 + (0.2 - sets_range_position) * 0.05
-            final_set["weight_percentage"] = max(0.50, final_set["weight_percentage"] - intensity_reduction)
+            intensity_reduction = WARMUP_EARLY_INTENSITY_REDUCTION_MIN + (WARMUP_EARLY_PHASE_THRESHOLD - sets_range_position) * ((WARMUP_EARLY_INTENSITY_REDUCTION_MAX - WARMUP_EARLY_INTENSITY_REDUCTION_MIN) / WARMUP_EARLY_PHASE_THRESHOLD)
+            final_set["weight_percentage"] = max(WARMUP_MIN_WEIGHT_PERCENTAGE, final_set["weight_percentage"] - intensity_reduction)
         
         return adjusted_pyramid
     

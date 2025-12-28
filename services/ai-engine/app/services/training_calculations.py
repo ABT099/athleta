@@ -403,23 +403,29 @@ class TrainingCalculations:
         base_rate = progression_rates[experience] * type_modifiers[training_type]
         
         # Adjust based on RPE difference
+        from app.utils.constants import (
+            RPE_DIFF_LARGE_THRESHOLD, RPE_DIFF_SMALL_THRESHOLD,
+            RPE_DIFF_LARGE_INCREASE_MULT, RPE_DIFF_SMALL_INCREASE_MULT,
+            RPE_DIFF_LARGE_DECREASE_MULT, RPE_DIFF_SMALL_DECREASE_MULT
+        )
+        
         rpe_diff = target_rpe - current_rpe
         
-        if rpe_diff > 1.5:
+        if rpe_diff > RPE_DIFF_LARGE_THRESHOLD:
             # Too easy - increase significantly
-            increase = current_weight * (base_rate * 2)
-        elif rpe_diff > 0.5:
+            increase = current_weight * (base_rate * RPE_DIFF_LARGE_INCREASE_MULT)
+        elif rpe_diff > RPE_DIFF_SMALL_THRESHOLD:
             # Slightly too easy - normal increase
             increase = current_weight * base_rate
-        elif abs(rpe_diff) <= 0.5:
+        elif abs(rpe_diff) <= RPE_DIFF_SMALL_THRESHOLD:
             # Perfect - maintain or small increase
-            increase = current_weight * (base_rate * 0.5)
-        elif rpe_diff < -1.5:
+            increase = current_weight * (base_rate * RPE_DIFF_SMALL_INCREASE_MULT)
+        elif rpe_diff < -RPE_DIFF_LARGE_THRESHOLD:
             # Too hard - decrease significantly
-            increase = current_weight * (-base_rate * 1.5)
-        else:  # -1.5 <= rpe_diff < -0.5
+            increase = current_weight * (-base_rate * RPE_DIFF_LARGE_DECREASE_MULT)
+        else:  # -RPE_DIFF_LARGE_THRESHOLD <= rpe_diff < -RPE_DIFF_SMALL_THRESHOLD
             # Slightly too hard - decrease slightly
-            increase = current_weight * (-base_rate * 0.75)
+            increase = current_weight * (-base_rate * RPE_DIFF_SMALL_DECREASE_MULT)
         
         new_weight = current_weight + increase
         
@@ -445,11 +451,15 @@ class TrainingCalculations:
         Returns:
             Dict with deload_volume and deload_intensity multipliers
         """
-        # Standard deload: 50% volume, 90% intensity
+        # Standard deload: use constants for volume and intensity multipliers
+        from app.utils.constants import (
+            DELOAD_VOLUME_MULTIPLIER, DELOAD_INTENSITY_MULTIPLIER, DELOAD_TARGET_RPE
+        )
+        
         return {
-            "volume_multiplier": 0.5,
-            "intensity_multiplier": 0.9,
-            "target_rpe": 6.0,  # Very conservative
+            "volume_multiplier": DELOAD_VOLUME_MULTIPLIER,
+            "intensity_multiplier": DELOAD_INTENSITY_MULTIPLIER,
+            "target_rpe": DELOAD_TARGET_RPE,
         }
 
 

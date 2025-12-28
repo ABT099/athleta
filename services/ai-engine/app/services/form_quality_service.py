@@ -16,6 +16,11 @@ from sqlalchemy import func, desc
 from app.models import (
     WorkoutSession, ExerciseSet, FormQualityTrend, Exercise, Athlete
 )
+from app.utils.constants import (
+    FORM_SCORE_EXCELLENT, FORM_SCORE_GOOD, FORM_SCORE_FAIR, FORM_SCORE_POOR,
+    FORM_DEGRADATION_THRESHOLD, FORM_CHRONIC_ISSUE_THRESHOLD,
+    FORM_MIN_SCORE_FOR_PROGRESSION
+)
 
 
 class FormQualityService:
@@ -25,16 +30,11 @@ class FormQualityService:
     
     # Form quality to score mapping
     FORM_SCORES = {
-        "excellent": 1.0,
-        "good": 0.75,
-        "fair": 0.5,
-        "poor": 0.25
+        "excellent": FORM_SCORE_EXCELLENT,
+        "good": FORM_SCORE_GOOD,
+        "fair": FORM_SCORE_FAIR,
+        "poor": FORM_SCORE_POOR
     }
-    
-    # Alert thresholds
-    DEGRADATION_THRESHOLD = 0.20  # 20% degradation within session
-    CHRONIC_ISSUE_THRESHOLD = 0.40  # 40% of sets fair/poor over 2 weeks
-    MIN_FORM_SCORE_FOR_PROGRESSION = 0.6  # Below "good" blocks progression
     
     def __init__(self, db: Session):
         self.db = db
@@ -52,11 +52,11 @@ class FormQualityService:
             Returns 0.75 (good) as default if None or invalid
         """
         if not form_quality:
-            return 0.75  # Default to "good" if not specified
+            return FORM_SCORE_GOOD  # Default to "good" if not specified
         
         return FormQualityService.FORM_SCORES.get(
             form_quality.lower(), 
-            0.75  # Default to "good" for invalid values
+            FORM_SCORE_GOOD  # Default to "good" for invalid values
         )
     
     def track_form_degradation_in_session(
@@ -181,9 +181,10 @@ class FormQualityService:
         average_score = sum(form_scores) / len(form_scores)
         
         # Count high RPE + poor form combinations
+        from app.utils.constants import HIGH_RPE_THRESHOLD
         high_rpe_poor_form = sum(
             1 for s in sets
-            if s.rpe and s.rpe >= 9.0
+            if s.rpe and s.rpe >= HIGH_RPE_THRESHOLD
             and s.form_quality in ["poor", "fair"]
         )
         
@@ -357,13 +358,13 @@ class FormQualityService:
             total_sets = sum(t.sets_analyzed for t in ex_trends)
             poor_form_sets = sum(
                 t.sets_analyzed for t in ex_trends
-                if t.average_form_score < 0.6  # Below "good"
+                if t.average_form_score < FORM_MIN_SCORE_FOR_PROGRESSION  # Below "good"
             )
             
             if total_sets > 0:
                 poor_percentage = (poor_form_sets / total_sets) * 100
                 
-                if poor_percentage >= self.CHRONIC_ISSUE_THRESHOLD * 100:
+                if poor_percentage >= FORM_CHRONIC_ISSUE_THRESHOLD * 100:
                     exercise = self.db.query(Exercise).filter(Exercise.id == ex_id).first()
                     exercise_name = exercise.name if exercise else f"Exercise {ex_id}"
                     
@@ -438,7 +439,7 @@ class FormQualityService:
             
             # Check for within-session degradation >20%
             for trend in ex_trends:
-                if trend.degradation_rate and trend.degradation_rate >= self.DEGRADATION_THRESHOLD:
+                if trend.degradation_rate and trend.degradation_rate >= FORM_DEGRADATION_THRESHOLD:
                     alerts.append({
                         "severity": "WARNING",
                         "type": "within_session_degradation",
@@ -455,7 +456,7 @@ class FormQualityService:
             # Check for consecutive poor form sessions
             consecutive_poor = 0
             for trend in sorted(ex_trends, key=lambda t: t.date, reverse=True):
-                if trend.average_form_score < self.MIN_FORM_SCORE_FOR_PROGRESSION:
+                if trend.average_form_score < FORM_MIN_SCORE_FOR_PROGRESSION:
                     consecutive_poor += 1
                 else:
                     break
@@ -532,7 +533,7 @@ class FormQualityService:
             return False, None
         
         # Block if average score is below minimum threshold
-        if trend["average_score"] and trend["average_score"] < self.MIN_FORM_SCORE_FOR_PROGRESSION:
+        if trend["average_score"] and trend["average_score"] < FORM_MIN_SCORE_FOR_PROGRESSION:
             exercise = self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
             exercise_name = exercise.name if exercise else f"Exercise {exercise_id}"
             
@@ -544,7 +545,7 @@ class FormQualityService:
         
         # Check for degrading trend (stricter check - any sign of degradation)
         if trend["trend_direction"] == "degrading" or (
-            trend["average_score"] and trend["average_score"] < self.MIN_FORM_SCORE_FOR_PROGRESSION + 0.1
+            trend["average_score"] and trend["average_score"] < FORM_MIN_SCORE_FOR_PROGRESSION + 0.1
         ):
             exercise = self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
             exercise_name = exercise.name if exercise else f"Exercise {exercise_id}"

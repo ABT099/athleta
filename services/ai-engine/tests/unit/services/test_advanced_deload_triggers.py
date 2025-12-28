@@ -21,18 +21,41 @@ class TestACWRDeloadTrigger:
         db = Mock()
         engine = ProgressiveOverloadEngine(db)
         
-        # Mock ACWR calculation to return high value
-        with patch.object(engine.calc, 'calculate_acute_chronic_workload_ratio', return_value=1.6):
-            # Mock workout sessions
-            mock_sessions = Mock()
-            mock_sessions.total_volume = 1000.0
-            mock_sessions.overall_rpe = 8.0
-            db.query.return_value.filter.return_value.all.return_value = [mock_sessions]
-            
-            result = engine._check_acwr(athlete_id=1)
-            assert result[0] is True
-            assert "ACWR" in result[1]
-            assert "1.6" in result[1] or "exceeds" in result[1]
+        # Mock SQL aggregation results for ACWR calculation
+        # Acute: sum=100, count=5 -> mean=20
+        # Chronic: sum=200, count=20 -> mean=10
+        # ACWR = 20/10 = 2.0 (above threshold)
+        mock_acute_result = Mock()
+        mock_acute_result.acute_sum = 100.0
+        mock_acute_result.acute_count = 5
+        
+        mock_chronic_result = Mock()
+        mock_chronic_result.chronic_sum = 200.0
+        mock_chronic_result.chronic_count = 20
+        
+        # Mock the query chain: query().filter().first()
+        # Need separate query chains for acute and chronic
+        mock_acute_query = Mock()
+        mock_acute_query.filter.return_value.first.return_value = mock_acute_result
+        
+        mock_chronic_query = Mock()
+        mock_chronic_query.filter.return_value.first.return_value = mock_chronic_result
+        
+        # Return different query mocks for each call
+        query_call_count = [0]
+        def mock_query_side_effect(*args, **kwargs):
+            query_call_count[0] += 1
+            if query_call_count[0] == 1:
+                return mock_acute_query
+            else:
+                return mock_chronic_query
+        
+        db.query.side_effect = mock_query_side_effect
+        
+        result = engine._check_acwr(athlete_id=1)
+        assert result[0] is True
+        assert "ACWR" in result[1]
+        assert "exceeds" in result[1] or "high injury risk" in result[1]
     
     def test_acwr_in_safe_zone(self):
         """Test that ACWR in safe zone (0.8-1.3) doesn't trigger deload."""
@@ -42,15 +65,39 @@ class TestACWRDeloadTrigger:
         db = Mock()
         engine = ProgressiveOverloadEngine(db)
         
-        # Mock ACWR calculation to return safe value
-        with patch.object(engine.calc, 'calculate_acute_chronic_workload_ratio', return_value=1.1):
-            mock_sessions = Mock()
-            mock_sessions.total_volume = 1000.0
-            mock_sessions.overall_rpe = 8.0
-            db.query.return_value.filter.return_value.all.return_value = [mock_sessions]
-            
-            result = engine._check_acwr(athlete_id=1)
-            assert result[0] is False
+        # Mock SQL aggregation results for ACWR calculation
+        # Acute: sum=110, count=10 -> mean=11
+        # Chronic: sum=100, count=10 -> mean=10
+        # ACWR = 11/10 = 1.1 (in safe zone)
+        mock_acute_result = Mock()
+        mock_acute_result.acute_sum = 110.0
+        mock_acute_result.acute_count = 10
+        
+        mock_chronic_result = Mock()
+        mock_chronic_result.chronic_sum = 100.0
+        mock_chronic_result.chronic_count = 10
+        
+        # Mock the query chain: query().filter().first()
+        # Need separate query chains for acute and chronic
+        mock_acute_query = Mock()
+        mock_acute_query.filter.return_value.first.return_value = mock_acute_result
+        
+        mock_chronic_query = Mock()
+        mock_chronic_query.filter.return_value.first.return_value = mock_chronic_result
+        
+        # Return different query mocks for each call
+        query_call_count = [0]
+        def mock_query_side_effect(*args, **kwargs):
+            query_call_count[0] += 1
+            if query_call_count[0] == 1:
+                return mock_acute_query
+            else:
+                return mock_chronic_query
+        
+        db.query.side_effect = mock_query_side_effect
+        
+        result = engine._check_acwr(athlete_id=1)
+        assert result[0] is False
 
 
 class TestSessionRPEDeloadTrigger:

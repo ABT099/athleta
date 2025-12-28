@@ -1,7 +1,7 @@
 """
 Recovery and readiness tracking models.
 """
-from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKey, Text, Index
 from sqlalchemy.orm import relationship, deferred
 from datetime import datetime
 
@@ -14,7 +14,10 @@ class RecoveryMetrics(Base):
     Daily recovery and readiness metrics.
     """
     __tablename__ = "recovery_metrics"
-    __table_args__ = get_schema_table_args("ai_analysis")
+    __table_args__ = (
+        Index('idx_recovery_metrics_athlete_date', 'athlete_id', 'date'),
+        get_schema_table_args("ai_analysis")
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id")), nullable=False)

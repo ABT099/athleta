@@ -10,7 +10,11 @@ from enum import Enum
 
 from app.utils.constants import (
     TrainingType, TrainingPhase, TrainingExperience,
-    PeriodizationModel, DUP_TRAINING_DAYS, BLOCK_PERIODIZATION_CONFIG
+    PeriodizationModel, DUP_TRAINING_DAYS, BLOCK_PERIODIZATION_CONFIG,
+    WAVE_WEEK_1_VOLUME_MULT, WAVE_WEEK_1_INTENSITY_MULT,
+    WAVE_WEEK_2_VOLUME_MULT, WAVE_WEEK_2_INTENSITY_MULT,
+    WAVE_WEEK_3_VOLUME_MULT, WAVE_WEEK_3_INTENSITY_MULT,
+    WAVE_WEEK_4_PLUS_VOLUME_MULT, WAVE_WEEK_4_PLUS_INTENSITY_MULT
 )
 
 
@@ -188,15 +192,15 @@ class PeriodizationService:
         """
         # Define wave pattern
         if week_number == 1:
-            return {"volume": 1.0, "intensity": 1.0}
+            return {"volume": WAVE_WEEK_1_VOLUME_MULT, "intensity": WAVE_WEEK_1_INTENSITY_MULT}
         elif week_number == 2:
-            return {"volume": 1.10, "intensity": 1.05}
+            return {"volume": WAVE_WEEK_2_VOLUME_MULT, "intensity": WAVE_WEEK_2_INTENSITY_MULT}
         elif week_number == 3:
-            return {"volume": 1.05, "intensity": 1.03}  # Step back
+            return {"volume": WAVE_WEEK_3_VOLUME_MULT, "intensity": WAVE_WEEK_3_INTENSITY_MULT}  # Step back
         elif week_number >= 4:
-            return {"volume": 1.15, "intensity": 1.08}
+            return {"volume": WAVE_WEEK_4_PLUS_VOLUME_MULT, "intensity": WAVE_WEEK_4_PLUS_INTENSITY_MULT}
         
-        return {"volume": 1.0, "intensity": 1.0}
+        return {"volume": WAVE_WEEK_1_VOLUME_MULT, "intensity": WAVE_WEEK_1_INTENSITY_MULT}
     
     @staticmethod
     def should_transition_phase(

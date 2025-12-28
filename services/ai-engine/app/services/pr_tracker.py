@@ -33,12 +33,13 @@ class PRTrackerService:
         self.db = db
         self.calc = TrainingCalculations()
     
-    def detect_and_update_prs(self, workout_session_id: int) -> Dict:
+    def detect_and_update_prs(self, workout_session_id: int, commit: bool = True) -> Dict:
         """
         Detect and update PRs from a completed workout session.
         
         Args:
             workout_session_id: Workout session ID
+            commit: Whether to commit the transaction (default: True). Set to False when called within a larger transaction.
             
         Returns:
             Dict with PR updates and achievements
@@ -71,6 +72,7 @@ class PRTrackerService:
         
         achievements = []
         updates = []
+        records_to_update = []
         
         # Process each exercise
         for exercise_id, sets_list in exercise_sets.items():
@@ -99,7 +101,16 @@ class PRTrackerService:
                 pr_record.total_pr_count += len([u for u in rep_max_updates + volume_updates if u.get("is_new_pr")])
                 pr_record.last_pr_date = session_date
                 pr_record.updated_at = datetime.now(timezone.utc)
+                records_to_update.append(pr_record)
+        
+        # Persist changes: flush when commit=False, commit when commit=True
+        # When called from complete_workout, commit=False to avoid nested commits
+        # but we still need to flush to persist changes in the parent transaction
+        if records_to_update:
+            if commit:
                 self.db.commit()
+            else:
+                self.db.flush()  # Flush changes to persist in parent transaction
         
         return {
             "achievements": achievements,
@@ -330,22 +341,28 @@ class PRTrackerService:
         Returns:
             Training percentage (0.0-1.0)
         """
-        if is_deload:
-            return 0.75  # 75% of PR for deload
-        
         # Base percentages by phase
+        from app.utils.constants import (
+            PR_ACCUMULATION_PERCENTAGE, PR_INTENSIFICATION_PERCENTAGE, PR_REALIZATION_PERCENTAGE,
+            PR_DELOAD_PERCENTAGE, PR_DEFAULT_PERCENTAGE,
+            PR_WEEK_ADJUSTMENT_CAP, PR_WEEK_ADJUSTMENT_RATE, PR_MAX_PERCENTAGE
+        )
+        
+        if is_deload:
+            return PR_DELOAD_PERCENTAGE
+        
         phase_percentages = {
-            "accumulation": 0.80,  # 80% of PR
-            "intensification": 0.85,  # 85% of PR
-            "realization": 0.90,  # 90% of PR (peak week)
+            "accumulation": PR_ACCUMULATION_PERCENTAGE,
+            "intensification": PR_INTENSIFICATION_PERCENTAGE,
+            "realization": PR_REALIZATION_PERCENTAGE,
         }
         
-        base_pct = phase_percentages.get(phase.lower(), 0.80)
+        base_pct = phase_percentages.get(phase.lower(), PR_DEFAULT_PERCENTAGE)
         
         # Adjust slightly based on week (later weeks = slightly higher %)
-        week_adjustment = min(0.05, (week_number - 1) * 0.005)
+        week_adjustment = min(PR_WEEK_ADJUSTMENT_CAP, (week_number - 1) * PR_WEEK_ADJUSTMENT_RATE)
         
-        return min(0.95, base_pct + week_adjustment)
+        return min(PR_MAX_PERCENTAGE, base_pct + week_adjustment)
     
     def detect_plateau(
         self, exercise_id: int, athlete_id: int, weeks: int = 4

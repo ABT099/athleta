@@ -16,7 +16,10 @@ from app.models import (
 from app.utils.constants import (
     TrainingExperience, MuscleSize,
     MEV_SETS_PER_WEEK, MRV_SETS_PER_WEEK, FocusArea,
-    EFFECTIVE_SET_RIR_THRESHOLD
+    EFFECTIVE_SET_RIR_THRESHOLD,
+    VOLUME_PERCENTAGE_BELOW_MEV_SCALE, VOLUME_PERCENTAGE_MEV_TO_MRV_BASE,
+    VOLUME_PERCENTAGE_MEV_TO_MRV_SCALE, VOLUME_PERCENTAGE_ABOVE_MRV_BASE,
+    VOLUME_PERCENTAGE_ABOVE_MRV_SCALE
 )
 from app.services.training_calculations import TrainingCalculations
 
@@ -198,14 +201,42 @@ class VolumeManager:
         total_volume_load = 0.0
         exercises_tracked = set()
         
-        # For each session, find exercises targeting this muscle group
-        for session in sessions:
-            # Get exercise sets for this session
-            sets = (
-                self.db.query(ExerciseSet)
-                .filter(ExerciseSet.workout_session_id == session.id)
-                .all()
+        # Load all sets for all sessions in one query to avoid N+1
+        session_ids = [s.id for s in sessions]
+        all_sets = (
+            self.db.query(ExerciseSet)
+            .filter(ExerciseSet.workout_session_id.in_(session_ids))
+            .all()
+        )
+        
+        # Group sets by session_id
+        sets_by_session = {}
+        for set_record in all_sets:
+            session_id = set_record.workout_session_id
+            if session_id not in sets_by_session:
+                sets_by_session[session_id] = []
+            sets_by_session[session_id].append(set_record)
+        
+        # Collect all exercise IDs
+        all_exercise_ids = set()
+        for sets_list in sets_by_session.values():
+            for set_record in sets_list:
+                all_exercise_ids.add(set_record.exercise_id)
+        
+        # Load all ExerciseMuscle links in one query to avoid N+1
+        muscle_links = (
+            self.db.query(ExerciseMuscle)
+            .filter(
+                ExerciseMuscle.exercise_id.in_(all_exercise_ids),
+                ExerciseMuscle.muscle_group_id == muscle.id
             )
+            .all()
+        )
+        muscle_link_map = {link.exercise_id: link for link in muscle_links}
+        
+        # Process sessions using pre-loaded data
+        for session in sessions:
+            sets = sets_by_session.get(session.id, [])
             
             # Group sets by exercise
             exercise_sets = {}
@@ -217,23 +248,15 @@ class VolumeManager:
             
             # Check each exercise for muscle group targeting
             for ex_id, sets_list in exercise_sets.items():
-                # Check if exercise targets this muscle via junction table
-                muscle_link = (
-                    self.db.query(ExerciseMuscle)
-                    .filter(
-                        ExerciseMuscle.exercise_id == ex_id,
-                        ExerciseMuscle.muscle_group_id == muscle.id
-                    )
-                    .first()
-                )
+                # Use pre-loaded muscle link map instead of querying
+                muscle_link = muscle_link_map.get(ex_id)
                 
                 if muscle_link:
                     exercises_tracked.add(ex_id)
                     
                     # Weight sets by role (convert role to activation weight)
-                    # prime_mover=85%, synergist=55%, stabilizer=20%
-                    role_weights = {"prime_mover": 0.85, "synergist": 0.55, "stabilizer": 0.20}
-                    activation_weight = role_weights.get(muscle_link.role, 0.20)
+                    from app.utils.constants import MUSCLE_ROLE_WEIGHTS
+                    activation_weight = MUSCLE_ROLE_WEIGHTS.get(muscle_link.role, MUSCLE_ROLE_WEIGHTS["stabilizer"])
                     
                     # Calculate effective sets (only RIR 0-4 count toward MEV/MRV)
                     effective_sets = self._calculate_effective_sets_from_sets(sets_list)
@@ -448,12 +471,12 @@ class VolumeManager:
         
         # Calculate percentage of range
         if current_sets < mev:
-            percentage = (current_sets / mev) * 50 if mev > 0 else 0  # 0-50% range
+            percentage = (current_sets / mev) * VOLUME_PERCENTAGE_BELOW_MEV_SCALE if mev > 0 else 0  # 0-50% range
         elif current_sets < mrv:
             # 50-100% range (between MEV and MRV)
-            percentage = 50 + ((current_sets - mev) / (mrv - mev)) * 50 if (mrv - mev) > 0 else 50
+            percentage = VOLUME_PERCENTAGE_MEV_TO_MRV_BASE + ((current_sets - mev) / (mrv - mev)) * VOLUME_PERCENTAGE_MEV_TO_MRV_SCALE if (mrv - mev) > 0 else VOLUME_PERCENTAGE_MEV_TO_MRV_BASE
         else:
-            percentage = 100 + ((current_sets - mrv) / mrv) * 50 if mrv > 0 else 100  # >100% if above MRV
+            percentage = VOLUME_PERCENTAGE_ABOVE_MRV_BASE + ((current_sets - mrv) / mrv) * VOLUME_PERCENTAGE_ABOVE_MRV_SCALE if mrv > 0 else VOLUME_PERCENTAGE_ABOVE_MRV_BASE  # >100% if above MRV
         
         return {
             "muscle_group": muscle_name,

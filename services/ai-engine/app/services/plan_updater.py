@@ -5,6 +5,7 @@ Updates PlanEntry records and generates next workout with adjusted parameters.
 """
 from typing import Dict, List
 from datetime import datetime, timedelta, timezone
+from app.utils.constants import DELOAD_INTENSITY_MULTIPLIER, DELOAD_VOLUME_MULTIPLIER
 from sqlalchemy.orm import Session, undefer
 
 from app.models import (
@@ -34,7 +35,8 @@ class PlanUpdaterService:
         plan_entry_id: int,
         workout_session: WorkoutSession,
         recovery_metrics: RecoveryMetrics,
-        ai_adjustments: Dict
+        ai_adjustments: Dict,
+        commit: bool = True
     ):
         """
         Update PlanEntry with completed workout data and AI adjustments.
@@ -44,6 +46,7 @@ class PlanUpdaterService:
             workout_session: Completed workout session
             recovery_metrics: Recovery metrics
             ai_adjustments: AI-generated adjustments
+            commit: Whether to commit the transaction (default: True). Set to False when called within a larger transaction.
         """
         plan_entry = self.db.query(PlanEntry).filter(
             PlanEntry.id == plan_entry_id
@@ -94,7 +97,10 @@ class PlanUpdaterService:
         if ai_adjustments.get("intensity_multiplier"):
             plan_entry.target_intensity_multiplier = ai_adjustments["intensity_multiplier"]
         
-        self.db.commit()
+        # Commit only if requested (default: True for standalone calls)
+        # When called from complete_workout, commit=False to avoid nested commits
+        if commit:
+            self.db.commit()
     
     def generate_next_workout(
         self,
@@ -190,9 +196,13 @@ class PlanUpdaterService:
             
             # Adjust rep ranges slightly based on volume
             reps_adjustment = 0
-            if ex_volume_mult > 1.05:
+            from app.utils.constants import (
+                VOLUME_MULTIPLIER_INCREASE_THRESHOLD,
+                VOLUME_MULTIPLIER_DECREASE_THRESHOLD
+            )
+            if ex_volume_mult > VOLUME_MULTIPLIER_INCREASE_THRESHOLD:
                 reps_adjustment = 1  # Add a rep
-            elif ex_volume_mult < 0.95:
+            elif ex_volume_mult < VOLUME_MULTIPLIER_DECREASE_THRESHOLD:
                 reps_adjustment = -1  # Remove a rep
             
             adjusted_reps_min = max(1, prescribed.target_reps_min + reps_adjustment)
@@ -359,18 +369,24 @@ class PlanUpdaterService:
         
         # === 2. Recovery Adaptation ===
         # Adjust within range based on recovery status
+        from app.utils.constants import (
+            POOR_RECOVERY_THRESHOLD, EXCELLENT_RECOVERY_THRESHOLD,
+            POOR_RECOVERY_SET_REDUCTION_LARGE, POOR_RECOVERY_SET_REDUCTION_SMALL,
+            EXCELLENT_RECOVERY_SET_INCREASE
+        )
+        
         # Poor recovery (0.0-0.4) → reduce by 1-2 sets
         # Good recovery (0.6-1.0) → can increase within range
         # Medium recovery (0.4-0.6) → stay at base
         
         recovery_adjustment = 0
-        if recovery_score < 0.4:
+        if recovery_score < POOR_RECOVERY_THRESHOLD:
             # Poor recovery: reduce sets
-            recovery_adjustment = -2 if sets_range >= 2 else -1
-        elif recovery_score > 0.7:
+            recovery_adjustment = POOR_RECOVERY_SET_REDUCTION_LARGE if sets_range >= 2 else POOR_RECOVERY_SET_REDUCTION_SMALL
+        elif recovery_score > EXCELLENT_RECOVERY_THRESHOLD:
             # Excellent recovery: can increase if room
             if base_sets < sets_max:
-                recovery_adjustment = 1
+                recovery_adjustment = EXCELLENT_RECOVERY_SET_INCREASE
         # Medium recovery: no adjustment
         
         # === 3. Apply Volume Multiplier ===
@@ -550,12 +566,14 @@ class PlanUpdaterService:
             start_date=start_date,
             end_date=start_date + timedelta(days=7),
             training_phase=TrainingPhase(training_phase),
-            target_volume_multiplier=0.5 if is_deload else 1.0,
-            target_intensity_multiplier=0.9 if is_deload else 1.0,
+            target_volume_multiplier=DELOAD_VOLUME_MULTIPLIER if is_deload else 1.0,
+            target_intensity_multiplier=DELOAD_INTENSITY_MULTIPLIER if is_deload else 1.0,
             is_deload_week=1 if is_deload else 0
         )
         
         self.db.add(plan_entry)
+        # Commit here because this creates a new plan entry independently
+        # This method may be called outside of larger transactions
         self.db.commit()
         self.db.refresh(plan_entry)
         

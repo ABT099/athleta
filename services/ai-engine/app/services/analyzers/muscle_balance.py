@@ -218,11 +218,11 @@ class MuscleGroupBalanceAnalyzer:
                 )
                 
                 # Weight sets by role (convert role to activation weight)
-                # prime_mover=85%, synergist=55%, stabilizer=20%
-                role_weights = {"prime_mover": 0.85, "synergist": 0.55, "stabilizer": 0.20}
+                # Use constant from constants.py
+                from app.utils.constants import MUSCLE_ROLE_WEIGHTS
                 for link, muscle in muscle_links:
                     muscle_name = muscle.name
-                    activation_weight = role_weights.get(link.role, 0.20)
+                    activation_weight = MUSCLE_ROLE_WEIGHTS.get(link.role, MUSCLE_ROLE_WEIGHTS["stabilizer"])
                     
                     # Weight by activation percentage
                     # Primary muscles (prime_mover) get full weight, secondary get proportional

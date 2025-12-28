@@ -27,8 +27,16 @@ from app.services.volume_manager import VolumeManager
 from app.services.form_quality_service import FormQualityService
 from app.services.intensity_technique_service import IntensityTechniqueService
 from app.utils.constants import (
-    TrainingType, TrainingPhase, TrainingExperience, ExerciseType,
-    PROGRESSION_RATES, REP_RANGES, INTENSITY_ZONES, DELOAD_THRESHOLDS
+    CONSERVATIVE_ADJUSTMENT_SCALING, DEFAULT_READINESS_SCORE, EXCELLENT_READINESS_THRESHOLD, FORM_GATE_INTENSITY_CAP, FORM_GATE_VOLUME_CAP, HYBRID_SMALL_ADJUSTMENT_MULT, INJURY_RISK_HIGH_INTENSITY_MULTIPLIER, INJURY_RISK_HIGH_VOLUME_MULTIPLIER, INJURY_RISK_MODERATE_INTENSITY_MULTIPLIER, INJURY_RISK_MODERATE_VOLUME_MULTIPLIER, INTENSITY_MEDIUM_INCREASE_MULT, INTENSITY_PHASE_SMALL_INCREASE, INTENSITY_SMALL_DECREASE_MULT, INTENSITY_SMALL_INCREASE_MULT, MODERATE_READINESS_INTENSITY_MULTIPLIER, MODERATE_READINESS_VOLUME_MULTIPLIER, POOR_READINESS_INTENSITY_MULTIPLIER, POOR_READINESS_VOLUME_MULTIPLIER, PROGRESSION_RATE_SCALING_FACTOR, STRUGGLE_RATIO_FAILED_THRESHOLD, STRUGGLE_RATIO_STRUGGLING_THRESHOLD, VOLUME_MEDIUM_DECREASE_MULT, VOLUME_MEDIUM_INCREASE_MULT, VOLUME_MULTIPLIER_INCREASE_THRESHOLD, VOLUME_MULTIPLIER_SMALL_CHANGE, VOLUME_PHASE_SMALL_DECREASE, VOLUME_SMALL_DECREASE_MULT, VOLUME_SMALL_INCREASE_MULT, TrainingType, TrainingPhase, TrainingExperience, ExerciseType,
+    PROGRESSION_RATES, DELOAD_THRESHOLDS,
+    VOLUME_ESTIMATION_MULTIPLIER, DELOAD_VOLUME_MULTIPLIER, DELOAD_INTENSITY_MULTIPLIER,
+    LOW_READINESS_THRESHOLD, CRITICAL_READINESS_THRESHOLD, READINESS_DELOAD_THRESHOLD,
+    ACWR_HIGH_RISK_THRESHOLD, ACWR_UNDERTRAINING_THRESHOLD,
+    ML_HIGH_CONFIDENCE_THRESHOLD, ML_MEDIUM_CONFIDENCE_THRESHOLD, ML_LOW_CONFIDENCE_THRESHOLD,
+    ML_LOW_UNCERTAINTY_THRESHOLD, ML_MEDIUM_UNCERTAINTY_THRESHOLD, ML_HIGH_UNCERTAINTY_THRESHOLD,
+    ML_HIGH_CONFIDENCE_WEIGHT, ML_MEDIUM_CONFIDENCE_WEIGHT, ML_LOW_CONFIDENCE_WEIGHT,
+    MAX_VOLUME_MULTIPLIER, MAX_INTENSITY_MULTIPLIER, MIN_VOLUME_MULTIPLIER, MIN_INTENSITY_MULTIPLIER,
+    VOLUME_SMALL_DECREASE_MULT, INTENSITY_MEDIUM_DECREASE_MULT
 )
 
 # Import ML services with graceful degradation
@@ -101,7 +109,7 @@ class ProgressiveOverloadEngine:
         )
         
         # Step 4: Run injury prevention checks
-        proposed_volume = performance_analysis.get("total_volume", 0) * 1.05  # Estimate next volume
+        proposed_volume = performance_analysis.get("total_volume", 0) * VOLUME_ESTIMATION_MULTIPLIER
         proposed_exercises = [s["exercise_id"] for s in session_data.get("exercise_sets", [])]
         
         injury_risk = self.injury_prevention.check_all_injury_risks(
@@ -234,8 +242,8 @@ class ProgressiveOverloadEngine:
                 "week_number": week_number,
                 "duration_weeks": plan.duration_weeks,
                 "is_deload_week": is_deload,
-                "target_volume_multiplier": 0.5 if is_deload else 1.0,
-                "target_intensity_multiplier": 0.9 if is_deload else 1.0,
+                "target_volume_multiplier": DELOAD_VOLUME_MULTIPLIER if is_deload else 1.0,
+                "target_intensity_multiplier": DELOAD_INTENSITY_MULTIPLIER if is_deload else 1.0,
             }
         
         return {
@@ -508,7 +516,7 @@ class ProgressiveOverloadEngine:
             return True, srpe_result[1]
         
         # Check 6: Current readiness extremely low
-        if current_readiness < 0.4:
+        if current_readiness < CRITICAL_READINESS_THRESHOLD:
             return True, f"Current readiness critically low: {current_readiness:.2f}"
         
         # No deload needed
@@ -531,55 +539,69 @@ class ProgressiveOverloadEngine:
         """
         from datetime import datetime, timedelta, timezone
         from app.models import WorkoutSession
+        from sqlalchemy import func, case
         
         # Get recent sessions (last 7 days = acute)
         acute_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         # Get chronic sessions (last 28 days)
         chronic_cutoff = datetime.now(timezone.utc) - timedelta(days=28)
         
-        # Calculate acute load (last 7 days)
-        acute_sessions = (
-            self.db.query(WorkoutSession)
+        # Optimized: Use SQL aggregation to calculate mean loads per session
+        # ACWR = mean(acute_loads) / mean(chronic_loads)
+        # Only include sessions with both total_volume and overall_rpe to avoid underestimating loads
+        # Filter incomplete sessions at the query level, not just in the case statement
+        acute_result = (
+            self.db.query(
+                func.sum(
+                    (WorkoutSession.total_volume / 1000.0) * WorkoutSession.overall_rpe
+                ).label('acute_sum'),
+                func.count(WorkoutSession.id).label('acute_count')
+            )
             .filter(
                 WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= acute_cutoff
+                WorkoutSession.session_date >= acute_cutoff,
+                WorkoutSession.total_volume.isnot(None),
+                WorkoutSession.overall_rpe.isnot(None)
             )
-            .all()
+            .first()
         )
         
-        acute_loads = []
-        for session in acute_sessions:
-            if session.total_volume and session.overall_rpe:
-                # Normalized load: volume/1000 * RPE
-                load = (session.total_volume / 1000) * session.overall_rpe
-                acute_loads.append(load)
-        
-        # Calculate chronic load (last 28 days)
-        chronic_sessions = (
-            self.db.query(WorkoutSession)
+        chronic_result = (
+            self.db.query(
+                func.sum(
+                    (WorkoutSession.total_volume / 1000.0) * WorkoutSession.overall_rpe
+                ).label('chronic_sum'),
+                func.count(WorkoutSession.id).label('chronic_count')
+            )
             .filter(
                 WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= chronic_cutoff
+                WorkoutSession.session_date >= chronic_cutoff,
+                WorkoutSession.total_volume.isnot(None),
+                WorkoutSession.overall_rpe.isnot(None)
             )
-            .all()
+            .first()
         )
         
-        chronic_loads = []
-        for session in chronic_sessions:
-            if session.total_volume and session.overall_rpe:
-                load = (session.total_volume / 1000) * session.overall_rpe
-                chronic_loads.append(load)
-        
-        if len(acute_loads) == 0 or len(chronic_loads) == 0:
+        if (acute_result is None or chronic_result is None or 
+            acute_result.acute_sum is None or chronic_result.chronic_sum is None or 
+            chronic_result.chronic_sum == 0 or acute_result.acute_count == 0 or chronic_result.chronic_count == 0):
             return False, None
         
-        # Calculate ACWR
-        acwr = self.calc.calculate_acute_chronic_workload_ratio(acute_loads, chronic_loads)
+        # Calculate ACWR: mean(acute_loads) / mean(chronic_loads)
+        # = (sum(acute) / count(acute)) / (sum(chronic) / count(chronic))
+        # = sum(acute) * count(chronic) / (sum(chronic) * count(acute))
+        acute_mean = acute_result.acute_sum / acute_result.acute_count if acute_result.acute_count > 0 else 0.0
+        chronic_mean = chronic_result.chronic_sum / chronic_result.chronic_count if chronic_result.chronic_count > 0 else 0.0
+        
+        if chronic_mean == 0:
+            return False, None
+        
+        acwr = acute_mean / chronic_mean
         
         # Check if outside safe zone
-        if acwr > 1.5:
-            return True, f"ACWR {acwr:.2f} exceeds safe zone (>1.5) - high injury risk, deload recommended"
-        elif acwr < 0.8:
+        if acwr > ACWR_HIGH_RISK_THRESHOLD:
+            return True, f"ACWR {acwr:.2f} exceeds safe zone (>{ACWR_HIGH_RISK_THRESHOLD}) - high injury risk, deload recommended"
+        elif acwr < ACWR_UNDERTRAINING_THRESHOLD:
             # Undertraining, not a deload trigger but worth noting
             return False, None
         
@@ -673,18 +695,21 @@ class ProgressiveOverloadEngine:
             return None, None, None
         
         # Calculate detraining adjustments based on break duration
-        # 7-13 days: 15% reduction
-        # 14-20 days: 25% reduction
-        # 21+ days: 40% reduction
+        # Use constants from constants.py
+        from app.utils.constants import (
+            EXTENDED_BREAK_7_13_DAYS_VOLUME, EXTENDED_BREAK_7_13_DAYS_INTENSITY,
+            EXTENDED_BREAK_14_20_DAYS_VOLUME, EXTENDED_BREAK_14_20_DAYS_INTENSITY,
+            EXTENDED_BREAK_21_PLUS_DAYS_VOLUME, EXTENDED_BREAK_21_PLUS_DAYS_INTENSITY
+        )
         if days_since <= 13:
-            volume_mult = 0.85
-            intensity_mult = 0.85
+            volume_mult = EXTENDED_BREAK_7_13_DAYS_VOLUME
+            intensity_mult = EXTENDED_BREAK_7_13_DAYS_INTENSITY
         elif days_since <= 20:
-            volume_mult = 0.75
-            intensity_mult = 0.75
+            volume_mult = EXTENDED_BREAK_14_20_DAYS_VOLUME
+            intensity_mult = EXTENDED_BREAK_14_20_DAYS_INTENSITY
         else:
-            volume_mult = 0.60
-            intensity_mult = 0.60
+            volume_mult = EXTENDED_BREAK_21_PLUS_DAYS_VOLUME
+            intensity_mult = EXTENDED_BREAK_21_PLUS_DAYS_INTENSITY
         
         return days_since, volume_mult, intensity_mult
     
@@ -741,9 +766,9 @@ class ProgressiveOverloadEngine:
         uncertainty = ml_predictions.get("uncertainty", 0.0) if ml_predictions else 1.0
         
         # Decide on prediction strategy using confidence and uncertainty
-        if ml_predictions and ml_confidence >= 0.7 and uncertainty < 0.1:
+        if ml_predictions and ml_confidence >= ML_HIGH_CONFIDENCE_THRESHOLD and uncertainty < ML_LOW_UNCERTAINTY_THRESHOLD:
             # High confidence, low uncertainty - use 80% ML, 20% rules
-            ml_weight = 0.8
+            ml_weight = ML_HIGH_CONFIDENCE_WEIGHT
             final_volume = (ml_predictions["volume_multiplier"] * ml_weight) + (rule_adjustments["volume_multiplier"] * (1 - ml_weight))
             final_intensity = (ml_predictions["intensity_multiplier"] * ml_weight) + (rule_adjustments["intensity_multiplier"] * (1 - ml_weight))
             
@@ -757,9 +782,9 @@ class ProgressiveOverloadEngine:
                 "ml_feature_importance": ml_predictions.get("feature_importance", {})
             }, "hybrid_ml_dominant"
         
-        elif ml_predictions and ml_confidence >= 0.5 and uncertainty < 0.15:
+        elif ml_predictions and ml_confidence >= ML_MEDIUM_CONFIDENCE_THRESHOLD and uncertainty < ML_MEDIUM_UNCERTAINTY_THRESHOLD:
             # Medium confidence, moderate uncertainty - use 50% ML, 50% rules
-            ml_weight = 0.5
+            ml_weight = ML_MEDIUM_CONFIDENCE_WEIGHT
             final_volume = (ml_predictions["volume_multiplier"] * ml_weight) + (rule_adjustments["volume_multiplier"] * (1 - ml_weight))
             final_intensity = (ml_predictions["intensity_multiplier"] * ml_weight) + (rule_adjustments["intensity_multiplier"] * (1 - ml_weight))
             
@@ -772,9 +797,9 @@ class ProgressiveOverloadEngine:
                 "ml_uncertainty": uncertainty
             }, "hybrid_balanced"
         
-        elif ml_predictions and ml_confidence >= 0.3 and uncertainty < 0.2:
+        elif ml_predictions and ml_confidence >= ML_LOW_CONFIDENCE_THRESHOLD and uncertainty < ML_HIGH_UNCERTAINTY_THRESHOLD:
             # Low confidence or high uncertainty - use 30% ML, 70% rules
-            ml_weight = 0.3
+            ml_weight = ML_LOW_CONFIDENCE_WEIGHT
             final_volume = (ml_predictions["volume_multiplier"] * ml_weight) + (rule_adjustments["volume_multiplier"] * (1 - ml_weight))
             final_intensity = (ml_predictions["intensity_multiplier"] * ml_weight) + (rule_adjustments["intensity_multiplier"] * (1 - ml_weight))
             
@@ -827,8 +852,8 @@ class ProgressiveOverloadEngine:
         # === Priority 1: Deload week overrides everything ===
         if is_deload:
             return {
-                "volume_multiplier": 0.5,
-                "intensity_multiplier": 0.9,
+                "volume_multiplier": DELOAD_VOLUME_MULTIPLIER,
+                "intensity_multiplier": DELOAD_INTENSITY_MULTIPLIER,
                 "reasoning": "Planned deload week - reducing volume and intensity for recovery",
                 "exercise_adjustments": {}
             }
@@ -836,15 +861,15 @@ class ProgressiveOverloadEngine:
         # === Priority 2: Injury risk ===
         if injury_risk["risk_level"] == "high":
             return {
-                "volume_multiplier": 0.5,
-                "intensity_multiplier": 0.85,
+                "volume_multiplier": INJURY_RISK_HIGH_VOLUME_MULTIPLIER,
+                "intensity_multiplier": INJURY_RISK_HIGH_INTENSITY_MULTIPLIER,
                 "reasoning": "High injury risk detected - implementing immediate deload",
                 "exercise_adjustments": {},
                 "warnings": injury_risk["warnings"]
             }
         elif injury_risk["risk_level"] == "moderate":
-            volume_adjustment *= 0.8
-            intensity_adjustment *= 0.95
+            volume_adjustment *= INJURY_RISK_MODERATE_VOLUME_MULTIPLIER
+            intensity_adjustment *= INJURY_RISK_MODERATE_INTENSITY_MULTIPLIER
         
         # === Priority 2.5: Extended break detection ===
         # Check for extended break and apply detraining adjustments
@@ -862,13 +887,13 @@ class ProgressiveOverloadEngine:
         
         # === Priority 3: Recovery status ===
         readiness = recovery["readiness_score"]
-        if readiness < 0.5:
-            volume_adjustment *= 0.7
-            intensity_adjustment *= 0.9
-        elif readiness < 0.7:
-            volume_adjustment *= 0.85
-            intensity_adjustment *= 0.95
-        elif readiness > 0.9:
+        if readiness < READINESS_DELOAD_THRESHOLD:
+            volume_adjustment *= POOR_READINESS_VOLUME_MULTIPLIER
+            intensity_adjustment *= POOR_READINESS_INTENSITY_MULTIPLIER
+        elif readiness < LOW_READINESS_THRESHOLD:
+            volume_adjustment *= MODERATE_READINESS_VOLUME_MULTIPLIER
+            intensity_adjustment *= MODERATE_READINESS_INTENSITY_MULTIPLIER
+        elif readiness > EXCELLENT_READINESS_THRESHOLD:
             # Great recovery allows normal progression
             pass
         
@@ -902,13 +927,13 @@ class ProgressiveOverloadEngine:
                     }
                     form_blocked_exercises.append(ex_id)
                     # Reduce adjustments for exercises with poor form
-                    volume_adjustment *= 0.95
-                    intensity_adjustment *= 0.95
+                    volume_adjustment *= VOLUME_SMALL_DECREASE_MULT
+                    intensity_adjustment *= INTENSITY_MEDIUM_DECREASE_MULT
         
         # If multiple exercises have form issues, apply broader reduction
         if len(form_blocked_exercises) > 2:
-            volume_adjustment *= 0.9
-            intensity_adjustment *= 0.95
+            volume_adjustment *= VOLUME_MEDIUM_DECREASE_MULT
+            intensity_adjustment *= INTENSITY_MEDIUM_DECREASE_MULT
         
         # === Priority 5: Performance-based adjustments ===
         performance_level = performance.get("performance_level", "on_target")
@@ -923,45 +948,47 @@ class ProgressiveOverloadEngine:
                 intensity_adjustment *= (1 + progression_data["load_increase"])
             elif training_type == TrainingType.HYPERTROPHY:
                 if current_phase == TrainingPhase.ACCUMULATION:
-                    volume_adjustment *= 1.05  # Add volume
+                    volume_adjustment *= VOLUME_MEDIUM_INCREASE_MULT  # Add volume
                 else:
-                    intensity_adjustment *= 1.025  # Add intensity
+                    intensity_adjustment *= INTENSITY_SMALL_INCREASE_MULT  # Add intensity
             elif training_type == TrainingType.HYBRID:
-                intensity_adjustment *= 1.025
-                volume_adjustment *= 1.025
+                intensity_adjustment *= INTENSITY_SMALL_INCREASE_MULT
+                volume_adjustment *= VOLUME_SMALL_INCREASE_MULT
         
         elif performance_level == "on_target":
             # Perfect - small progressive increase
             if training_type == TrainingType.STRENGTH:
-                intensity_adjustment *= (1 + progression_data["load_increase"] * 0.5)
+                intensity_adjustment *= (1 + progression_data["load_increase"] * PROGRESSION_RATE_SCALING_FACTOR)
             elif training_type == TrainingType.HYPERTROPHY:
-                volume_adjustment *= 1.025
+                volume_adjustment *= VOLUME_SMALL_INCREASE_MULT
             elif training_type == TrainingType.HYBRID:
-                intensity_adjustment *= 1.015
-                volume_adjustment *= 1.015
+                intensity_adjustment *= HYBRID_SMALL_ADJUSTMENT_MULT
+                volume_adjustment *= HYBRID_SMALL_ADJUSTMENT_MULT
         
         elif performance_level == "struggling":
             # Performance was too hard - maintain or reduce
-            volume_adjustment *= 0.95
-            intensity_adjustment *= 0.98
+            from app.utils.constants import PERFORMANCE_POOR_VOLUME_MULT, PERFORMANCE_POOR_INTENSITY_MULT
+            volume_adjustment *= PERFORMANCE_POOR_VOLUME_MULT
+            intensity_adjustment *= PERFORMANCE_POOR_INTENSITY_MULT
         
         elif performance_level == "failed":
             # Significant struggle - reduce load
-            volume_adjustment *= 0.85
-            intensity_adjustment *= 0.90
+            from app.utils.constants import PERFORMANCE_STRUGGLING_VOLUME_MULT, PERFORMANCE_STRUGGLING_INTENSITY_MULT
+            volume_adjustment *= PERFORMANCE_STRUGGLING_VOLUME_MULT
+            intensity_adjustment *= PERFORMANCE_STRUGGLING_INTENSITY_MULT
         
         # === Priority 6: Phase-specific adjustments ===
         if current_phase == TrainingPhase.ACCUMULATION:
             # Volume phase - prioritize volume over intensity
-            volume_adjustment *= 1.02
+            volume_adjustment *= VOLUME_SMALL_INCREASE_MULT
         elif current_phase == TrainingPhase.INTENSIFICATION:
             # Intensity phase - prioritize intensity, reduce volume
-            intensity_adjustment *= 1.02
-            volume_adjustment *= 0.95
+            intensity_adjustment *= INTENSITY_SMALL_INCREASE_MULT
+            volume_adjustment *= VOLUME_PHASE_SMALL_DECREASE
         elif current_phase == TrainingPhase.REALIZATION:
             # Peaking phase - high intensity, low volume
-            intensity_adjustment *= 1.01
-            volume_adjustment *= 0.90
+            intensity_adjustment *= INTENSITY_PHASE_SMALL_INCREASE
+            volume_adjustment *= VOLUME_MEDIUM_DECREASE_MULT
         
         # === Priority 7: Volume Landmarks (MEV/MAV/MRV) ===
         # Check volume position for primary muscle groups in the workout
@@ -997,10 +1024,10 @@ class ProgressiveOverloadEngine:
                 volume_adjustment = (volume_adjustment * 0.7) + (avg_volume_adj * 0.3)
         
         # Cap adjustments for safety
-        volume_adjustment = min(volume_adjustment, 1.15)
-        intensity_adjustment = min(intensity_adjustment, 1.05)
-        volume_adjustment = max(volume_adjustment, 0.80)
-        intensity_adjustment = max(intensity_adjustment, 0.85)
+        volume_adjustment = min(volume_adjustment, MAX_VOLUME_MULTIPLIER)
+        intensity_adjustment = min(intensity_adjustment, MAX_INTENSITY_MULTIPLIER)
+        volume_adjustment = max(volume_adjustment, MIN_VOLUME_MULTIPLIER)
+        intensity_adjustment = max(intensity_adjustment, MIN_INTENSITY_MULTIPLIER)
         
         # Calculate exercise-specific adjustments
         exercise_adjustments = self._calculate_exercise_specific_adjustments(
@@ -1073,6 +1100,39 @@ class ProgressiveOverloadEngine:
         readiness_score = recovery.get("readiness_score", 0.7) if recovery else 0.7
         week_number = plan_context.get("week_number") if plan_context else None
         
+        exercise_ids = [ex_analysis.get("exercise_id") for ex_analysis in exercise_analyses if ex_analysis.get("exercise_id")]
+        exercise_map = {}
+        primary_muscle_map = {}
+        if exercise_ids:
+            # Load all exercises upfront
+            exercises_list = (
+                self.db.query(Exercise)
+                .filter(Exercise.id.in_(exercise_ids))
+                .all()
+            )
+            exercise_map = {ex.id: ex for ex in exercises_list}
+            
+            # Load all ExerciseMuscle links upfront
+            from sqlalchemy import case
+            role_priority = case(
+                (ExerciseMuscle.role == "prime_mover", 1),
+                (ExerciseMuscle.role == "synergist", 2),
+                (ExerciseMuscle.role == "stabilizer", 3),
+                else_=4
+            )
+            all_muscle_links = (
+                self.db.query(ExerciseMuscle, MuscleGroupModel)
+                .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
+                .filter(ExerciseMuscle.exercise_id.in_(exercise_ids))
+                .order_by(ExerciseMuscle.exercise_id, role_priority)
+                .all()
+            )
+            
+            # Group by exercise_id, keeping only first (primary) muscle
+            for link, muscle in all_muscle_links:
+                if link.exercise_id not in primary_muscle_map:
+                    primary_muscle_map[link.exercise_id] = muscle.name
+        
         for analysis in exercise_analyses:
             ex_id = analysis["exercise_id"]
             rpe_diff = analysis.get("rpe_difference")
@@ -1085,21 +1145,21 @@ class ProgressiveOverloadEngine:
             if rpe_diff is not None:
                 if rpe_diff < -1.5:
                     # Too easy (actual RPE much lower than target)
-                    intensity_adj *= 1.05
+                    intensity_adj *= INTENSITY_MEDIUM_INCREASE_MULT
                 elif rpe_diff < -0.5:
                     # Slightly too easy
-                    intensity_adj *= 1.025
+                    intensity_adj *= INTENSITY_SMALL_INCREASE_MULT
                 elif rpe_diff > 1.5:
                     # Too hard
-                    intensity_adj *= 0.95
-                    volume_adj *= 0.95
+                    intensity_adj *= INTENSITY_MEDIUM_DECREASE_MULT
+                    volume_adj *= VOLUME_SMALL_DECREASE_MULT
                 elif rpe_diff > 0.5:
                     # Slightly too hard
-                    intensity_adj *= 0.98
+                    intensity_adj *= INTENSITY_SMALL_DECREASE_MULT
             
             # Primary exercises get more conservative adjustments
             if analysis.get("is_primary"):
-                intensity_adj = 1.0 + (intensity_adj - 1.0) * 0.8
+                intensity_adj = 1.0 + (intensity_adj - 1.0) * CONSERVATIVE_ADJUSTMENT_SCALING
             
             # Apply form quality gates - block or reduce progression if form is poor
             form_gate_reason = None
@@ -1107,34 +1167,16 @@ class ProgressiveOverloadEngine:
                 gate = form_quality_gates[ex_id]
                 if gate.get("blocked"):
                     # Hold or reduce loads, don't progress
-                    intensity_adj = min(intensity_adj, 0.95)  # Cap at 95% (slight reduction)
-                    volume_adj = min(volume_adj, 0.95)
+                    intensity_adj = min(intensity_adj, FORM_GATE_INTENSITY_CAP)  # Cap at 95% (slight reduction)
+                    volume_adj = min(volume_adj, FORM_GATE_VOLUME_CAP)
                     form_gate_reason = gate.get("reason")
             
-            # Get exercise details for intensity technique recommendation
-            exercise = self.db.query(Exercise).filter(Exercise.id == ex_id).first()
+            # Get exercise details for intensity technique recommendation from pre-loaded map
+            exercise = exercise_map.get(ex_id)
             exercise_type = ExerciseType.COMPOUND if exercise and exercise.exercise_type == "compound" else ExerciseType.ISOLATION
             
-            # Get primary muscle group name for volume ceiling check
-            muscle_name = None
-            if exercise:
-                # Get primary muscle (prime_mover first, then synergist, then stabilizer)
-                role_priority = case(
-                    (ExerciseMuscle.role == "prime_mover", 1),
-                    (ExerciseMuscle.role == "synergist", 2),
-                    (ExerciseMuscle.role == "stabilizer", 3),
-                    else_=4
-                )
-                primary_result = (
-                    self.db.query(ExerciseMuscle, MuscleGroupModel)
-                    .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
-                    .filter(ExerciseMuscle.exercise_id == exercise.id)
-                    .order_by(role_priority)
-                    .first()
-                )
-                if primary_result:
-                    link, muscle = primary_result
-                    muscle_name = muscle.name
+            # Get primary muscle group name for volume ceiling check from pre-loaded map
+            muscle_name = primary_muscle_map.get(ex_id)
             
             # Recommend intensity techniques (only if triggers detected)
             technique_recommendation = self.intensity_technique.recommend_techniques(
@@ -1220,9 +1262,9 @@ class ProgressiveOverloadEngine:
             return "on_target"
         
         # Determine overall level
-        if struggled_count / total > 0.5:
+        if struggled_count / total > STRUGGLE_RATIO_FAILED_THRESHOLD:
             return "failed"
-        elif struggled_count / total > 0.3:
+        elif struggled_count / total > STRUGGLE_RATIO_STRUGGLING_THRESHOLD:
             return "struggling"
         elif exceeded_count / total > 0.6:
             return "exceeding"
@@ -1357,9 +1399,9 @@ class ProgressiveOverloadEngine:
         volume_mult = adjustments.get("volume_multiplier", 1.0)
         intensity_mult = adjustments.get("intensity_multiplier", 1.0)
         
-        if volume_mult > 1.05 or intensity_mult > 1.03:
+        if volume_mult > VOLUME_MULTIPLIER_INCREASE_THRESHOLD or intensity_mult > INTENSITY_MEDIUM_INCREASE_MULT:
             insights.append("📈 Progressive overload applied. Continue pushing forward!")
-        elif volume_mult < 0.9 or intensity_mult < 0.95:
+        elif volume_mult < VOLUME_MEDIUM_DECREASE_MULT or intensity_mult < INTENSITY_MEDIUM_DECREASE_MULT:
             insights.append("🔄 Backing off this week for recovery and adaptation.")
         
         return insights
@@ -1415,7 +1457,7 @@ class ProgressiveOverloadEngine:
         performance_score = self._calculate_performance_score(
             total_volume=performance_analysis.get("total_volume", 0),
             average_intensity=average_intensity,
-            readiness_score=recovery_status.get("readiness_score", 0.5),
+            readiness_score=recovery_status.get("readiness_score", DEFAULT_READINESS_SCORE),
             fatigue_index=recovery_status.get("fatigue_status", {}).get("fatigue_score", 0.0)
         )
         
@@ -1445,7 +1487,7 @@ class ProgressiveOverloadEngine:
         average_rpe = performance_analysis.get("average_rpe") or workout_session.overall_rpe or 7.0
         
         # Get readiness score
-        readiness_score = recovery_status.get("readiness_score", 0.5)
+        readiness_score = recovery_status.get("readiness_score", DEFAULT_READINESS_SCORE)
         
         # Get fatigue index
         fatigue_index = recovery_status.get("fatigue_status", {}).get("fatigue_score", 0.0)

@@ -7,6 +7,7 @@ from typing import List
 
 from app.database import get_db
 from app.models import Athlete, WorkoutPlan, WorkoutSession
+from app.utils.helpers import get_athlete_or_404
 from app.auth import get_current_user
 
 
@@ -21,13 +22,7 @@ def get_current_plan(
     """
     Get athlete's current active training plan.
     """
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    
-    if not athlete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
-        )
+    athlete = get_athlete_or_404(db, athlete_id)
     
     # Get active plan with deferred fields undeferred for response
     plan = db.query(WorkoutPlan).options(
@@ -70,13 +65,7 @@ def get_athlete_progress(
     from datetime import datetime, timedelta, timezone
     from sqlalchemy import func
     
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    
-    if not athlete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
-        )
+    athlete = get_athlete_or_404(db, athlete_id)
     
     # Get sessions from the period
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)

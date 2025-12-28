@@ -6,7 +6,14 @@ Orchestrates all plan analysis modules for real-time feedback.
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
-from app.utils.constants import TrainingType, TrainingExperience, MAX_FOCUS_AREAS
+from app.utils.constants import (
+    TrainingType, TrainingExperience, MAX_FOCUS_AREAS,
+    SCORE_DEDUCTION_CRITICAL, SCORE_DEDUCTION_HIGH, SCORE_DEDUCTION_MEDIUM, SCORE_DEDUCTION_LOW,
+    SCORE_DEDUCTION_HIGH_IMPACT, SCORE_DEDUCTION_MEDIUM_IMPACT, SCORE_DEDUCTION_LOW_IMPACT,
+    SCORE_BONUS_EXCELLENT_ORDER, SCORE_BONUS_GOOD_ORDER,
+    SCORE_BONUS_OPTIMAL_PUSH_PULL, SCORE_BONUS_OPTIMAL_UPPER_LOWER,
+    ORDER_SCORE_EXCELLENT_THRESHOLD, ORDER_SCORE_GOOD_THRESHOLD
+)
 from app.services.analyzers.volume_distribution import VolumeDistributionAnalyzer
 from app.services.analyzers.muscle_balance import MuscleGroupBalanceAnalyzer
 from app.services.analyzers.exercise_order import ExerciseOrderAnalyzer
@@ -378,36 +385,36 @@ class PlanAnalyzerService:
         for warning in warnings:
             severity = warning.get("severity", "medium")
             if severity == "critical":
-                base_score -= 20
+                base_score -= SCORE_DEDUCTION_CRITICAL
             elif severity == "high":
-                base_score -= 15
+                base_score -= SCORE_DEDUCTION_HIGH
             elif severity == "medium":
-                base_score -= 10
+                base_score -= SCORE_DEDUCTION_MEDIUM
             else:
-                base_score -= 5
+                base_score -= SCORE_DEDUCTION_LOW
         
         # Deduct for suggestions (impact-based)
         for suggestion in suggestions:
             impact = suggestion.get("impact", "low")
             if impact == "high":
-                base_score -= 5
+                base_score -= SCORE_DEDUCTION_HIGH_IMPACT
             elif impact == "medium":
-                base_score -= 3
+                base_score -= SCORE_DEDUCTION_MEDIUM_IMPACT
             else:
-                base_score -= 1
+                base_score -= SCORE_DEDUCTION_LOW_IMPACT
         
         # Bonus for good order
         order_score = order_analysis.get("average_score", 100)
-        if order_score >= 90:
-            base_score += 5
-        elif order_score >= 80:
-            base_score += 2
+        if order_score >= ORDER_SCORE_EXCELLENT_THRESHOLD:
+            base_score += SCORE_BONUS_EXCELLENT_ORDER
+        elif order_score >= ORDER_SCORE_GOOD_THRESHOLD:
+            base_score += SCORE_BONUS_GOOD_ORDER
         
         # Bonus for good balance
         if balance_analysis.get("push_pull", {}).get("status") == "optimal":
-            base_score += 3
+            base_score += SCORE_BONUS_OPTIMAL_PUSH_PULL
         if balance_analysis.get("upper_lower", {}).get("status") == "optimal":
-            base_score += 2
+            base_score += SCORE_BONUS_OPTIMAL_UPPER_LOWER
         
         # Check volume status
         muscle_volume = volume_analysis.get("muscle_volume", {})

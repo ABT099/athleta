@@ -119,14 +119,12 @@ class ExerciseSubstitutor:
             Similarity score (0.0 - 1.0)
         """
         # Get muscle activations for both exercises
-        # Convert role to activation weight: prime_mover=85%, synergist=55%, stabilizer=20%
+        # Use constant from constants.py for role weights
+        from app.utils.constants import MUSCLE_ROLE_WEIGHTS
         def role_to_weight(role: str) -> int:
-            if role == "prime_mover":
-                return 85
-            elif role == "synergist":
-                return 55
-            else:  # stabilizer
-                return 20
+            # Convert to percentage (multiply by 100)
+            weight = MUSCLE_ROLE_WEIGHTS.get(role, MUSCLE_ROLE_WEIGHTS["stabilizer"])
+            return int(weight * 100)
         
         ex1_muscles = {}
         ex2_muscles = {}

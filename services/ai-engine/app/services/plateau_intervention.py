@@ -143,12 +143,20 @@ class PlateauInterventionService:
                     "session_date": None
                 }
             session_data[session_id]["sets"].append(set_record)
-            
-            # Get session date
+        
+        # Load all sessions upfront to avoid N+1 queries
+        session_ids = list(session_data.keys())
+        sessions = (
+            self.db.query(WorkoutSession)
+            .filter(WorkoutSession.id.in_(session_ids))
+            .all()
+        )
+        session_map = {s.id: s for s in sessions}
+        
+        # Populate session dates from map
+        for session_id in session_data.keys():
             if not session_data[session_id]["session_date"]:
-                session = self.db.query(WorkoutSession).filter(
-                    WorkoutSession.id == session_id
-                ).first()
+                session = session_map.get(session_id)
                 if session:
                     session_data[session_id]["session_date"] = session.session_date
         

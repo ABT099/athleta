@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.utils.constants import TrainingType, ExerciseIntensityCategory
 from app.services.prescription_generator import PrescriptionGeneratorService
+from app.models import Exercise
 
 
 class AutoSuggestionService:
@@ -45,6 +46,21 @@ class AutoSuggestionService:
         """
         suggestions = {}
         
+        # Collect all exercise IDs that need to be queried
+        exercise_ids = []
+        for exercise in exercises:
+            exercise_id = exercise.get("exercise_id")
+            if exercise_id:
+                exercise_ids.append(exercise_id)
+        
+        # Load all exercises upfront to avoid N+1 queries
+        all_exercises = (
+            self.db.query(Exercise)
+            .filter(Exercise.id.in_(exercise_ids))
+            .all()
+        )
+        exercise_map = {ex.id: ex for ex in all_exercises}
+        
         for exercise in exercises:
             exercise_id = exercise.get("exercise_id")
             if not exercise_id:
@@ -56,9 +72,8 @@ class AutoSuggestionService:
             rest_period = exercise.get("rest_period_seconds")
             
             if target_rpe is None and target_rir is None:
-                # Get exercise details
-                from app.models import Exercise
-                ex = self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
+                # Get exercise details from pre-loaded map
+                ex = exercise_map.get(exercise_id)
                 if not ex:
                     continue
                 
@@ -86,8 +101,7 @@ class AutoSuggestionService:
                 }
             elif rest_period is None:
                 # Only rest period missing
-                from app.models import Exercise
-                ex = self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
+                ex = exercise_map.get(exercise_id)
                 if not ex:
                     continue
                 

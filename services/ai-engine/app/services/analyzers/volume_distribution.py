@@ -195,36 +195,42 @@ class VolumeDistributionAnalyzer:
         """
         muscle_volume = {}
         
+        all_exercise_ids = []
+        exercise_to_effective_sets = {}
         for workout_day in workout_days:
             exercises = workout_day.get("exercises", [])
-            
             for exercise in exercises:
-                # Get exercise details
                 exercise_id = exercise.get("exercise_id")
-                if not exercise_id:
-                    continue
-                
-                # Calculate effective sets (only RIR 0-4 count toward MEV/MRV)
-                effective_sets = self._calculate_effective_sets(exercise)
-                
-                # Get muscle activations for this exercise via junction table
-                muscle_links = (
-                    self.db.query(ExerciseMuscle, MuscleGroupModel)
-                    .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
-                    .filter(ExerciseMuscle.exercise_id == exercise_id)
-                    .all()
-                )
-                
-                # Weight sets by role (convert role to activation weight)
-                # prime_mover=85%, synergist=55%, stabilizer=20%
-                role_weights = {"prime_mover": 0.85, "synergist": 0.55, "stabilizer": 0.20}
-                for link, muscle in muscle_links:
-                    muscle_name = muscle.name
-                    activation_weight = role_weights.get(link.role, 0.20)
-                    
-                    # Weight by activation percentage
-                    weighted_sets = effective_sets * activation_weight
-                    muscle_volume[muscle_name] = muscle_volume.get(muscle_name, 0) + weighted_sets
+                if exercise_id:
+                    all_exercise_ids.append(exercise_id)
+                    # Calculate effective sets (only RIR 0-4 count toward MEV/MRV)
+                    effective_sets = self._calculate_effective_sets(exercise)
+                    exercise_to_effective_sets[exercise_id] = effective_sets
+        
+        if not all_exercise_ids:
+            return muscle_volume
+        
+        # Load all ExerciseMuscle links in one query
+        all_muscle_links = (
+            self.db.query(ExerciseMuscle, MuscleGroupModel)
+            .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
+            .filter(ExerciseMuscle.exercise_id.in_(all_exercise_ids))
+            .all()
+        )
+        
+        # Weight sets by role (convert role to activation weight)
+        # Use constant from constants.py
+        from app.utils.constants import MUSCLE_ROLE_WEIGHTS
+        for link, muscle in all_muscle_links:
+            muscle_name = muscle.name
+            activation_weight = MUSCLE_ROLE_WEIGHTS.get(link.role, MUSCLE_ROLE_WEIGHTS["stabilizer"])
+            
+            # Get effective sets for this exercise
+            effective_sets = exercise_to_effective_sets.get(link.exercise_id, 0)
+            
+            # Weight by activation percentage
+            weighted_sets = effective_sets * activation_weight
+            muscle_volume[muscle_name] = muscle_volume.get(muscle_name, 0) + weighted_sets
         
         return muscle_volume
     

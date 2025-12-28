@@ -13,7 +13,13 @@ from app.utils.constants import (
     SleepQuality, SLEEP_QUALITY_MULTIPLIERS,
     Gender, AGE_PROGRESSION_MODIFIERS, GENDER_RECOVERY_MODIFIERS,
     TrainingExperience, CNS_HEAVY_PATTERNS, CNS_MODERATE_PATTERNS,
-    CNS_FATIGUE_PER_HEAVY_COMPOUND, CNS_FATIGUE_PER_MODERATE_COMPOUND
+    CNS_FATIGUE_PER_HEAVY_COMPOUND, CNS_FATIGUE_PER_MODERATE_COMPOUND,
+    TRAINING_AGE_EXPERIENCED_THRESHOLD, TRAINING_AGE_VETERAN_THRESHOLD,
+    TRAINING_AGE_BOOST_CAP, TRAINING_AGE_BOOST_RATE,
+    AGE_PENALTY_OFFSET_EXPERIENCED, AGE_PENALTY_OFFSET_VETERAN,
+    AGE_PENALTY_OFFSET_RATE_EXPERIENCED, AGE_PENALTY_OFFSET_RATE_VETERAN,
+    RECOVERY_MODIFIER_MIN, RECOVERY_MODIFIER_MAX,
+    DURATION_SCORE_DEFAULT, ADVANCED_RECOVERY_MODIFIER
 )
 
 class RecoveryAnalyzer:
@@ -60,17 +66,17 @@ class RecoveryAnalyzer:
         age_modifier = RecoveryAnalyzer.calculate_age_progression_modifier(age, training_age_years)
         
         # Training age consideration: experienced athletes adapt better regardless of age
-        if training_age_years is not None and training_age_years >= 5:
+        if training_age_years is not None and training_age_years >= TRAINING_AGE_EXPERIENCED_THRESHOLD:
             # Experienced athletes have better recovery capacity
-            training_age_boost = min(0.05, training_age_years * 0.01)  # Up to 5% boost
+            training_age_boost = min(TRAINING_AGE_BOOST_CAP, training_age_years * TRAINING_AGE_BOOST_RATE)  # Up to 5% boost
             age_modifier *= (1.0 + training_age_boost)
         
         # Combine gender and age modifiers
         # Individual variability is emphasized - these are starting points
         combined_modifier = base_modifier * age_modifier
         
-        # Clamp to reasonable range (0.7 - 1.2)
-        combined_modifier = max(0.7, min(1.2, combined_modifier))
+        # Clamp to reasonable range
+        combined_modifier = max(RECOVERY_MODIFIER_MIN, min(RECOVERY_MODIFIER_MAX, combined_modifier))
         
         return round(combined_modifier, 3)
     
@@ -108,15 +114,15 @@ class RecoveryAnalyzer:
         # If training age is provided, adjust based on training experience
         # Well-trained older athletes can offset age-related decline
         if training_age_years is not None and base_modifier < 1.0:
-            if training_age_years >= 10:
+            if training_age_years >= TRAINING_AGE_VETERAN_THRESHOLD:
                 # Very experienced: offset 10-20% of age penalty
                 # At 10 years: 10% offset, increases by 2% per additional year, capped at 20%
-                offset = min(0.2, 0.1 + (training_age_years - 10) * 0.02)
+                offset = min(AGE_PENALTY_OFFSET_VETERAN, AGE_PENALTY_OFFSET_EXPERIENCED + (training_age_years - TRAINING_AGE_VETERAN_THRESHOLD) * AGE_PENALTY_OFFSET_RATE_VETERAN)
                 base_modifier = base_modifier + (1.0 - base_modifier) * offset
-            elif training_age_years >= 5:
+            elif training_age_years >= TRAINING_AGE_EXPERIENCED_THRESHOLD:
                 # Moderately experienced: offset 5-10% of age penalty
                 # At 5 years: 5% offset, increases by 1% per additional year, capped at 10%
-                offset = min(0.1, 0.05 + (training_age_years - 5) * 0.01)
+                offset = min(AGE_PENALTY_OFFSET_EXPERIENCED, 0.05 + (training_age_years - TRAINING_AGE_EXPERIENCED_THRESHOLD) * AGE_PENALTY_OFFSET_RATE_EXPERIENCED)
                 base_modifier = base_modifier + (1.0 - base_modifier) * offset
         
         return round(base_modifier, 3)
@@ -237,7 +243,7 @@ class RecoveryAnalyzer:
         elif 6 <= sleep_hours < 7 or 9 < sleep_hours <= 10:
             duration_score = 0.9
         elif 5 <= sleep_hours < 6 or 10 < sleep_hours <= 11:
-            duration_score = 0.75
+            duration_score = DURATION_SCORE_DEFAULT
         else:
             duration_score = 0.6
         
@@ -248,7 +254,8 @@ class RecoveryAnalyzer:
         self,
         athlete_id: int,
         muscle_name: str,
-        days_lookback: int = 7
+        days_lookback: int = 7,
+        athlete: Optional[Athlete] = None
     ) -> Dict:
         """
         Assess recovery status for a specific muscle group.
@@ -302,8 +309,9 @@ class RecoveryAnalyzer:
             hours_since_workout = time_elapsed.total_seconds() / 3600
             days_since_workout = time_elapsed.days  # Keep for display/logging purposes
             
-            # Get athlete for dynamic recovery calculation
-            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            # Get athlete for dynamic recovery calculation (query only if not provided)
+            if athlete is None:
+                athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
             
             if not athlete:
                 # If athlete not found, return error response
@@ -706,7 +714,7 @@ class RecoveryAnalyzer:
         fitness_mods = {
             TrainingExperience.BEGINNER: 1.2,      # Longer recovery needed
             TrainingExperience.INTERMEDIATE: 1.0,  # Baseline
-            TrainingExperience.ADVANCED: 0.85,     # Faster recovery
+            TrainingExperience.ADVANCED: ADVANCED_RECOVERY_MODIFIER,     # Faster recovery
         }
         fitness_mod = fitness_mods.get(athlete.training_experience, 1.0)
         

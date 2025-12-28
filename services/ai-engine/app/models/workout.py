@@ -1,7 +1,7 @@
 """
 Workout planning and session models.
 """
-from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKey, Text, JSON, Index
 from sqlalchemy.orm import relationship, deferred
 from datetime import datetime
 
@@ -177,7 +177,10 @@ class WorkoutSession(Base):
     Completed workout session with actual performance data.
     """
     __tablename__ = "workout_sessions"
-    __table_args__ = get_schema_table_args("ai_analysis")
+    __table_args__ = (
+        Index('idx_workout_session_athlete_date', 'athlete_id', 'session_date'),
+        get_schema_table_args("ai_analysis")
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id")), nullable=False)
@@ -215,7 +218,10 @@ class ExerciseSet(Base):
     Individual set data with performance metrics.
     """
     __tablename__ = "exercise_sets"
-    __table_args__ = get_schema_table_args("ai_analysis")
+    __table_args__ = (
+        Index('idx_exercise_set_session_exercise', 'workout_session_id', 'exercise_id'),
+        get_schema_table_args("ai_analysis")
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     workout_session_id = Column(Integer, ForeignKey(get_fk_reference("workout_sessions.id", "ai_analysis")), nullable=False)

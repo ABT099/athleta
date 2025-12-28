@@ -18,7 +18,9 @@ from sqlalchemy import desc
 from app.utils.constants import (
     SetType, RepStyle, TrainingType, TrainingPhase, TrainingExperience,
     ExerciseType, SET_TYPE_CONFIG, REP_STYLE_CONFIG, VALID_TECHNIQUE_COMBINATIONS,
-    MRV_SETS_PER_WEEK, EFFECTIVE_SET_RIR_THRESHOLD
+    MRV_SETS_PER_WEEK, EFFECTIVE_SET_RIR_THRESHOLD,
+    PLATEAU_IMPROVEMENT_THRESHOLD, STRUGGLING_DETECTION_RPE_THRESHOLD,
+    MRV_CEILING_THRESHOLD, PARTIAL_EFFECTIVE_SET_WEIGHT
 )
 
 from app.models import ExerciseMuscle, MuscleGroupModel
@@ -234,7 +236,7 @@ class IntensityTechniqueService:
         
         # Plateau if no improvement (< 2% increase)
         improvement = (recent_avg - previous_avg) / previous_avg if previous_avg > 0 else 0
-        is_plateau = improvement < 0.02
+        is_plateau = improvement < PLATEAU_IMPROVEMENT_THRESHOLD
         
         return {
             "is_plateau": is_plateau,
@@ -272,7 +274,7 @@ class IntensityTechniqueService:
         avg_rpe = sum(recent_rpes) / len(recent_rpes) if recent_rpes else 0
         
         # Struggling = high RPE (8+) with no volume increase
-        is_struggling = avg_rpe >= 8.0
+        is_struggling = avg_rpe >= STRUGGLING_DETECTION_RPE_THRESHOLD
         
         return {
             "is_struggling": is_struggling,
@@ -335,7 +337,7 @@ class IntensityTechniqueService:
         weekly_sets = self._calculate_effective_sets_from_sets(sets)
         
         # At ceiling if >= 90% of MRV
-        at_ceiling = weekly_sets >= (mrv * 0.9)
+        at_ceiling = weekly_sets >= (mrv * MRV_CEILING_THRESHOLD)
         
         return {
             "at_ceiling": at_ceiling,
@@ -596,7 +598,7 @@ class IntensityTechniqueService:
                 effective_count += 1.0
             # RIR 5-6: Partially effective (warm-up territory, minimal hypertrophy stimulus)
             elif rir <= 6:
-                effective_count += 0.5
+                effective_count += PARTIAL_EFFECTIVE_SET_WEIGHT
             # RIR 7+: Not effective for hypertrophy (too far from failure)
             else:
                 effective_count += 0.0

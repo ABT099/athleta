@@ -12,6 +12,36 @@ services:
     ports:
       - "8080:8080"
 
+  migrator:
+    image: athleta/migrator:local
+    build:
+      context: ./migrator
+      dockerfile: Dockerfile
+
+  exercise-inference:
+    image: athleta/exercise-inference:local
+    build:
+      context: ./services/exercise-inference
+      dockerfile: Dockerfile
+
+  muscle-image-api:
+    image: athleta/muscle-image:local
+    build:
+      context: ./services/muscle-image
+      dockerfile: Dockerfile
+
+  ai-engine:
+    image: athleta/ai-engine:local
+    build:
+      context: ./services/ai-engine
+      dockerfile: Dockerfile
+
+  api:
+    image: athleta/api:local
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+
 networks:
   backend:
     internal: false

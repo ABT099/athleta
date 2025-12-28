@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from app.database import get_db
 from app.models import Athlete, WorkoutSession
+from app.utils.helpers import get_athlete_or_404
 from app.ml.model_selector import ModelSelector
 from app.ml.model_manager import ModelManager
 from app.auth import get_current_user
@@ -48,12 +49,7 @@ def train_athlete_model(
         )
     
     # Validate athlete exists
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    if not athlete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
-        )
+    athlete = get_athlete_or_404(db, athlete_id)
     
     # Get session count
     session_count = db.query(WorkoutSession).filter(
@@ -107,12 +103,7 @@ def get_model_status(
         }
     
     # Validate athlete exists
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    if not athlete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
-        )
+    athlete = get_athlete_or_404(db, athlete_id)
     
     # Get session count
     session_count = db.query(WorkoutSession).filter(
@@ -188,12 +179,7 @@ def retrain_athlete_model(
         )
     
     # Validate athlete exists
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    if not athlete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
-        )
+    athlete = get_athlete_or_404(db, athlete_id)
     
     # Check if retraining is needed
     predictor_service = WorkoutPredictorService(db)
@@ -248,12 +234,7 @@ def get_predictions_breakdown(
         )
     
     # Validate athlete exists
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    if not athlete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
-        )
+    athlete = get_athlete_or_404(db, athlete_id)
     
     # Get ML predictions
     predictor_service = WorkoutPredictorService(db)
@@ -347,12 +328,7 @@ def delete_athlete_models(
         )
     
     # Validate athlete exists
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    if not athlete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
-        )
+    athlete = get_athlete_or_404(db, athlete_id)
     
     model_manager = ModelManager()
     deleted = model_manager.delete_old_models(

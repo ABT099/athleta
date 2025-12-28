@@ -9,11 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.models import ExerciseMuscle, MuscleGroupModel
 from app.utils.constants import (
-    ExerciseIntensityCategory, MOVEMENT_PRIORITY,
-    TrainingType, STRENGTH_ORDER_PRIORITY, HYPERTROPHY_ORDER_PRIORITY,
+    ExerciseIntensityCategory,
+    TrainingType,
     HYPERTROPHY_PRE_EXHAUST_ALLOWED, STRENGTH_PRE_EXHAUST_ALLOWED,
     TIER_1_SPINAL_PATTERNS, TIER_5_CORE_PATTERNS, INTENSITY_CATEGORY_TIER_MAP,
-    FOCUS_TIER_BONUS, FocusArea
+    FocusArea
 )
 
 
@@ -124,10 +124,45 @@ class ExerciseOrderAnalyzer:
         elif training_type == TrainingType.STRENGTH:
             allow_pre_exhaust = STRENGTH_PRE_EXHAUST_ALLOWED
         
+        exercise_ids = [ex.get("exercise_id") for ex in exercises if ex.get("exercise_id")]
+        if not exercise_ids:
+            return [], []
+        
+        from app.models import Exercise
+        # Load all exercises upfront
+        all_exercises = (
+            self.db.query(Exercise)
+            .filter(Exercise.id.in_(exercise_ids))
+            .all()
+        )
+        exercise_map = {ex.id: ex for ex in all_exercises}
+        
+        # Load all ExerciseMuscle links upfront
+        all_muscle_links = (
+            self.db.query(ExerciseMuscle, MuscleGroupModel.name)
+            .join(MuscleGroupModel, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
+            .filter(
+                ExerciseMuscle.exercise_id.in_(exercise_ids),
+                ExerciseMuscle.role == "prime_mover"  # Primary only
+            )
+            .all()
+        )
+        muscle_map = {}
+        for link, muscle_name in all_muscle_links:
+            if link.exercise_id not in muscle_map:
+                muscle_map[link.exercise_id] = []
+            muscle_map[link.exercise_id].append(muscle_name)
+        
         # Get tier and focus status for all exercises
         exercise_tiers = []
         for exercise in exercises:
-            ex_details = self._get_exercise_details(exercise.get("exercise_id"))
+            exercise_id = exercise.get("exercise_id")
+            if not exercise_id:
+                continue
+            
+            ex_details = self._get_exercise_details_from_maps(
+                exercise_id, exercise_map, muscle_map
+            )
             if not ex_details:
                 continue
             
@@ -210,13 +245,15 @@ class ExerciseOrderAnalyzer:
         
         return violations, suggestions
     
-    def _get_exercise_details(self, exercise_id: Optional[int]) -> Optional[Dict]:
-        """Get exercise details from database."""
-        if not exercise_id:
-            return None
-        
-        from app.models import Exercise
-        ex = self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
+    
+    def _get_exercise_details_from_maps(
+        self,
+        exercise_id: int,
+        exercise_map: Dict,
+        muscle_map: Dict
+    ) -> Optional[Dict]:
+        """Get exercise details from pre-loaded maps."""
+        ex = exercise_map.get(exercise_id)
         if not ex:
             return None
         
@@ -227,17 +264,8 @@ class ExerciseOrderAnalyzer:
                 ex.exercise_type, ex.movement_pattern
             )
         
-        # Get primary muscles via junction table
-        muscle_links = (
-            self.db.query(MuscleGroupModel.name)
-            .join(ExerciseMuscle, ExerciseMuscle.muscle_group_id == MuscleGroupModel.id)
-            .filter(
-                ExerciseMuscle.exercise_id == ex.id,
-                ExerciseMuscle.role == "prime_mover"  # Primary only
-            )
-            .all()
-        )
-        primary_muscles = [m[0] for m in muscle_links]
+        # Get primary muscles from pre-loaded map
+        primary_muscles = muscle_map.get(exercise_id, [])
         
         return {
             "id": ex.id,
@@ -442,15 +470,36 @@ class ExerciseOrderAnalyzer:
                 base_score -= 5
         
         # Bonus for good ordering (compounds first, isolations last)
-        compound_count = sum(1 for ex in exercises if self._get_exercise_details(ex.get("exercise_id", {})) and 
-                            self._get_exercise_details(ex.get("exercise_id", {}))["exercise_type"] == "compound")
+        exercise_ids = [ex.get("exercise_id") for ex in exercises if ex.get("exercise_id")]
+        if exercise_ids:
+            from app.models import Exercise
+            all_exercises = (
+                self.db.query(Exercise)
+                .filter(Exercise.id.in_(exercise_ids))
+                .all()
+            )
+            exercise_map = {ex.id: ex for ex in all_exercises}
+        else:
+            exercise_map = {}
+        
+        compound_count = 0
+        first_isolation_idx = -1
+        for i, ex in enumerate(exercises):
+            exercise_id = ex.get("exercise_id")
+            if not exercise_id:
+                continue
+            exercise_obj = exercise_map.get(exercise_id)
+            if not exercise_obj:
+                continue
+            if exercise_obj.exercise_type == "compound":
+                compound_count += 1
+            elif exercise_obj.exercise_type == "isolation" and first_isolation_idx == -1:
+                first_isolation_idx = i
+        
         isolation_count = len(exercises) - compound_count
         
         if compound_count > 0 and isolation_count > 0:
             # Check if compounds come before isolations
-            first_isolation_idx = next((i for i, ex in enumerate(exercises) 
-                                      if self._get_exercise_details(ex.get("exercise_id", {})) and
-                                      self._get_exercise_details(ex.get("exercise_id", {}))["exercise_type"] == "isolation"), -1)
             if first_isolation_idx > compound_count - 1:
                 base_score += 5  # Bonus for good ordering
         

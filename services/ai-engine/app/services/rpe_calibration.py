@@ -157,18 +157,23 @@ class RPECalibrationService:
         )
         
         self.db.add(calibration)
-        self.db.commit()
-        self.db.refresh(calibration)
+        self.db.flush()  # Use flush to get ID without committing
         
         # Update athlete's overall calibration factor if enough data
-        self.update_athlete_calibration_factor(athlete_id)
+        # Pass commit=False to avoid nested commit
+        self.update_athlete_calibration_factor(athlete_id, commit=False)
+        
+        # Single commit after both operations
+        self.db.commit()
+        self.db.refresh(calibration)
         
         return calibration
     
     def update_athlete_calibration_factor(
         self,
         athlete_id: int,
-        lookback_sessions: int = 10
+        lookback_sessions: int = 10,
+        commit: bool = True
     ) -> float:
         """
         Update athlete's overall RPE calibration factor based on recent history.
@@ -178,6 +183,7 @@ class RPECalibrationService:
         Args:
             athlete_id: Athlete ID
             lookback_sessions: Number of recent sessions to analyze
+            commit: Whether to commit the transaction (default: True). Set to False when called within a larger transaction.
             
         Returns:
             Updated calibration factor
@@ -208,19 +214,25 @@ class RPECalibrationService:
         avg_error_ratio = statistics.mean(errors)
         
         # Smooth the adjustment (don't overcorrect)
+        from app.utils.constants import (
+            RPE_CALIBRATION_NEW_FACTOR_WEIGHT, RPE_CALIBRATION_OLD_FACTOR_WEIGHT,
+            RPE_CALIBRATION_FACTOR_MIN, RPE_CALIBRATION_FACTOR_MAX
+        )
+        
         athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
         current_factor = athlete.rpe_calibration_factor if athlete else 1.0
         
-        # Apply 70% of new calculation, keep 30% of old (smoothing)
-        new_factor = (avg_error_ratio * 0.7) + (current_factor * 0.3)
+        # Apply smoothing weights for new and old factors
+        new_factor = (avg_error_ratio * RPE_CALIBRATION_NEW_FACTOR_WEIGHT) + (current_factor * RPE_CALIBRATION_OLD_FACTOR_WEIGHT)
         
-        # Clamp to reasonable range (0.7 - 1.3)
-        new_factor = max(0.7, min(1.3, new_factor))
+        # Clamp to reasonable range
+        new_factor = max(RPE_CALIBRATION_FACTOR_MIN, min(RPE_CALIBRATION_FACTOR_MAX, new_factor))
         
         # Update athlete record
         if athlete:
             athlete.rpe_calibration_factor = new_factor
-            self.db.commit()
+            if commit:
+                self.db.commit()
         
         return round(new_factor, 3)
     

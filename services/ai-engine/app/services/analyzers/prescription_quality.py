@@ -74,14 +74,24 @@ class PrescriptionQualityAnalyzer:
         missing_count = 0
         inconsistent_count = 0
         
+        exercise_ids = [ex.get("exercise_id") for ex in exercises if ex.get("exercise_id")]
+        from app.models import Exercise
+        all_exercises = {}
+        if exercise_ids:
+            exercises_list = (
+                self.db.query(Exercise)
+                .filter(Exercise.id.in_(exercise_ids))
+                .all()
+            )
+            all_exercises = {ex.id: ex for ex in exercises_list}
+        
         for exercise in exercises:
             exercise_id = exercise.get("exercise_id")
             if not exercise_id:
                 continue
             
-            # Get exercise details
-            from app.models import Exercise
-            ex = self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
+            # Get exercise details from pre-loaded map
+            ex = all_exercises.get(exercise_id)
             if not ex:
                 continue
             

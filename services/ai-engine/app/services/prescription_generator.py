@@ -21,6 +21,7 @@ from app.utils.constants import (
     DELOAD_RPE_FLOOR,
     ABSOLUTE_RPE_FLOOR,
     ABSOLUTE_RPE_CEILING,
+    MICROCYCLE_RPE_MODIFIER_DEFAULT
 )
 
 
@@ -74,7 +75,7 @@ class PrescriptionGeneratorService:
         # Skip for deload - deload is flat, no progression
         if training_phase != "deload":
             week_mod = MICROCYCLE_RPE_MODIFIERS.get(
-                min(week_in_phase, 4), 0.5  # Cap at week 4 modifier
+                min(week_in_phase, 4), MICROCYCLE_RPE_MODIFIER_DEFAULT  # Cap at week 4 modifier
             )
             target_rpe += week_mod
         

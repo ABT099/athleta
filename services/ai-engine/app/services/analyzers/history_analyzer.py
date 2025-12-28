@@ -68,9 +68,10 @@ class AthleteHistoryAnalyzer:
         personalized_notes = []
         
         # Check for exercises with poor performance
+        from app.utils.constants import HIGH_RPE_THRESHOLD
         poor_performers = [
             ex for ex, data in exercise_performance.items()
-            if data.get("avg_rpe", 0) > 9.0 or data.get("struggles", 0) > 2
+            if data.get("avg_rpe", 0) > HIGH_RPE_THRESHOLD or data.get("struggles", 0) > 2
         ]
         
         if poor_performers:
@@ -146,9 +147,34 @@ class AthleteHistoryAnalyzer:
         
         exercise_performance = {}
         
+        session_ids = [s.id for s in sessions]
+        all_exercise_sets = (
+            self.db.query(ExerciseSet)
+            .filter(
+                ExerciseSet.workout_session_id.in_(session_ids),
+                ExerciseSet.exercise_id.in_(exercise_ids)
+            )
+            .all()
+        )
+        
+        # Group sets by (session_id, exercise_id) for efficient lookup
+        sets_by_session_exercise = {}
+        for set_record in all_exercise_sets:
+            key = (set_record.workout_session_id, set_record.exercise_id)
+            if key not in sets_by_session_exercise:
+                sets_by_session_exercise[key] = []
+            sets_by_session_exercise[key].append(set_record)
+        
+        all_exercises = (
+            self.db.query(Exercise)
+            .filter(Exercise.id.in_(exercise_ids))
+            .all()
+        )
+        exercise_map = {ex.id: ex for ex in all_exercises}
+        
         for ex_id in exercise_ids:
-            # Get exercise name
-            ex = self.db.query(Exercise).filter(Exercise.id == ex_id).first()
+            # Use pre-loaded exercise map instead of querying
+            ex = exercise_map.get(ex_id)
             if not ex:
                 continue
             
@@ -157,19 +183,13 @@ class AthleteHistoryAnalyzer:
             struggles = 0
             
             for session in sessions:
-                sets = (
-                    self.db.query(ExerciseSet)
-                    .filter(
-                        ExerciseSet.workout_session_id == session.id,
-                        ExerciseSet.exercise_id == ex_id
-                    )
-                    .all()
-                )
+                sets = sets_by_session_exercise.get((session.id, ex_id), [])
                 
                 for set_record in sets:
                     if set_record.rpe:
                         all_sets.append(set_record.rpe)
-                    if set_record.rpe and set_record.rpe > 9.5:
+                    from app.utils.constants import STRUGGLE_RPE_THRESHOLD
+                    if set_record.rpe and set_record.rpe > STRUGGLE_RPE_THRESHOLD:
                         struggles += 1
             
             if all_sets:
