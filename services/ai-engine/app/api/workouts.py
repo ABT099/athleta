@@ -321,8 +321,109 @@ def complete_workout(
         if pr_updates.get("achievements"):
             ai_result["ai_insights"].extend(pr_updates["achievements"])
         
+        # === ML RETRAINING TRIGGER ===
+        # Check if ML model should be retrained after this workout
+        if ML_AVAILABLE:
+            try:
+                from app.models import MLTrainingJob, MLJobStatus, PlanEntry
+                from app.services.periodization import PeriodizationService
+                
+                # Get current and previous plan entries to detect phase transitions
+                current_plan_entry = None
+                previous_plan_entry = None
+                
+                if plan_context.get("plan_entry_id"):
+                    current_plan_entry = db.query(PlanEntry).filter(
+                        PlanEntry.id == plan_context["plan_entry_id"]
+                    ).first()
+                    
+                    if current_plan_entry:
+                        # Get previous week's entry
+                        previous_plan_entry = db.query(PlanEntry).filter(
+                            PlanEntry.workout_plan_id == current_plan_entry.workout_plan_id,
+                            PlanEntry.week_number == current_plan_entry.week_number - 1
+                        ).first()
+                
+                # Determine trigger reason
+                trigger_reason = None
+                
+                # Primary trigger: Mesocycle completion (Realization -> Accumulation)
+                if current_plan_entry and previous_plan_entry:
+                    predictor_service = WorkoutPredictorService(db)
+                    current_phase = current_plan_entry.training_phase.value if hasattr(current_plan_entry.training_phase, 'value') else str(current_plan_entry.training_phase)
+                    previous_phase = previous_plan_entry.training_phase.value if hasattr(previous_plan_entry.training_phase, 'value') else str(previous_plan_entry.training_phase)
+                    
+                    if predictor_service.check_mesocycle_complete(
+                        request.athlete_id,
+                        current_phase,
+                        previous_phase
+                    ):
+                        trigger_reason = "mesocycle_complete"
+                
+                # Fallback triggers if no mesocycle completion detected
+                if not trigger_reason:
+                    predictor_service = WorkoutPredictorService(db)
+                    if predictor_service.should_retrain(request.athlete_id):
+                        # Determine specific fallback reason
+                        metadata = predictor_service.model_manager.get_model_metadata("workout_predictor", request.athlete_id)
+                        if metadata:
+                            training_date = datetime.fromisoformat(metadata.get("training_date"))
+                            days_since = (datetime.now(timezone.utc) - training_date).days
+                            if days_since > 60:
+                                trigger_reason = "staleness"
+                            else:
+                                trigger_reason = "session_threshold"
+                        else:
+                            trigger_reason = "no_model"
+                
+                # Queue retraining if trigger identified
+                if trigger_reason:
+                    # Check for existing pending/running jobs
+                    existing_job = db.query(MLTrainingJob).filter(
+                        MLTrainingJob.athlete_id == request.athlete_id,
+                        MLTrainingJob.status.in_([MLJobStatus.PENDING, MLJobStatus.RUNNING])
+                    ).first()
+                    
+                    if not existing_job:
+                        # Create job record
+                        job = MLTrainingJob(
+                            athlete_id=request.athlete_id,
+                            trigger_reason=trigger_reason,
+                            status=MLJobStatus.PENDING
+                        )
+                        db.add(job)
+                        db.flush()  # Get job ID
+                        
+                        # Queue the training task (after commit)
+                        # We'll store the job_id to queue after successful commit
+                        _retraining_job_id = job.id
+                        _retraining_trigger = trigger_reason
+                    else:
+                        _retraining_job_id = None
+                        _retraining_trigger = None
+                else:
+                    _retraining_job_id = None
+                    _retraining_trigger = None
+            except Exception as e:
+                # Don't fail workout completion if retraining check fails
+                print(f"Warning: ML retraining check failed: {e}")
+                _retraining_job_id = None
+                _retraining_trigger = None
+        else:
+            _retraining_job_id = None
+            _retraining_trigger = None
+        
         # Single commit for all changes - ensures atomicity
         db.commit()
+        
+        # Queue retraining task after successful commit
+        if _retraining_job_id:
+            try:
+                from app.tasks.ml_training import retrain_athlete_model
+                retrain_athlete_model.delay(request.athlete_id, _retraining_job_id, _retraining_trigger)
+            except Exception as e:
+                # Log but don't fail - retraining is non-critical
+                print(f"Warning: Failed to queue ML retraining task: {e}")
         
         # Undefer deferred fields for response
         db.refresh(workout_session)

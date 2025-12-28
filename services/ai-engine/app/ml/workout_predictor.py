@@ -507,14 +507,14 @@ class WorkoutPredictorService:
     def should_retrain(
         self,
         athlete_id: int,
-        new_sessions_threshold: int = 50
+        new_sessions_threshold: int = 20
     ) -> bool:
         """
         Check if model should be retrained.
         
         Args:
             athlete_id: Athlete ID
-            new_sessions_threshold: Retrain after this many new sessions
+            new_sessions_threshold: Retrain after this many new sessions (default: 20 ~= 1 mesocycle)
             
         Returns:
             True if retraining recommended
@@ -541,9 +541,38 @@ class WorkoutPredictorService:
         if new_sessions >= new_sessions_threshold:
             return True
         
-        # Check if model is old (>90 days)
+        # Check if model is old (>60 days) - catches breaks before severe detraining
         days_since_training = (datetime.now(timezone.utc) - training_date).days
-        if days_since_training > 90:
+        if days_since_training > 60:
+            return True
+        
+        return False
+    
+    def check_mesocycle_complete(
+        self,
+        athlete_id: int,
+        current_phase: str,
+        previous_phase: Optional[str] = None
+    ) -> bool:
+        """
+        Check if a mesocycle has been completed based on phase transition.
+        
+        A mesocycle is complete when transitioning from Realization to Accumulation.
+        
+        Args:
+            athlete_id: Athlete ID
+            current_phase: Current training phase
+            previous_phase: Previous training phase (optional)
+            
+        Returns:
+            True if mesocycle just completed
+        """
+        # Import here to avoid circular dependency
+        from app.utils.constants import TrainingPhase
+        
+        # Mesocycle complete when transitioning from Realization to Accumulation
+        if (previous_phase == TrainingPhase.REALIZATION.value and 
+            current_phase == TrainingPhase.ACCUMULATION.value):
             return True
         
         return False

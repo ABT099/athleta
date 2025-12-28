@@ -3,9 +3,12 @@ FastAPI application entry point.
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
 
 from app.config import settings
 from app.api import athletes, workouts, periodization, ml, prescriptions, plan_analyzer
+
+logger = logging.getLogger(__name__)
 
 # Create FastAPI application
 app = FastAPI(
@@ -24,6 +27,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    # Check Celery/Redis connection
+    try:
+        from app.celery_app import celery_app
+        # Ping Redis to verify connection
+        celery_app.backend.client.ping()
+        logger.info("✓ Celery/Redis connection established")
+    except Exception as e:
+        logger.warning(f"⚠ Celery/Redis not available: {e}. ML retraining will be disabled.")
+    
+    logger.info("✓ AthleteAI API started successfully")
 
 # Include API routers
 app.include_router(athletes.router, prefix="/api", tags=["athletes"])

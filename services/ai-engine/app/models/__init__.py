@@ -19,6 +19,7 @@ from app.models.exercise_progression import ExerciseProgressionTracking
 from app.models.form_tracking import FormQualityTrend
 from app.models.personal_records import ExercisePersonalRecord
 from app.models.workout_prescription_history import WorkoutPrescriptionHistory
+from app.models.training_job import MLTrainingJob, MLJobStatus
 
 __all__ = [
     "Athlete",
@@ -38,6 +39,8 @@ __all__ = [
     "FormQualityTrend",
     "ExercisePersonalRecord",
     "WorkoutPrescriptionHistory",
+    "MLTrainingJob",
+    "MLJobStatus",
 ]
 
 

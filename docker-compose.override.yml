@@ -12,6 +12,10 @@ services:
     ports:
       - "8080:8080"
 
+  redis:
+    ports:
+      - "6379:6379"
+
   migrator:
     image: athleta/migrator:local
     build:

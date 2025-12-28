@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "athleta-api"
     
+    # Redis & Celery
+    REDIS_URL: str = "redis://localhost:6379/0"
+    CELERY_TASK_TIMEOUT: int = 1800  # 30 minutes
+    
+    # ML Retraining Settings
+    RETRAINING_SESSION_THRESHOLD: int = 20  # ~1 mesocycle worth of sessions
+    RETRAINING_STALENESS_DAYS: int = 60  # Catches breaks before severe detraining
+    
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
     
