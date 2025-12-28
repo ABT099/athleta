@@ -3,7 +3,7 @@ Personal Record (PR) tracking models.
 """
 from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import Base, get_table_args_with_constraints, get_fk_reference
 
@@ -51,8 +51,8 @@ class ExercisePersonalRecord(Base):
     last_pr_date = Column(DateTime, nullable=True)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Unique constraint: one record per athlete-exercise combination
     __table_args__ = get_table_args_with_constraints(

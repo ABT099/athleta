@@ -26,9 +26,10 @@ dependencies = [
     # Utilities
     "python-dotenv==1.2.1",
     "python-multipart==0.0.20",
-    "tensorflow-cpu>=2.20.0",  # CPU-only version for smaller Docker images
+    "tensorflow-cpu>=2.20.0", # CPU-only version for smaller Docker images
     # JWT
     "pyjwt[crypto]==2.10.1",
+    "pandas>=2.3.3",
 ]
 
 [project.optional-dependencies]

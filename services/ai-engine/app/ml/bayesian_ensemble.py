@@ -253,10 +253,19 @@ class BayesianEnsemble:
         Returns:
             Predictions array (n_models, n_samples, n_targets)
         """
+        import pandas as pd
+        
+        # Convert to DataFrame with feature names if available
+        # This prevents sklearn/LightGBM feature name validation warnings
+        if self.feature_names and len(self.feature_names) == X.shape[1]:
+            X_input = pd.DataFrame(X, columns=self.feature_names)
+        else:
+            X_input = X
+        
         predictions = []
         for model in self.models:
             if hasattr(model, 'predict'):
-                pred = model.predict(X)
+                pred = model.predict(X_input)  # Use DataFrame instead of numpy array
             else:
                 raise ValueError(f"Model {type(model)} must have 'predict' method")
             

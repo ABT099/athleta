@@ -3,7 +3,7 @@ Workout planning and session models.
 """
 from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKey, Text, JSON, Index
 from sqlalchemy.orm import relationship, deferred
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import Base, get_schema_table_args, get_fk_reference
 from app.utils.constants import TrainingType, PeriodizationModel, TrainingPhase
@@ -20,7 +20,7 @@ class WorkoutPlan(Base):
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     name = deferred(Column(String(255), nullable=False))
-    created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
+    created_at = deferred(Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False))
     
     # Plan characteristics - eagerly loaded (used by AI)
     training_type = Column(Enum(TrainingType), nullable=False)
@@ -102,7 +102,7 @@ class WorkoutDay(Base):
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     name = deferred(Column(String(255), nullable=False))  # e.g., "Push Day A", "Lower Body"
-    created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
+    created_at = deferred(Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False))
     
     # Day of week (0=Monday, 6=Sunday) - eagerly loaded (used by AI)
     day_of_week = Column(Integer, nullable=True)
@@ -200,7 +200,7 @@ class WorkoutSession(Base):
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     notes = deferred(Column(Text, nullable=True))
-    created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
+    created_at = deferred(Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False))
     
     # Relationships
     athlete = relationship("Athlete", back_populates="workout_sessions")
@@ -246,7 +246,7 @@ class ExerciseSet(Base):
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     notes = deferred(Column(Text, nullable=True))
-    created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
+    created_at = deferred(Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False))
     
     # Relationships
     workout_session = relationship("WorkoutSession", back_populates="exercise_sets")

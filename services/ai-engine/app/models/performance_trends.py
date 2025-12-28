@@ -3,7 +3,7 @@ Performance trends tracking models.
 """
 from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, Text, Boolean, Index
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import Base, get_schema_table_args, get_fk_reference
 
@@ -44,7 +44,7 @@ class PerformanceTrend(Base):
     deload_reason = Column(Text, nullable=True)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Relationships
     athlete = relationship("Athlete", back_populates="performance_trends")

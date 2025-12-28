@@ -3,7 +3,7 @@ Recovery and readiness tracking models.
 """
 from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKey, Text, Index
 from sqlalchemy.orm import relationship, deferred
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import Base, get_schema_table_args, get_fk_reference
 from app.utils.constants import SleepQuality
@@ -49,7 +49,7 @@ class RecoveryMetrics(Base):
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     notes = deferred(Column(Text, nullable=True))
-    created_at = deferred(Column(DateTime, default=datetime.utcnow, nullable=False))
+    created_at = deferred(Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False))
     
     # Relationships
     athlete = relationship("Athlete", back_populates="recovery_metrics")

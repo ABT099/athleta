@@ -1,7 +1,7 @@
 """
 Pydantic schemas for workout-related requests and responses.
 """
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 from datetime import datetime
 from typing import List, Optional, Dict
 
@@ -28,15 +28,14 @@ class WorkoutPlanBase(BaseModel):
 
 class WorkoutPlanResponse(WorkoutPlanBase):
     """Schema for workout plan response."""
+    model_config = ConfigDict(from_attributes=True)
+    
     id: int
     athlete_id: int
     start_date: datetime
     end_date: Optional[datetime]
     is_active: bool
     created_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 # ============ Exercise Set Schemas ============
@@ -73,6 +72,8 @@ class RecoveryMetricsData(BaseModel):
 
 class RecoveryMetricsResponse(BaseModel):
     """Schema for recovery metrics response."""
+    model_config = ConfigDict(from_attributes=True)
+    
     id: int
     athlete_id: int
     date: datetime
@@ -84,9 +85,6 @@ class RecoveryMetricsResponse(BaseModel):
     readiness_score: Optional[float]
     nutrition_adherence: Optional[str]
     hydration_level: Optional[str]
-    
-    class Config:
-        from_attributes = True
 
 
 # ============ Workout Session Schemas ============
@@ -106,6 +104,8 @@ class WorkoutCompletionRequest(BaseModel):
 
 class WorkoutSessionResponse(BaseModel):
     """Schema for workout session response."""
+    model_config = ConfigDict(from_attributes=True)
+    
     id: int
     athlete_id: int
     workout_day_id: int
@@ -117,9 +117,6 @@ class WorkoutSessionResponse(BaseModel):
     estimated_fatigue: Optional[float]
     notes: Optional[str]
     created_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 # ============ Warm-up Set Schemas ============
@@ -172,6 +169,8 @@ class WorkoutDayExerciseCreate(WorkoutDayExerciseBase):
 
 class WorkoutDayExerciseResponse(WorkoutDayExerciseBase):
     """Schema for workout day exercise response with adjusted parameters."""
+    model_config = ConfigDict(from_attributes=True)
+    
     id: int
     workout_day_id: int
     
@@ -184,9 +183,6 @@ class WorkoutDayExerciseResponse(WorkoutDayExerciseBase):
     
     # Warm-up sets (always generated when adjusted_weight is available)
     warmup_sets: Optional[List[WarmupSetSchema]] = None
-    
-    class Config:
-        from_attributes = True
 
 
 # ============ Workout Day Schemas ============
@@ -200,13 +196,12 @@ class WorkoutDayBase(BaseModel):
 
 class WorkoutDayResponse(WorkoutDayBase):
     """Schema for workout day response."""
+    model_config = ConfigDict(from_attributes=True)
+    
     id: int
     workout_plan_id: int
     exercises: List[WorkoutDayExerciseResponse]
     created_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 # ============ AI Response Schemas ============

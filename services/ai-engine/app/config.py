@@ -2,13 +2,15 @@
 Application configuration settings.
 """
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, ConfigDict
 from typing import List
 import warnings
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+    
+    model_config = ConfigDict(env_file=".env", case_sensitive=True)
     
     # Database - required from environment
     DATABASE_URL: str
@@ -45,10 +47,6 @@ class Settings(BaseSettings):
     def allowed_origins_list(self) -> List[str]:
         """Parse ALLOWED_ORIGINS into a list."""
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 
 settings = Settings()
