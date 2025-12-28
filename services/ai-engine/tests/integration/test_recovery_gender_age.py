@@ -9,6 +9,8 @@ from app.services.recovery_analyzer import RecoveryAnalyzer
 from app.utils.constants import Gender, TrainingExperience
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestGenderRecoveryModifiers:
     """Test gender-based recovery modifier calculations."""
     
@@ -57,6 +59,8 @@ class TestGenderRecoveryModifiers:
         assert max(modifiers) - min(modifiers) < 0.5
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestAgeProgressionModifiers:
     """Test age-based progression modifier calculations."""
     
@@ -122,6 +126,8 @@ class TestAgeProgressionModifiers:
         assert 0.60 <= senior <= 0.70
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestTrainingAgeEstimation:
     """Test training age estimation from experience level."""
     
@@ -147,6 +153,8 @@ class TestTrainingAgeEstimation:
         assert years == 5
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestCombinedGenderAgeModifiers:
     """Test combined gender and age modifier calculations."""
     
@@ -189,6 +197,8 @@ class TestCombinedGenderAgeModifiers:
         assert 0.7 <= high_training <= 1.2
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestIndividualVariabilityEmphasis:
     """Test that individual variability is emphasized in calculations."""
     

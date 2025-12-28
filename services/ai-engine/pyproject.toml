@@ -75,13 +75,15 @@ python_functions = ["test_*"]
 addopts = [
     "--verbose",
     "--strict-markers",
+    "-m", "not slow",  # Exclude slow tests by default
+    "--tb=short",  # Shorter tracebacks for CI
 ]
 markers = [
     "unit: Unit tests (fast)",
     "integration: Integration tests",
     "slow: Slow-running tests",
     "ml: ML model tests (requires TensorFlow/LightGBM)",
-    "smoke: Critical smoke tests",
+    "smoke: Critical smoke tests (complete workout workflow)",
 ]
 
 [tool.black]

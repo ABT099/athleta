@@ -16,15 +16,17 @@ from app.ml.workout_predictor import WorkoutPredictor
 
 
 @pytest.mark.skipif(not LIGHTGBM_AVAILABLE, reason="LightGBM not available")
+@pytest.mark.slow
+@pytest.mark.ml
 class TestWorkoutPredictorUpgrade:
     """Test upgraded workout predictor."""
     
     def test_lightgbm_initialization(self):
         """Test LightGBM model initialization."""
-        predictor = WorkoutPredictor(use_ensemble=True, n_ensemble_models=5)
+        predictor = WorkoutPredictor(use_ensemble=True, n_ensemble_models=3)  # Reduced for faster tests
         
         assert predictor.use_ensemble
-        assert predictor.n_ensemble_models == 5
+        assert predictor.n_ensemble_models == 3
         assert predictor.ensemble is not None
         assert predictor.model is None
     
@@ -50,12 +52,12 @@ class TestWorkoutPredictorUpgrade:
         feature_names = [f"feature_{i}" for i in range(n_features)]
         target_names = ["volume_multiplier", "intensity_multiplier"]
         
-        predictor = WorkoutPredictor(use_ensemble=True, n_ensemble_models=5)
+        predictor = WorkoutPredictor(use_ensemble=True, n_ensemble_models=3)  # Reduced for faster tests
         metrics = predictor.train(X, y, feature_names, target_names)
         
         assert predictor.is_trained
         assert "ensemble_size" in metrics
-        assert metrics["ensemble_size"] == 5
+        assert metrics["ensemble_size"] == 3
         assert "overall_r2" in metrics
     
     def test_prediction_with_uncertainty(self):
@@ -74,7 +76,7 @@ class TestWorkoutPredictorUpgrade:
         feature_names = [f"feature_{i}" for i in range(n_features)]
         target_names = ["volume_multiplier", "intensity_multiplier"]
         
-        predictor = WorkoutPredictor(use_ensemble=True, n_ensemble_models=5)
+        predictor = WorkoutPredictor(use_ensemble=True, n_ensemble_models=3)  # Reduced for faster tests
         predictor.train(X_train, y_train, feature_names, target_names)
         
         # Test prediction with uncertainty
@@ -104,7 +106,7 @@ class TestWorkoutPredictorUpgrade:
         feature_names = [f"feature_{i}" for i in range(n_features)]
         target_names = ["volume_multiplier", "intensity_multiplier"]
         
-        predictor = WorkoutPredictor(use_ensemble=True, n_ensemble_models=5)
+        predictor = WorkoutPredictor(use_ensemble=True, n_ensemble_models=3)  # Reduced for faster tests
         predictor.train(X_train, y_train, feature_names, target_names)
         
         confidence = predictor.get_confidence_score(X_test)

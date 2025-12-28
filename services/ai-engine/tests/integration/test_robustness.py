@@ -11,6 +11,8 @@ from app.models import (
 from app.utils.constants import Gender, TrainingExperience
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestInjuryPreventionRobustness:
     """Test that injury prevention service handles edge cases correctly."""
     
@@ -95,6 +97,8 @@ class TestInjuryPreventionRobustness:
         assert result["poor_form_percentage"] == 0.0  # No sessions = 0%
         assert len(result["warnings"]) == 0  # No warnings if no data
     
+@pytest.mark.integration
+@pytest.mark.slow
 class TestFormQualityServiceRobustness:
     """Test that form quality service handles edge cases correctly."""
     

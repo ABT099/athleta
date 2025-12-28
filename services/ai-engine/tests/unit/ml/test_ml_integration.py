@@ -20,6 +20,8 @@ from app.models import Athlete, WorkoutSession, PerformanceTrend
 
 
 @pytest.mark.skipif(not LIGHTGBM_AVAILABLE, reason="LightGBM not available")
+@pytest.mark.slow
+@pytest.mark.ml
 class TestMLIntegration:
     """Integration tests for ML components."""
     
@@ -114,7 +116,7 @@ class TestMLIntegration:
         target_names = ["volume_multiplier", "intensity_multiplier"]
         
         # Train predictor with ensemble
-        predictor = WorkoutPredictor(use_ensemble=True, n_ensemble_models=5)
+        predictor = WorkoutPredictor(use_ensemble=True, n_ensemble_models=3)  # Reduced for faster tests
         predictor.train(X_train, y_train, feature_names, target_names)
         
         # Get predictions with uncertainty

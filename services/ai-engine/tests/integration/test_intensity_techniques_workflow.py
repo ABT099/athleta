@@ -138,6 +138,8 @@ def setup_athlete_with_plan(db_session):
     }
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestCompleteWorkoutWithTechniques:
     """Test workout completion with intensity technique tracking."""
     
@@ -274,6 +276,8 @@ class TestCompleteWorkoutWithTechniques:
         assert response.status_code == 200
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestTechniqueRecommendationWorkflow:
     """Test the AI recommendation workflow for intensity techniques."""
     
@@ -323,6 +327,8 @@ class TestTechniqueRecommendationWorkflow:
                             assert technique.get("rep_style") == "normal"
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestCreatePlateauForTechniqueRecommendation:
     """Test that creating a plateau triggers technique recommendation."""
     
@@ -384,6 +390,8 @@ class TestCreatePlateauForTechniqueRecommendation:
         # The AI should detect the plateau and may recommend intensity technique
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestTechniqueSchemaValidation:
     """Test schema validation for technique fields."""
     
@@ -484,6 +492,8 @@ class TestTechniqueSchemaValidation:
         assert response.status_code == 200
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestTechniqueTracking:
     """Test that technique usage is properly tracked."""
     
@@ -544,6 +554,8 @@ class TestTechniqueTracking:
         # This test validates the full integration when columns exist
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestBeginnerDoesNotGetAdvancedTechniques:
     """Test that beginners are not recommended advanced techniques."""
     
@@ -636,6 +648,8 @@ class TestBeginnerDoesNotGetAdvancedTechniques:
         # The AI should recommend weight reduction or other beginner-appropriate adjustments
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestEmptyDictParamsPreserved:
     """Test that empty dict params from AI recommendations are preserved (bug fix)."""
     

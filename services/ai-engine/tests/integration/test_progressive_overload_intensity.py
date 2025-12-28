@@ -21,6 +21,8 @@ from tests.factories import (
 )
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestEngineIntensityTechniqueIntegration:
     """Test progressive overload engine integration with intensity techniques."""
     
@@ -182,6 +184,8 @@ class TestEngineIntensityTechniqueIntegration:
         assert result["triggers"]["any_triggered"] == True or result["triggers"]["phase_based_triggered"] == True
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestTechniqueRecommendationContext:
     """Test that technique recommendations consider full context."""
     
@@ -303,6 +307,8 @@ class TestTechniqueRecommendationContext:
         # (depending on other conditions being met)
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestFatigueImpactCalculation:
     """Test that fatigue impact is correctly calculated."""
     
@@ -349,6 +355,8 @@ class TestFatigueImpactCalculation:
         assert myo_reps["volume_multiplier"] > 1.0
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestLatePhaseIntegration:
     """Test late phase (week 3-4) triggers technique recommendations."""
     
@@ -434,6 +442,8 @@ class TestLatePhaseIntegration:
         assert result["triggers"]["phase_based_triggered"] == False
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestMultipleExerciseWorkout:
     """Test intensity techniques across multiple exercises in a workout."""
     
@@ -498,6 +508,8 @@ class TestMultipleExerciseWorkout:
         assert isolation_result["set_type"] is not None
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestRecoveryImpactOnTechniques:
     """Test that recovery/readiness affects technique recommendations."""
     

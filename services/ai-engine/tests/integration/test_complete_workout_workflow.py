@@ -93,6 +93,9 @@ def setup_workout_plan(db_session):
     }
 
 
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.smoke  # Critical smoke test for complete workout workflow
 class TestCompleteWorkoutWorkflow:
     """Test suite for complete workout workflow."""
     

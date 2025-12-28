@@ -67,6 +67,51 @@ pytest -m smoke
 pytest --cov=app --cov-report=html
 ```
 
+## CI/CD Test Strategy
+
+### Test Tiers
+
+1. **Smoke Tests** (Priority 1): Critical path tests for complete workout workflow
+   - Run on: Every PR + Merge + Nightly
+   - Duration: ~30 seconds
+   - Command: `pytest -m smoke`
+   - Tests: Complete workout workflow end-to-end
+
+2. **Fast Unit Tests** (Priority 2): 228 isolated unit tests
+   - Run on: Every PR + Merge + Nightly
+   - Duration: ~2 minutes
+   - Command: `pytest -m "not slow"`
+   - Tests: All unit tests excluding slow ML and integration tests
+
+3. **Integration Tests** (Priority 3): Full workflow tests
+   - Run on: Merge to main + Nightly
+   - Duration: ~3 minutes
+   - Command: `pytest -m integration`
+   - Tests: End-to-end workflows, database integration, service orchestration
+
+4. **ML Training Tests** (Priority 4): Model training validation
+   - Run on: Merge to main + Nightly
+   - Duration: ~2 minutes
+   - Command: `pytest -m ml`
+   - Tests: ML model training, ensemble validation, model selection
+
+### GitHub Actions Workflows
+
+- **PR Tests** (`.github/workflows/pr-tests.yml`): Smoke + Fast tests on every pull request
+  - Triggers: Pull requests to `main` or `develop` branches
+  - Runs: Smoke tests (Priority 1) + Fast unit tests (Priority 2)
+  - Provides fast feedback (~2-3 minutes) for developers
+
+- **Full Tests** (`.github/workflows/full-tests.yml`): All tests on merge to main
+  - Triggers: Push to `main` branch
+  - Runs: Complete test suite (294 tests) with coverage reporting
+  - Ensures comprehensive validation before deployment
+
+- **Nightly Tests** (`.github/workflows/nightly-tests.yml`): Scheduled comprehensive testing
+  - Triggers: Daily at 2 AM UTC + Manual dispatch
+  - Runs: Full test suite with detailed reporting and coverage
+  - Catches regressions and provides comprehensive test metrics
+
 ## Test Markers
 
 Tests are organized using pytest markers:
@@ -75,7 +120,7 @@ Tests are organized using pytest markers:
 - `@pytest.mark.integration` - Integration tests
 - `@pytest.mark.slow` - Slow-running tests
 - `@pytest.mark.ml` - ML model tests (require TensorFlow/LightGBM)
-- `@pytest.mark.smoke` - Critical smoke tests
+- `@pytest.mark.smoke` - Critical smoke tests (complete workout workflow)
 
 ## Test Factories
 

@@ -11,6 +11,8 @@ from app.models import Athlete, WorkoutSession, PerformanceTrend, RecoveryMetric
 from app.utils.constants import Gender, TrainingExperience, SleepQuality
 
 
+@pytest.mark.integration
+@pytest.mark.slow
 class TestSyntheticDataGenerator:
     """Test synthetic data generation."""
     

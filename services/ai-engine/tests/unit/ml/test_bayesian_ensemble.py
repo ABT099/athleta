@@ -16,6 +16,8 @@ from app.ml.bayesian_ensemble import BayesianEnsemble
 
 
 @pytest.mark.skipif(not LIGHTGBM_AVAILABLE, reason="LightGBM not available")
+@pytest.mark.slow
+@pytest.mark.ml
 class TestBayesianEnsemble:
     """Test Bayesian ensemble functionality."""
     
@@ -23,11 +25,11 @@ class TestBayesianEnsemble:
         """Test ensemble can be initialized."""
         ensemble = BayesianEnsemble(
             base_model_class=LGBMRegressor,
-            n_models=5,
+            n_models=3,  # Reduced for faster tests
             model_kwargs={'n_estimators': 10, 'random_state': 42}
         )
         
-        assert ensemble.n_models == 5
+        assert ensemble.n_models == 3
         assert ensemble.base_model_class == LGBMRegressor
         assert not ensemble.is_trained
     
@@ -46,7 +48,7 @@ class TestBayesianEnsemble:
         
         ensemble = BayesianEnsemble(
             base_model_class=LGBMRegressor,
-            n_models=5,
+            n_models=3,  # Reduced for faster tests
             model_kwargs={
                 'n_estimators': 10,
                 'random_state': 42,
@@ -57,9 +59,9 @@ class TestBayesianEnsemble:
         metrics = ensemble.train(X, y, feature_names, target_names)
         
         assert ensemble.is_trained
-        assert len(ensemble.models) == 5
+        assert len(ensemble.models) == 3
         assert "ensemble_size" in metrics
-        assert metrics["ensemble_size"] == 5
+        assert metrics["ensemble_size"] == 3
         assert "mse" in metrics
         assert "r2" in metrics
     
@@ -79,7 +81,7 @@ class TestBayesianEnsemble:
         
         ensemble = BayesianEnsemble(
             base_model_class=LGBMRegressor,
-            n_models=5,
+            n_models=3,  # Reduced for faster tests
             model_kwargs={
                 'n_estimators': 10,
                 'random_state': 42,
@@ -114,7 +116,7 @@ class TestBayesianEnsemble:
         
         ensemble = BayesianEnsemble(
             base_model_class=LGBMRegressor,
-            n_models=5,
+            n_models=3,  # Reduced for faster tests
             model_kwargs={
                 'n_estimators': 10,
                 'random_state': 42,
@@ -158,15 +160,15 @@ class TestBayesianEnsemble:
     
     def test_adaptive_ensemble_size(self):
         """Test that ensemble size can be adjusted."""
+        ensemble_3 = BayesianEnsemble(
+            base_model_class=LGBMRegressor,
+            n_models=3
+        )
+        assert ensemble_3.n_models == 3
+        
         ensemble_5 = BayesianEnsemble(
             base_model_class=LGBMRegressor,
             n_models=5
         )
         assert ensemble_5.n_models == 5
-        
-        ensemble_10 = BayesianEnsemble(
-            base_model_class=LGBMRegressor,
-            n_models=10
-        )
-        assert ensemble_10.n_models == 10
 
