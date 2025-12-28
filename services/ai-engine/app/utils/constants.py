@@ -1022,31 +1022,6 @@ FORM_GATE_VOLUME_CAP = 0.95  # Cap volume at 95% when form is poor
 CONSERVATIVE_ADJUSTMENT_SCALING = 0.8  # Scale down adjustments for primary exercises
 
 # ==============================
-# PLAN ANALYZER SCORING CONSTANTS
-# ==============================
-
-# Score deductions by severity
-SCORE_DEDUCTION_CRITICAL = 20  # Points deducted for critical warnings
-SCORE_DEDUCTION_HIGH = 15  # Points deducted for high severity warnings
-SCORE_DEDUCTION_MEDIUM = 10  # Points deducted for medium severity warnings
-SCORE_DEDUCTION_LOW = 5  # Points deducted for low severity warnings
-
-# Score deductions by impact
-SCORE_DEDUCTION_HIGH_IMPACT = 5  # Points deducted for high impact suggestions
-SCORE_DEDUCTION_MEDIUM_IMPACT = 3  # Points deducted for medium impact suggestions
-SCORE_DEDUCTION_LOW_IMPACT = 1  # Points deducted for low impact suggestions
-
-# Score bonuses
-SCORE_BONUS_EXCELLENT_ORDER = 5  # Bonus for excellent exercise order (>=90)
-SCORE_BONUS_GOOD_ORDER = 2  # Bonus for good exercise order (>=80)
-SCORE_BONUS_OPTIMAL_PUSH_PULL = 3  # Bonus for optimal push/pull balance
-SCORE_BONUS_OPTIMAL_UPPER_LOWER = 2  # Bonus for optimal upper/lower balance
-
-# Score thresholds
-ORDER_SCORE_EXCELLENT_THRESHOLD = 90  # Threshold for excellent order score
-ORDER_SCORE_GOOD_THRESHOLD = 80  # Threshold for good order score
-
-# ==============================
 # VOLUME MANAGER CONSTANTS
 # ==============================
 

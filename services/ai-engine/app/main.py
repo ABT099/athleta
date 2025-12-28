@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from app.config import settings
-from app.api import athletes, workouts, periodization, ml, prescriptions, plan_analyzer
+from app.api import athletes, workouts, periodization, ml, prescriptions
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,6 @@ app.include_router(workouts.router, prefix="/api", tags=["workouts"])
 app.include_router(periodization.router, prefix="/api", tags=["periodization"])
 app.include_router(ml.router, prefix="/api", tags=["ml"])
 app.include_router(prescriptions.router, prefix="/api", tags=["prescriptions"])
-app.include_router(plan_analyzer.router, tags=["plan-analyzer"])
 
 
 @app.get("/")

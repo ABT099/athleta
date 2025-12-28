@@ -1,8 +1,7 @@
 """
 ML Training Job tracking model.
 """
-from sqlalchemy import Column, Integer, String, Enum, DateTime, ForeignKey, Text, Index
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, Integer, String, Enum, DateTime, ForeignKey, Text, Index, JSON
 from datetime import datetime, timezone
 import enum
 
@@ -46,7 +45,7 @@ class MLTrainingJob(Base):
     completed_at = Column(DateTime, nullable=True)
     
     # Results
-    training_metrics = Column(JSONB, nullable=True)  # Store training metrics as JSON
+    training_metrics = Column(JSON, nullable=True)  # Store training metrics as JSON
     error_message = Column(Text, nullable=True)
     
     def __repr__(self):
