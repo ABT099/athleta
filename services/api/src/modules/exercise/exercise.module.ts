@@ -19,7 +19,7 @@ import { ExerciseController } from './exercise.controller';
         options: {
           package: 'inference',
           protoPath: join(__dirname, '../../../proto/inference.proto'),
-          url: process.env.INFERENCE_SERVICE_URL || 'localhost:50051',
+          url: process.env.EXERCISE_INFERENCE_URL || 'localhost:50051',
         },
       },
     ]),
