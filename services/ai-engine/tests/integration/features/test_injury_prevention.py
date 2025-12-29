@@ -29,17 +29,21 @@ class TestInjuryPreventionRobustness:
         db_session.flush()
         
         # Create exercise using factory
-        from tests.factories import ExerciseFactory
+        from tests.factories import ExerciseFactory, WorkoutPlanFactory, WorkoutDayFactory
         exercise = ExerciseFactory.create_compound(
             db_session,
             name="Bench Press",
             muscles=[("mid_chest", 90), ("anterior_delt", 60), ("triceps", 50)]
         )
         
+        # Create workout plan and day (required for workout session)
+        workout_plan = WorkoutPlanFactory.create(db_session, athlete_id=athlete.id)
+        workout_day = WorkoutDayFactory.create(db_session, workout_plan_id=workout_plan.id)
+        
         # Create workout session WITHOUT form quality data
         session = WorkoutSession(
             athlete_id=athlete.id,
-            workout_day_id=1,
+            workout_day_id=workout_day.id,
             session_date=datetime.now(timezone.utc)
         )
         db_session.add(session)
