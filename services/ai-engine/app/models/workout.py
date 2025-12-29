@@ -14,9 +14,10 @@ class WorkoutPlan(Base):
     Workout plan blueprint - the master template for a training program.
     """
     __tablename__ = "workout_plans"
+    __table_args__ = get_schema_table_args("public")
     
     id = Column(Integer, primary_key=True, index=True)
-    athlete_id = Column(Integer, ForeignKey("athletes.id"), nullable=False)
+    athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id")), nullable=False)
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     name = deferred(Column(String(255), nullable=False))
@@ -96,9 +97,10 @@ class WorkoutDay(Base):
     Scheduled workout day with prescribed exercises and parameters.
     """
     __tablename__ = "workout_days"
+    __table_args__ = get_schema_table_args("public")
     
     id = Column(Integer, primary_key=True, index=True)
-    workout_plan_id = Column(Integer, ForeignKey("workout_plans.id"), nullable=False)
+    workout_plan_id = Column(Integer, ForeignKey(get_fk_reference("workout_plans.id")), nullable=False)
     
     # Deferred fields - only loaded when explicitly needed (CRUD operations)
     name = deferred(Column(String(255), nullable=False))  # e.g., "Push Day A", "Lower Body"
@@ -124,10 +126,11 @@ class WorkoutDayExercise(Base):
     Exercise prescription for a specific workout day.
     """
     __tablename__ = "workout_day_exercises"
+    __table_args__ = get_schema_table_args("public")
     
     id = Column(Integer, primary_key=True, index=True)
-    workout_day_id = Column(Integer, ForeignKey("workout_days.id"), nullable=False)
-    exercise_id = Column(Integer, ForeignKey("exercises.id"), nullable=False)
+    workout_day_id = Column(Integer, ForeignKey(get_fk_reference("workout_days.id")), nullable=False)
+    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id")), nullable=False)
     
     # Exercise order in the workout
     order_in_workout = Column(Integer, nullable=False)

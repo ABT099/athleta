@@ -1695,7 +1695,12 @@ class ProgressiveOverloadEngine:
                 [chronic_load]  # Single value for chronic average
             )
         
-        return acute_load, chronic_load, acwr
+        # Ensure all values are Python floats (not numpy scalars) for SQLAlchemy compatibility
+        return (
+            float(acute_load) if acute_load is not None else None,
+            float(chronic_load) if chronic_load is not None else None,
+            float(acwr) if acwr is not None else None
+        )
     
     def _get_recent_volume_loads(
         self,

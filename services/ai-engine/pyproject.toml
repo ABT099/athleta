@@ -33,6 +33,7 @@ dependencies = [
     # JWT
     "pyjwt[crypto]==2.10.1",
     "pandas>=2.3.3",
+    "testcontainers[postgres,redis]>=4.13.3",
 ]
 
 [project.optional-dependencies]

@@ -4,7 +4,7 @@ Muscle group models for granular muscle targeting.
 from sqlalchemy import Column, Integer, String, Enum, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 
-from app.database import Base
+from app.database import Base, get_schema_table_args, get_fk_reference
 
 
 class MuscleGroupModel(Base):
@@ -20,6 +20,7 @@ class MuscleGroupModel(Base):
     - Core: abs, erector_spinae
     """
     __tablename__ = "muscle_groups"
+    __table_args__ = get_schema_table_args("public")
     
     id = Column(Integer, primary_key=True)
     name = Column(String(50), unique=True, nullable=False, index=True)
@@ -27,7 +28,7 @@ class MuscleGroupModel(Base):
     size = Column(Enum("small", "medium", "large", name="muscle_size_enum"), nullable=False)
     base_recovery_hours = Column(Integer, nullable=False)
     is_compound_target = Column(Boolean, nullable=False, default=False)
-    antagonist_id = Column(Integer, ForeignKey("muscle_groups.id"), nullable=True)
+    antagonist_id = Column(Integer, ForeignKey(get_fk_reference("muscle_groups.id")), nullable=True)
     
     # Relationships
     antagonist = relationship("MuscleGroupModel", remote_side=[id], foreign_keys=[antagonist_id])
@@ -47,10 +48,11 @@ class ExerciseMuscle(Base):
     - stabilizer: Holds position, prevents unwanted movement
     """
     __tablename__ = "exercise_muscles"
+    __table_args__ = get_schema_table_args("public")
     
     id = Column(Integer, primary_key=True)
-    exercise_id = Column(Integer, ForeignKey("exercises.id", ondelete="CASCADE"), nullable=False, index=True)
-    muscle_group_id = Column(Integer, ForeignKey("muscle_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id"), ondelete="CASCADE"), nullable=False, index=True)
+    muscle_group_id = Column(Integer, ForeignKey(get_fk_reference("muscle_groups.id"), ondelete="CASCADE"), nullable=False, index=True)
     role = Column(Enum("prime_mover", "synergist", "stabilizer", name="muscle_role_enum"), nullable=False)
     
     # Relationships

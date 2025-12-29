@@ -268,7 +268,8 @@ class TrainingCalculations:
         if chronic_load == 0:
             return 0.0
         
-        return acute_load / chronic_load
+        # Convert numpy scalar to Python float for SQLAlchemy compatibility
+        return float(acute_load / chronic_load)
     
     @staticmethod
     def calculate_training_monotony(daily_loads: List[float]) -> float:

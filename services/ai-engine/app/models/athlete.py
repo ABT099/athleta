@@ -7,7 +7,7 @@ CRUD fields (name, email, injury_history, timestamps) are handled by NestJS API.
 from sqlalchemy import Column, Integer, Enum, Float
 from sqlalchemy.orm import relationship
 
-from app.database import Base
+from app.database import Base, get_schema_table_args
 from app.utils.constants import TrainingExperience, Gender
 
 
@@ -21,6 +21,7 @@ class Athlete(Base):
     CRUD fields (name, email, injury_history, timestamps) are managed by NestJS API.
     """
     __tablename__ = "athletes"
+    __table_args__ = get_schema_table_args("public")
     
     id = Column(Integer, primary_key=True, index=True)
     

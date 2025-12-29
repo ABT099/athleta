@@ -3,17 +3,17 @@ Pytest configuration and fixtures.
 """
 import os
 import pytest
-import json
 from datetime import datetime
 from unittest.mock import Mock, MagicMock
-from sqlalchemy import create_engine, event, String, Text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.dialects import sqlite
+from testcontainers.postgres import PostgresContainer
+from testcontainers.redis import RedisContainer
 
-# Set test database URL before importing app modules
-# Use a named in-memory database with shared cache so all connections share the same database
-os.environ["DATABASE_URL"] = "sqlite:///file::memory:?cache=shared&uri=true"
+# Set test environment BEFORE importing any app modules
+# This ensures database.py uses PostgreSQL mode, not SQLite
 os.environ["JWT_SECRET"] = "test-jwt-secret-for-testing"
+os.environ["DATABASE_URL"] = "postgresql://test:test@localhost:5432/test"  # Placeholder, will be overridden by container
 
 from app.database import Base
 from app.utils.constants import (
@@ -21,147 +21,124 @@ from app.utils.constants import (
 )
 
 
-# Custom type to handle PostgreSQL ARRAY in SQLite
-class SQLiteArray(String):
-    """Custom type to serialize/deserialize arrays for SQLite."""
+@pytest.fixture(scope="session")
+def postgres_container():
+    """
+    Create a PostgreSQL testcontainer for the entire test session.
     
-    def bind_processor(self, dialect):
-        def process(value):
-            if value is None:
-                return None
-            if isinstance(value, list):
-                return json.dumps(value)
-            return value
-        return process
-    
-    def result_processor(self, dialect, coltype):
-        def process(value):
-            if value is None:
-                return []
-            if isinstance(value, str):
-                try:
-                    return json.loads(value)
-                except (json.JSONDecodeError, TypeError):
-                    return []
-            return value
-        return process
+    Uses the official PostgreSQL 18 image and persists across all tests
+    for better performance. The container is automatically cleaned up
+    after all tests complete.
+    """
+    with PostgresContainer("postgres:18-alpine", driver="psycopg2") as postgres:
+        # Set the DATABASE_URL for all tests
+        os.environ["DATABASE_URL"] = postgres.get_connection_url()
+        yield postgres
 
 
-# Custom type to handle JSON in SQLite
-class SQLiteJSON(Text):
-    """Custom type to serialize/deserialize JSON for SQLite."""
+@pytest.fixture(scope="session")
+def redis_container():
+    """
+    Create a Redis testcontainer for the entire test session.
     
-    def bind_processor(self, dialect):
-        def process(value):
-            if value is None:
-                return None
-            if isinstance(value, (list, dict)):
-                return json.dumps(value)
-            return value
-        return process
-    
-    def result_processor(self, dialect, coltype):
-        def process(value):
-            if value is None:
-                return None
-            if isinstance(value, str):
-                try:
-                    return json.loads(value)
-                except (json.JSONDecodeError, TypeError):
-                    return value
-            return value
-        return process
+    Used for Celery task queue testing. The container is automatically
+    cleaned up after all tests complete.
+    """
+    with RedisContainer("redis:8-alpine") as redis:
+        # Set the REDIS_URL for all tests
+        redis_url = f"redis://{redis.get_container_host_ip()}:{redis.get_exposed_port(6379)}/0"
+        os.environ["REDIS_URL"] = redis_url
+        yield redis
 
 
 @pytest.fixture(scope="function")
-def db_session():
+def db_session(postgres_container):
     """
     Create a test database session.
     
-    Uses in-memory SQLite for testing with PostgreSQL ARRAY compatibility.
-    Each test gets a fresh in-memory database that is automatically cleaned up.
+    Uses PostgreSQL testcontainer for testing (identical to production).
+    Each test gets a fresh database schema that is automatically cleaned up.
     """
-    # Patch ARRAY type for SQLite compatibility
-    from sqlalchemy.dialects.postgresql import ARRAY
+    from sqlalchemy import event, text
     
-    # Override ARRAY compilation for SQLite
-    @event.listens_for(Base.metadata, "before_create")
-    def receive_before_create(target, connection, **kw):
-        """Handle ARRAY and JSON types in SQLite."""
-        if connection.dialect.name == 'sqlite':
-            for table in Base.metadata.tables.values():
-                for column in table.columns:
-                    if hasattr(column.type, '__class__'):
-                        type_name = column.type.__class__.__name__
-                        if type_name == 'ARRAY':
-                            # Replace ARRAY with SQLiteJSON for SQLite (arrays are lists)
-                            column.type = SQLiteJSON()
-                        elif type_name == 'JSON':
-                            # Replace JSON with SQLiteJSON for SQLite
-                            column.type = SQLiteJSON()
+    # Import all models - app.models.__init__.py imports everything
+    # This ensures all tables are registered with Base.metadata before create_all
+    import app.models  # noqa: F401
     
-    # Create in-memory SQLite database for testing
-    # Using file::memory:?cache=shared&uri=true creates a shared in-memory database
-    # that all connections can access (unlike :memory: which is per-connection)
-    # check_same_thread=False allows the connection to be used across threads
-    # (required for FastAPI TestClient which runs in different threads)
-    engine = create_engine(
-        "sqlite:///file::memory:?cache=shared&uri=true",
-        echo=False,
-        connect_args={"check_same_thread": False}
-    )
+    # Force evaluation of all model relationships by accessing __tablename__
+    # This ensures foreign key references are fully resolved
+    for table in Base.metadata.tables.values():
+        _ = table.name  # Access to force lazy evaluation
+    
+    # Create engine from the container's connection URL
+    engine = create_engine(postgres_container.get_connection_url(), echo=False)
+    
+    # Set search_path on each connection (matches production database.py)
+    @event.listens_for(engine, "connect")
+    def set_search_path(dbapi_conn, connection_record):
+        """Set search_path on each connection to include both schemas."""
+        cursor = dbapi_conn.cursor()
+        cursor.execute("SET search_path TO public, ai_analysis")
+        cursor.close()
+    
+    # Create ai_analysis schema if it doesn't exist
+    with engine.connect() as conn:
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS ai_analysis"))
+        conn.commit()
+    
+    # Create all tables in dependency order
+    # SQLAlchemy will automatically sort by foreign key dependencies
     Base.metadata.create_all(engine)
     
+    # Create session
     TestingSessionLocal = sessionmaker(bind=engine)
     session = TestingSessionLocal()
     
     # Seed muscle groups for tests (required since Drizzle manages these in production)
     try:
         from app.models import MuscleGroupModel
-        # Check if muscle groups already exist
-        if session.query(MuscleGroupModel).count() == 0:
-            # Seed basic muscle groups needed for tests
-            muscle_groups_data = [
-                # Chest (3)
-                ("mid_chest", "Mid Chest", "large", 72, None),
-                ("upper_chest", "Upper Chest", "large", 72, None),
-                ("lower_chest", "Lower Chest", "large", 72, None),
-                # Back (4)
-                ("lats", "Lats", "large", 72, None),
-                ("mid_back", "Mid Back", "medium", 60, None),
-                ("upper_traps", "Upper Traps", "medium", 60, None),
-                ("lower_traps", "Lower Traps", "medium", 60, None),
-                # Shoulders (3)
-                ("anterior_delt", "Front Delts", "medium", 60, None),
-                ("lateral_delt", "Side Delts", "small", 48, None),
-                ("posterior_delt", "Rear Delts", "small", 48, None),
-                # Arms (3)
-                ("biceps", "Biceps", "small", 48, None),
-                ("triceps", "Triceps", "small", 48, None),
-                ("forearms", "Forearms", "small", 48, None),
-                # Legs (5)
-                ("quadriceps", "Quadriceps", "large", 72, None),
-                ("hamstrings", "Hamstrings", "large", 72, None),
-                ("glutes", "Glutes", "large", 72, None),
-                ("hip_flexors", "Hip Flexors", "medium", 60, None),
-                ("calves", "Calves", "small", 48, None),
-                # Core (2)
-                ("abs", "Abs", "medium", 60, None),  # Medium muscles require 60 hours recovery
-                ("erector_spinae", "Lower Back", "medium", 60, None),
-            ]
-            
-            for name, display_name, size, recovery_hours, antagonist_id in muscle_groups_data:
-                mg = MuscleGroupModel(
-                    name=name,
-                    display_name=display_name,
-                    size=size,
-                    base_recovery_hours=recovery_hours,
-                    antagonist_id=antagonist_id
-                )
-                session.add(mg)
-            session.commit()
+        # Seed basic muscle groups needed for tests
+        muscle_groups_data = [
+            # Chest (3)
+            ("mid_chest", "Mid Chest", "large", 72, None),
+            ("upper_chest", "Upper Chest", "large", 72, None),
+            ("lower_chest", "Lower Chest", "large", 72, None),
+            # Back (4)
+            ("lats", "Lats", "large", 72, None),
+            ("mid_back", "Mid Back", "medium", 60, None),
+            ("upper_traps", "Upper Traps", "medium", 60, None),
+            ("lower_traps", "Lower Traps", "medium", 60, None),
+            # Shoulders (3)
+            ("anterior_delt", "Front Delts", "medium", 60, None),
+            ("lateral_delt", "Side Delts", "small", 48, None),
+            ("posterior_delt", "Rear Delts", "small", 48, None),
+            # Arms (3)
+            ("biceps", "Biceps", "small", 48, None),
+            ("triceps", "Triceps", "small", 48, None),
+            ("forearms", "Forearms", "small", 48, None),
+            # Legs (5)
+            ("quadriceps", "Quadriceps", "large", 72, None),
+            ("hamstrings", "Hamstrings", "large", 72, None),
+            ("glutes", "Glutes", "large", 72, None),
+            ("hip_flexors", "Hip Flexors", "medium", 60, None),
+            ("calves", "Calves", "small", 48, None),
+            # Core (2)
+            ("abs", "Abs", "medium", 60, None),
+            ("erector_spinae", "Lower Back", "medium", 60, None),
+        ]
+        
+        for name, display_name, size, recovery_hours, antagonist_id in muscle_groups_data:
+            mg = MuscleGroupModel(
+                name=name,
+                display_name=display_name,
+                size=size,
+                base_recovery_hours=recovery_hours,
+                antagonist_id=antagonist_id
+            )
+            session.add(mg)
+        session.commit()
     except Exception:
-        # If seeding fails, continue anyway (might already exist)
+        # If seeding fails, rollback and continue
         session.rollback()
     
     try:
@@ -173,10 +150,25 @@ def db_session():
         session.rollback()
         raise
     finally:
-        # Clean up
+        # Clean up: drop all tables and dispose engine
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+
+
+@pytest.fixture(scope="function")
+def celery_worker(redis_container):
+    """
+    Provides a Celery app configured with the test Redis container.
+    
+    Useful for testing Celery tasks in integration tests.
+    ML tests can use this to test real task execution.
+    """
+    from app.celery_app import celery_app
+    
+    # The celery_app is already configured with REDIS_URL from environment
+    # which was set by the redis_container fixture
+    return celery_app
 
 
 @pytest.fixture

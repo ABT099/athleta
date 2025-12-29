@@ -4,7 +4,7 @@ Exercise library models.
 from sqlalchemy import Column, Integer, String, Enum, Float, ARRAY
 from sqlalchemy.orm import relationship, deferred
 
-from app.database import Base
+from app.database import Base, get_schema_table_args
 
 
 class Exercise(Base):
@@ -14,6 +14,7 @@ class Exercise(Base):
     Muscles are now linked via ExerciseMuscle junction table with activation percentages.
     """
     __tablename__ = "exercises"
+    __table_args__ = get_schema_table_args("public")
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, unique=True, index=True)  # Eagerly loaded (used in AI error messages)
