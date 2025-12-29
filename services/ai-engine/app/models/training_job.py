@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, String, Enum, DateTime, ForeignKey, Text
 from datetime import datetime, timezone
 import enum
 
-from app.database import Base, get_schema_table_args, get_fk_reference
+from app.database import Base, get_table_args_with_constraints, get_fk_reference
 
 
 class MLJobStatus(str, enum.Enum):
@@ -23,10 +23,10 @@ class MLTrainingJob(Base):
     Used to monitor background retraining tasks and avoid duplicate jobs.
     """
     __tablename__ = "ml_training_jobs"
-    __table_args__ = (
+    __table_args__ = get_table_args_with_constraints(
         Index("idx_ml_training_jobs_athlete_status", "athlete_id", "status"),
         Index("idx_ml_training_jobs_created_at", "created_at"),
-        *get_schema_table_args("ai_analysis")
+        schema="ai_analysis"
     )
     
     id = Column(Integer, primary_key=True, index=True)

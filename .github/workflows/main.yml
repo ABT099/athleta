@@ -32,16 +32,10 @@ jobs:
 
       - name: Run smoke tests
         working-directory: services/ai-engine
-        env:
-          JWT_SECRET: "test_secret_key_for_ci_pipeline"
-          JWT_ALGORITHM: "HS256"
         run: uv run pytest -m "smoke" --verbose
 
       - name: Run unit tests
         working-directory: services/ai-engine
-        env:
-          JWT_SECRET: "test_secret_key_for_ci_pipeline"
-          JWT_ALGORITHM: "HS256"
         run: uv run pytest -m "not slow" --verbose
 
   test-exercise-inference:

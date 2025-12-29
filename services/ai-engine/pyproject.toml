@@ -79,11 +79,12 @@ addopts = [
     "--tb=short",  # Shorter tracebacks for CI
 ]
 markers = [
-    "unit: Unit tests (fast)",
-    "integration: Integration tests",
+    "integration: Integration tests (user journeys and workflows)",
+    "calculations: Pure calculation/math tests (fast)",
+    "algorithms: Complex algorithm tests (business logic)",
+    "ml: ML model tests (requires TensorFlow/LightGBM, runs nightly)",
+    "smoke: Critical smoke test (complete workout endpoint)",
     "slow: Slow-running tests",
-    "ml: ML model tests (requires TensorFlow/LightGBM)",
-    "smoke: Critical smoke tests (complete workout workflow)",
 ]
 
 [tool.black]

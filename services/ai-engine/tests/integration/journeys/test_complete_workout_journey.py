@@ -94,95 +94,16 @@ def setup_workout_plan(db_session):
 
 
 @pytest.mark.integration
-@pytest.mark.slow
-@pytest.mark.smoke  # Critical smoke test for complete workout workflow
+@pytest.mark.smoke  # Critical smoke test for complete workout workflow (runs on every PR)
 class TestCompleteWorkoutWorkflow:
     """Test suite for complete workout workflow."""
     
-    def test_complete_workout_full_workflow(self, client, db_session, setup_workout_plan, mocker):
+    def test_complete_workout_full_workflow(self, client, db_session, setup_workout_plan):
         """Test the complete workflow from workout submission to AI recommendations.
         
         This smoke test validates the endpoint structure and response format.
-        Heavy AI processing is mocked to keep the test fast.
         """
         from app.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
-        from app.services.progressive_overload_engine import ProgressiveOverloadEngine
-        
-        # Mock the heavy AI processing to speed up smoke test
-        # We still test the endpoint structure and basic flow, but skip heavy computations
-        mock_process = mocker.patch.object(
-            ProgressiveOverloadEngine, 
-            'process_workout_completion',
-            return_value={
-                "adjustments": {
-                    "volume_multiplier": 1.05,
-                    "intensity_multiplier": 1.0,
-                    "reasoning": "Good performance, slight volume increase",
-                    "exercise_adjustments": {}
-                },
-                "plan_context": {
-                    "has_plan": True,
-                    "plan_id": setup_workout_plan["plan"].id,
-                    "plan_entry_id": 1,
-                    "target_volume_multiplier": 1.05,
-                    "target_intensity_multiplier": 1.0
-                },
-                "recovery_status": {
-                    "readiness_score": 0.85,
-                    "fatigue_status": {
-                        "fatigue_score": 0.3,
-                        "level": "low"
-                    }
-                },
-                "performance_analysis": {
-                    "total_volume": 3000.0,
-                    "exercise_analyses": [
-                        {
-                            "exercise_id": setup_workout_plan["exercise"].id,
-                            "volume": 3000.0,
-                            "intensity": 8.0
-                        }
-                    ]
-                },
-                "ai_insights": ["Good workout performance", "Maintain current intensity"]
-            }
-        )
-        
-        # Mock other heavy operations to speed up the test
-        mocker.patch.object(
-            ProgressiveOverloadEngine, 
-            'analyze_plan_context', 
-            return_value={
-                "has_plan": True,
-                "plan_id": setup_workout_plan["plan"].id,
-                "plan_entry_id": 1
-            }
-        )
-        mocker.patch.object(
-            ProgressiveOverloadEngine, 
-            'analyze_workout_performance', 
-            return_value={
-                "total_volume": 3000.0,
-                "exercise_analyses": []
-            }
-        )
-        mocker.patch.object(
-            ProgressiveOverloadEngine, 
-            'assess_recovery_status', 
-            return_value={
-                "readiness_score": 0.85,
-                "fatigue_status": {"fatigue_score": 0.3, "level": "low"}
-            }
-        )
-        mocker.patch.object(
-            ProgressiveOverloadEngine, 
-            'create_performance_trend_for_session', 
-            return_value=None
-        )
-        
-        # Mock form quality service to avoid heavy database queries
-        mocker.patch('app.services.form_quality_service.FormQualityService.track_session_form_quality', return_value={})
-        mocker.patch('app.services.form_quality_service.FormQualityService.save_form_quality_trend', return_value=None)
         
         setup = setup_workout_plan
         athlete = setup["athlete"]
