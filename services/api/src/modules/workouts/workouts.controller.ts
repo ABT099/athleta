@@ -5,16 +5,27 @@ import {
   ParseIntPipe,
   Body,
   Get,
+  Post,
 } from '@nestjs/common';
 import { WorkoutsService } from './workouts.service';
 import { SubstituteExerciseDto } from './dto/substitute-exercise.dto';
 import { UpdateWorkoutDayExerciseDto } from './dto/update-workout-day-exercises.dto';
 import { jsDayToDayOfWeek } from 'src/constants';
 import { CurrentUser } from 'src/decorators/user.decorator';
+import { CreateWorkoutDayDto } from './dto/create-workout-day.dto';
 
 @Controller('workouts')
 export class WorkoutsController {
   constructor(private readonly workoutsService: WorkoutsService) {}
+
+  @Post()
+  async createWorkoutDay(@Body() dto: CreateWorkoutDayDto): Promise<void> {
+    await this.workoutsService.createWorkoutDays(
+      dto.workoutPlanId,
+      dto.trainingType,
+      [dto.workoutDay],
+    );
+  }
 
   @Put(':workoutDayId/exercises/:exerciseId/substitute')
   async substituteExercise(

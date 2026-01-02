@@ -16,6 +16,23 @@ import {
 } from 'src/integrations/ai-engine.integration';
 import { DayOfWeek } from 'src/constants';
 
+export type CreateWorkoutExerciseInput = {
+  name: string;
+  targetSetsMin: number;
+  targetSetsMax?: number;
+  targetRepsMin: number;
+  targetRepsMax?: number;
+  orderInWorkout: number;
+  notes?: string;
+};
+
+export type CreateWorkoutDayInput = {
+  name: string;
+  dayOfWeek: number;
+  orderInWeek: number;
+  exercises: CreateWorkoutExerciseInput[];
+};
+
 @Injectable()
 export class WorkoutsService {
   private readonly logger = new Logger(WorkoutsService.name);
@@ -255,6 +272,195 @@ export class WorkoutsService {
         { id: workoutDayId, muscles: musclesWithRoles },
       ]);
     }
+  }
+
+  async createWorkoutDays(
+    workoutPlanId: number,
+    trainingType: string,
+    workoutDaysData: CreateWorkoutDayInput[],
+  ): Promise<number[]> {
+    if (!workoutDaysData || workoutDaysData.length === 0) {
+      return [];
+    }
+
+    // Get all exercise names
+    const allExerciseNames = workoutDaysData.flatMap((workoutDay) =>
+      workoutDay.exercises.map((exercise) => exercise.name),
+    );
+
+    // Batch upsert exercises
+    const exercisesWithMuscles =
+      await this.exerciseService.batchUpsertExercises(allExerciseNames);
+
+    // Create exercise data map
+    const exerciseDataMap = new Map(
+      exercisesWithMuscles.map((ex, index) => [
+        allExerciseNames[index].toLowerCase(),
+        ex,
+      ]),
+    );
+
+    // Collect prescription requests
+    const prescriptionRequests: PrescriptionRequestDto[] = [];
+    const exerciseMetadataPreInsert: Array<{
+      dayIndex: number;
+      exercise: CreateWorkoutExerciseInput;
+      exerciseData: {
+        id: number;
+        name: string;
+        intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation';
+        exerciseType: 'compound' | 'isolation';
+        muscles: Array<{ name: string; role: string }>;
+      };
+      isPrimary: boolean;
+    }> = [];
+
+    for (let dayIndex = 0; dayIndex < workoutDaysData.length; dayIndex++) {
+      const workoutDay = workoutDaysData[dayIndex];
+      const totalExercises = workoutDay.exercises.length;
+
+      for (const exercise of workoutDay.exercises) {
+        const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
+        if (!exerciseData) {
+          throw new Error(`Exercise data not found for: ${exercise.name}`);
+        }
+
+        const isPrimary = ExerciseService.determineIsPrimary(
+          exerciseData.intensityCategory,
+          exercise.orderInWorkout,
+          totalExercises,
+        );
+
+        prescriptionRequests.push({
+          intensityCategory: exerciseData.intensityCategory,
+          trainingType: trainingType as any,
+          trainingPhase: 'accumulation',
+          weekInPhase: 1,
+          isPrimary: isPrimary,
+        });
+
+        exerciseMetadataPreInsert.push({
+          dayIndex,
+          exercise,
+          exerciseData,
+          isPrimary,
+        });
+      }
+    }
+
+    // Generate prescriptions
+    const prescriptions =
+      prescriptionRequests.length > 0
+        ? await this.AIEngineIntegration.generateBatchPrescriptions(
+            prescriptionRequests,
+          )
+        : [];
+
+    if (
+      prescriptionRequests.length > 0 &&
+      prescriptions.length !== prescriptionRequests.length
+    ) {
+      throw new Error(
+        `Prescription API returned ${prescriptions.length} prescriptions but expected ${prescriptionRequests.length}`,
+      );
+    }
+
+    // Prepare workout day values
+    const workoutDayValues = workoutDaysData.map((workoutDay) => {
+      const musclesWithRoles: Array<{ name: string; role: string }> = [];
+
+      for (const exercise of workoutDay.exercises) {
+        const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
+        if (exerciseData) {
+          for (const muscle of exerciseData.muscles) {
+            musclesWithRoles.push(muscle);
+          }
+        }
+      }
+
+      return {
+        values: {
+          workoutPlanId: workoutPlanId,
+          name: workoutDay.name,
+          dayOfWeek: workoutDay.dayOfWeek,
+          orderInWeek: workoutDay.orderInWeek,
+          muscleImageUrl: null,
+        },
+        muscles: musclesWithRoles,
+      };
+    });
+
+    // Insert workout days in transaction
+    const workoutDaysDataForImages: Array<{
+      id: number;
+      muscles: Array<{ name: string; role: string }>;
+    }> = [];
+
+    const insertedWorkoutDayIds = await this.db.transaction(async (tx) => {
+      // Insert workout days
+      const insertedWorkoutDays = await tx
+        .insert(workoutDays)
+        .values(workoutDayValues.map((wd) => wd.values))
+        .returning({ id: workoutDays.id });
+
+      // Map workout day IDs to muscle data
+      insertedWorkoutDays.forEach((insertedDay, index) => {
+        workoutDaysDataForImages.push({
+          id: insertedDay.id,
+          muscles: workoutDayValues[index].muscles,
+        });
+      });
+
+      // Prepare exercise inserts
+      const allExerciseInserts: Array<any> = [];
+      let prescriptionIndex = 0;
+
+      for (
+        let dayIndex = 0;
+        dayIndex < insertedWorkoutDays.length;
+        dayIndex++
+      ) {
+        const workoutDayId = insertedWorkoutDays[dayIndex].id;
+        const workoutDay = workoutDaysData[dayIndex];
+
+        for (const exercise of workoutDay.exercises) {
+          const preInsertMeta = exerciseMetadataPreInsert[prescriptionIndex];
+          allExerciseInserts.push({
+            workoutDayId: workoutDayId,
+            exerciseId: preInsertMeta.exerciseData.id,
+            orderInWorkout: preInsertMeta.exercise.orderInWorkout,
+            targetSetsMin: preInsertMeta.exercise.targetSetsMin,
+            targetSetsMax:
+              preInsertMeta.exercise.targetSetsMax ??
+              preInsertMeta.exercise.targetSetsMin,
+            targetRepsMin: preInsertMeta.exercise.targetRepsMin,
+            targetRepsMax:
+              preInsertMeta.exercise.targetRepsMax ??
+              preInsertMeta.exercise.targetRepsMin,
+            targetRpe: prescriptions[prescriptionIndex].target_rpe,
+            targetRir: prescriptions[prescriptionIndex].target_rir,
+            restPeriodSeconds:
+              prescriptions[prescriptionIndex].rest_period_seconds,
+            notes: preInsertMeta.exercise.notes ?? null,
+            isPrimary: preInsertMeta.isPrimary,
+            warmUpSets: 0,
+          });
+          prescriptionIndex++;
+        }
+      }
+
+      // Insert exercises
+      if (allExerciseInserts.length > 0) {
+        await tx.insert(workoutDayExercises).values(allExerciseInserts);
+      }
+
+      return insertedWorkoutDays.map((wd) => wd.id);
+    });
+
+    // Generate muscle images outside transaction
+    await this.generateMuscleImagesForWorkoutDay(workoutDaysDataForImages);
+
+    return insertedWorkoutDayIds;
   }
 
   async generateMuscleImagesForWorkoutDay(

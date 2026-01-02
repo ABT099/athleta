@@ -6,30 +6,20 @@ import {
   jsDayToDayOfWeek,
 } from 'src/constants';
 import { workoutDays, workoutPlans, workoutDayExercises } from 'src/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { ExerciseService } from '../exercise/exercise.service';
-import { WorkoutsService } from '../workouts/workouts.service';
+import {
+  WorkoutsService,
+  type CreateWorkoutDayInput,
+  type CreateWorkoutExerciseInput,
+} from '../workouts/workouts.service';
 import {
   AIEngineIntegration,
   type PrescriptionRequestDto,
 } from 'src/integrations/ai-engine.integration';
 
-type WorkoutDay = {
-  name: string;
-  dayOfWeek: number;
-  orderInWeek: number;
-  exercises: WorkoutExercise[];
-};
-
-type WorkoutExercise = {
-  name: string;
-  targetSetsMin: number;
-  targetSetsMax?: number;
-  targetRepsMin: number;
-  targetRepsMax?: number;
-  orderInWorkout: number;
-  notes?: string;
-};
+type WorkoutDay = CreateWorkoutDayInput;
+type WorkoutExercise = CreateWorkoutExerciseInput;
 
 @Injectable()
 export class PlansService {
@@ -47,12 +37,32 @@ export class PlansService {
   }
 
   async getPlan(athleteId: number, planId: number) {
-    return this.db.query.workoutPlans.findFirst({
+    const plan = await this.db.query.workoutPlans.findFirst({
       where: and(
         eq(workoutPlans.id, planId),
         eq(workoutPlans.athleteId, athleteId),
       ),
+      with: {
+        workoutDays: {
+          orderBy: (workoutDays, { asc }) => [asc(workoutDays.orderInWeek)],
+          with: {
+            workoutDayExercises: {
+              orderBy: (workoutDayExercises, { asc }) => [
+                asc(workoutDayExercises.orderInWorkout),
+              ],
+              with: {
+                exercise: true,
+              },
+            },
+          },
+        },
+      },
     });
+
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+    return plan;
   }
 
   async createPlan(createPlanDto: {
@@ -305,11 +315,26 @@ export class PlansService {
       description?: string;
       trainingType: TrainingType;
       periodizationModel: PeriodizationModel;
+      workoutDaysToAdd: WorkoutDay[];
+      workoutDaysToRemove: number[];
       frequency: number;
       durationWeeks: number;
       focusAreas?: string[];
     },
   ) {
+    // Verify the plan exists and belongs to the athlete
+    const plan = await this.db.query.workoutPlans.findFirst({
+      where: and(
+        eq(workoutPlans.id, planId),
+        eq(workoutPlans.athleteId, athleteId),
+      ),
+    });
+
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    // Update plan fields
     await this.db
       .update(workoutPlans)
       .set({
@@ -324,6 +349,28 @@ export class PlansService {
       .where(
         and(eq(workoutPlans.id, planId), eq(workoutPlans.athleteId, athleteId)),
       );
+
+    // Handle workout days removal
+    if (fieldsToUpdate.workoutDaysToRemove.length > 0) {
+      // Delete workout days (cascade will handle workout day exercises)
+      await this.db
+        .delete(workoutDays)
+        .where(
+          and(
+            eq(workoutDays.workoutPlanId, planId),
+            inArray(workoutDays.id, fieldsToUpdate.workoutDaysToRemove),
+          ),
+        );
+    }
+
+    // Handle workout days addition
+    if (fieldsToUpdate.workoutDaysToAdd.length > 0) {
+      await this.workoutsService.createWorkoutDays(
+        planId,
+        fieldsToUpdate.trainingType,
+        fieldsToUpdate.workoutDaysToAdd,
+      );
+    }
   }
 
   async deletePlan(athleteId: number, planId: number) {
