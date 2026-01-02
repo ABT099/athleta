@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
 import { exercises, muscleGroups, exerciseMuscles } from 'src/db/schema';
-import { eq, ne, lte, inArray, and } from 'drizzle-orm';
+import { eq, ne, lte, inArray, and, sql } from 'drizzle-orm';
 import { MuscleSimilarityUtil } from './utils/muscle-similarity.util';
 import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
 import {
@@ -359,13 +359,70 @@ export class ExerciseService {
   }
 
   /**
+   * Determine if an exercise should be primary or accessory based on training science
+   *
+   * Scientific basis:
+   * - Compound Heavy exercises have very high CNS demand → Primary when performed early
+   * - Compound Moderate exercises have moderate CNS demand → Primary in first half
+   * - Isolation exercises have low CNS demand → Typically accessory
+   * - First 2-3 exercises should be primary (neurological freshness critical)
+   *
+   * @param intensityCategory - Exercise intensity category (compound_heavy/moderate/isolation)
+   * @param orderInWorkout - Position in workout (1-indexed)
+   * @param totalExercises - Total number of exercises in the workout
+   * @returns true if exercise should be primary, false if accessory
+   */
+  static determineIsPrimary(
+    intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation',
+    orderInWorkout: number,
+    totalExercises: number,
+  ): boolean {
+    // Handle edge cases
+    if (totalExercises <= 2) {
+      // With 1-2 exercises, all are primary
+      return true;
+    }
+
+    // First 3 exercises are always primary (CNS freshness critical)
+    if (orderInWorkout <= 3) {
+      return true;
+    }
+
+    // Calculate relative position (0-1 scale)
+    const relativePosition = orderInWorkout / totalExercises;
+
+    // Apply hybrid algorithm
+    switch (intensityCategory) {
+      case 'compound_heavy':
+        // Compound heavy in first 60% → Primary
+        return relativePosition <= 0.6;
+
+      case 'compound_moderate':
+        // Compound moderate in first 40% → Primary
+        return relativePosition <= 0.4;
+
+      case 'isolation':
+        // Isolation exercises are typically accessory
+        return false;
+
+      default:
+        // Conservative default: treat as accessory
+        return false;
+    }
+  }
+
+  /**
    * Batch upsert exercises from exercise names
    * This is called internally when creating workouts with custom exercise names
    */
-  async batchUpsertExercises(
-    exerciseNames: string[],
-  ): Promise<
-    Array<{ id: number; muscles: Array<{ name: string; role: string }> }>
+  async batchUpsertExercises(exerciseNames: string[]): Promise<
+    Array<{
+      id: number;
+      name: string;
+      intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation';
+      exerciseType: 'compound' | 'isolation';
+      muscles: Array<{ name: string; role: string }>;
+    }>
   > {
     if (exerciseNames.length === 0) {
       return [];
@@ -374,9 +431,9 @@ export class ExerciseService {
     // Get unique exercise names
     const uniqueNames = [...new Set(exerciseNames)];
 
-    // Check which exercises already exist
+    // Check which exercises already exist and get their IDs
     const existingExercises = await this.db
-      .select({ name: exercises.name })
+      .select({ id: exercises.id, name: exercises.name })
       .from(exercises)
       .where(inArray(exercises.name, uniqueNames));
 
@@ -390,19 +447,9 @@ export class ExerciseService {
     );
 
     // Build a map to store exercise IDs (name -> id)
-    const exerciseIdMap = new Map<string, number>();
-
-    // Fetch IDs for existing exercises
-    if (existingExercises.length > 0) {
-      const existingWithIds = await this.db
-        .select({ id: exercises.id, name: exercises.name })
-        .from(exercises)
-        .where(inArray(exercises.name, uniqueNames));
-
-      for (const ex of existingWithIds) {
-        exerciseIdMap.set(ex.name.toLowerCase(), ex.id);
-      }
-    }
+    const exerciseIdMap = new Map<string, number>(
+      existingExercises.map((ex) => [ex.name.toLowerCase(), ex.id]),
+    );
 
     // Insert new exercises if needed
     if (missingNames.length > 0) {
@@ -419,11 +466,80 @@ export class ExerciseService {
 
       const muscleMap = new Map(muscleGroupsData.map((mg) => [mg.name, mg.id]));
 
-      // Insert exercises and collect their IDs
-      for (const exerciseData of inferredExercises) {
-        const id = await this.upsertSingleExercise(exerciseData, muscleMap);
-        exerciseIdMap.set(exerciseData.name.toLowerCase(), id);
-      }
+      await this.db.transaction(async (tx) => {
+        const insertedExercises = await tx
+          .insert(exercises)
+          .values(
+            inferredExercises.map((exercise) => ({
+              name: exercise.name,
+              equipment: exercise.equipment,
+              injuryRiskLevel: exercise.injuryRiskLevel,
+              jointStressAreas: exercise.jointStressAreas,
+              movementPattern: exercise.movementPattern,
+              exerciseType: exercise.exerciseType as 'compound' | 'isolation',
+              complexityScore: exercise.complexityScore,
+              intensityCategory: exercise.intensityCategory as
+                | 'compound_heavy'
+                | 'compound_moderate'
+                | 'isolation',
+            })),
+          )
+          .onConflictDoUpdate({
+            target: exercises.name,
+            set: {
+              equipment: sql`excluded.equipment`,
+              injuryRiskLevel: sql`excluded.injury_risk_level`,
+              jointStressAreas: sql`excluded.joint_stress_areas`,
+              movementPattern: sql`excluded.movement_pattern`,
+              exerciseType: sql`excluded.exercise_type`,
+              complexityScore: sql`excluded.complexity_score`,
+              intensityCategory: sql`excluded.intensity_category`,
+            },
+          })
+          .returning({ id: exercises.id, name: exercises.name });
+
+        for (const exercise of insertedExercises) {
+          exerciseIdMap.set(exercise.name.toLowerCase(), exercise.id);
+        }
+
+        const exerciseIds = insertedExercises.map((ex) => ex.id);
+        if (exerciseIds.length > 0) {
+          await tx
+            .delete(exerciseMuscles)
+            .where(inArray(exerciseMuscles.exerciseId, exerciseIds));
+        }
+
+        // Build all muscle inserts
+        const allMuscleInserts: {
+          exerciseId: number;
+          muscleGroupId: number;
+          role: 'prime_mover' | 'synergist' | 'stabilizer';
+        }[] = [];
+        for (const exerciseData of inferredExercises) {
+          const exerciseId = exerciseIdMap.get(exerciseData.name.toLowerCase());
+          if (!exerciseId) continue;
+
+          for (const target of exerciseData.muscleTargets) {
+            const muscleId = muscleMap.get(target.muscleName);
+            if (!muscleId) {
+              console.warn(
+                `Muscle not found: ${target.muscleName} for exercise ${exerciseData.name}`,
+              );
+              continue;
+            }
+            allMuscleInserts.push({
+              exerciseId,
+              muscleGroupId: muscleId,
+              role: target.role as 'prime_mover' | 'synergist' | 'stabilizer',
+            });
+          }
+        }
+
+        // Batch insert all muscle relationships
+        if (allMuscleInserts.length > 0) {
+          await tx.insert(exerciseMuscles).values(allMuscleInserts);
+        }
+      });
 
       console.log(
         `✓ Successfully upserted ${inferredExercises.length} exercises`,
@@ -434,6 +550,21 @@ export class ExerciseService {
 
     // Get all exercise IDs
     const allExerciseIds = Array.from(exerciseIdMap.values());
+
+    // Fetch exercise metadata
+    const exerciseMetadata = await this.db
+      .select({
+        id: exercises.id,
+        name: exercises.name,
+        intensityCategory: exercises.intensityCategory,
+        exerciseType: exercises.exerciseType,
+      })
+      .from(exercises)
+      .where(inArray(exercises.id, allExerciseIds));
+
+    const exerciseMetadataMap = new Map(
+      exerciseMetadata.map((ex) => [ex.id, ex]),
+    );
 
     // Fetch muscle data for all exercises
     const muscleData = await this.db
@@ -470,80 +601,20 @@ export class ExerciseService {
       if (!id) {
         throw new Error(`Exercise not found after upsert: ${name}`);
       }
+      const metadata = exerciseMetadataMap.get(id);
+      if (!metadata) {
+        throw new Error(`Exercise metadata not found: ${name}`);
+      }
       return {
         id,
-        muscles: exerciseMusclesMap.get(id) || [],
-      };
-    });
-  }
-
-  /**
-   * Upsert a single exercise with its muscle relationships
-   */
-  private async upsertSingleExercise(
-    exerciseData: ExerciseData,
-    muscleMap: Map<string, number>,
-  ): Promise<number> {
-    // Insert or update exercise
-    const [exercise] = await this.db
-      .insert(exercises)
-      .values({
-        name: exerciseData.name,
-        equipment: exerciseData.equipment,
-        injuryRiskLevel: exerciseData.injuryRiskLevel,
-        jointStressAreas: exerciseData.jointStressAreas,
-        movementPattern: exerciseData.movementPattern,
-        exerciseType: exerciseData.exerciseType as 'compound' | 'isolation',
-        complexityScore: exerciseData.complexityScore,
-        intensityCategory: exerciseData.intensityCategory as
+        name: metadata.name,
+        intensityCategory: metadata.intensityCategory as
           | 'compound_heavy'
           | 'compound_moderate'
           | 'isolation',
-      })
-      .onConflictDoUpdate({
-        target: exercises.name,
-        set: {
-          equipment: exerciseData.equipment,
-          injuryRiskLevel: exerciseData.injuryRiskLevel,
-          jointStressAreas: exerciseData.jointStressAreas,
-          movementPattern: exerciseData.movementPattern,
-          exerciseType: exerciseData.exerciseType as 'compound' | 'isolation',
-          complexityScore: exerciseData.complexityScore,
-          intensityCategory: exerciseData.intensityCategory as
-            | 'compound_heavy'
-            | 'compound_moderate'
-            | 'isolation',
-        },
-      })
-      .returning();
-
-    // Delete existing muscle relationships
-    await this.db
-      .delete(exerciseMuscles)
-      .where(eq(exerciseMuscles.exerciseId, exercise.id));
-
-    // Insert new muscle relationships
-    const muscleInserts = exerciseData.muscleTargets
-      .map((target) => {
-        const muscleId = muscleMap.get(target.muscleName);
-        if (!muscleId) {
-          console.warn(
-            `Muscle not found: ${target.muscleName} for exercise ${exerciseData.name}`,
-          );
-          return null;
-        }
-        return {
-          exerciseId: exercise.id,
-          muscleGroupId: muscleId,
-          role: target.role as 'prime_mover' | 'synergist' | 'stabilizer',
-        };
-      })
-      .filter((insert) => insert !== null);
-
-    if (muscleInserts.length > 0) {
-      await this.db.insert(exerciseMuscles).values(muscleInserts);
-    }
-
-    return exercise.id;
+        exerciseType: metadata.exerciseType as 'compound' | 'isolation',
+        muscles: exerciseMusclesMap.get(id) || [],
+      };
+    });
   }
 }

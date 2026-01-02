@@ -1,11 +1,32 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Put,
+  Delete,
+  Patch,
+} from '@nestjs/common';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { PlansService } from './plans.service';
 import { CurrentUser } from 'src/decorators/user.decorator';
+import { UpdatePlanDto } from './dto/update-plan.dto';
 
 @Controller('plans')
 export class PlansController {
   constructor(private readonly plansService: PlansService) {}
+
+  @Get()
+  getPlans(@CurrentUser() user) {
+    return this.plansService.getPlans(user.id);
+  }
+
+  @Get(':planId')
+  getPlan(@Param('planId', ParseIntPipe) planId: number, @CurrentUser() user) {
+    return this.plansService.getPlan(user.id, planId);
+  }
 
   @Post()
   createPlan(@Body() dto: CreatePlanDto, @CurrentUser() user) {
@@ -20,5 +41,38 @@ export class PlansController {
       focusAreas: dto.focusAreas,
       workoutDays: dto.workoutDays,
     });
+  }
+
+  @Put(':planId')
+  updatePlan(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Body() dto: UpdatePlanDto,
+    @CurrentUser() user,
+  ) {
+    return this.plansService.updatePlan(user.id, planId, {
+      name: dto.name,
+      description: dto.description,
+      trainingType: dto.trainingType,
+      periodizationModel: dto.periodizationModel,
+      frequency: dto.frequency,
+      durationWeeks: dto.durationWeeks,
+      focusAreas: dto.focusAreas,
+    });
+  }
+
+  @Delete(':planId')
+  deletePlan(
+    @Param('planId', ParseIntPipe) planId: number,
+    @CurrentUser() user,
+  ) {
+    return this.plansService.deletePlan(user.id, planId);
+  }
+
+  @Patch(':planId/activate')
+  activatePlan(
+    @Param('planId', ParseIntPipe) planId: number,
+    @CurrentUser() user,
+  ) {
+    return this.plansService.activatePlan(user.id, planId);
   }
 }

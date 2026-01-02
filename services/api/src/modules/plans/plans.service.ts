@@ -1,10 +1,18 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
-import { PeriodizationModel, TrainingType } from 'src/constants';
-import { workoutDays, workoutPlans } from 'src/db/schema';
-import { eq } from 'drizzle-orm';
+import {
+  PeriodizationModel,
+  TrainingType,
+  jsDayToDayOfWeek,
+} from 'src/constants';
+import { workoutDays, workoutPlans, workoutDayExercises } from 'src/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { ExerciseService } from '../exercise/exercise.service';
-import { MuscleImageIntegration } from 'src/integrations/muscle-image.integration';
+import { WorkoutsService } from '../workouts/workouts.service';
+import {
+  AIEngineIntegration,
+  type PrescriptionRequestDto,
+} from 'src/integrations/ai-engine.integration';
 
 type WorkoutDay = {
   name: string;
@@ -28,13 +36,29 @@ export class PlansService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly exerciseService: ExerciseService,
-    private readonly muscleImageIntegration: MuscleImageIntegration,
+    private readonly workoutsService: WorkoutsService,
+    private readonly aiEngineIntegration: AIEngineIntegration,
   ) {}
+
+  async getPlans(athleteId: number) {
+    return this.db.query.workoutPlans.findMany({
+      where: eq(workoutPlans.athleteId, athleteId),
+    });
+  }
+
+  async getPlan(athleteId: number, planId: number) {
+    return this.db.query.workoutPlans.findFirst({
+      where: and(
+        eq(workoutPlans.id, planId),
+        eq(workoutPlans.athleteId, athleteId),
+      ),
+    });
+  }
 
   async createPlan(createPlanDto: {
     athleteId: number;
     name: string;
-    description: string;
+    description?: string;
     trainingType: TrainingType;
     periodizationModel: PeriodizationModel;
     frequency: number;
@@ -49,17 +73,88 @@ export class PlansService {
     const exercisesWithMuscles =
       await this.exerciseService.batchUpsertExercises(allExerciseNames);
 
-    const exerciseMuscleMap = new Map<
-      string,
-      Array<{ name: string; role: string }>
-    >();
-    let index = 0;
-    for (const name of allExerciseNames) {
-      exerciseMuscleMap.set(
-        name.toLowerCase(),
-        exercisesWithMuscles[index].muscles,
+    // Store full exercise data for prescription generation
+    const exerciseDataMap = new Map(
+      exercisesWithMuscles.map((ex, index) => [
+        allExerciseNames[index].toLowerCase(),
+        ex,
+      ]),
+    );
+
+    // Collect workout day data for batch image generation
+    const workoutDaysData: Array<{
+      id: number;
+      muscles: Array<{ name: string; role: string }>;
+    }> = [];
+
+    // Collect all prescription requests for batch processing (before transaction)
+    const prescriptionRequests: PrescriptionRequestDto[] = [];
+
+    // Build prescription requests and metadata (before transaction)
+    // We need to prepare the requests, but we'll need workoutDayIds from the transaction
+    // So we'll build the structure here and populate IDs after insertion
+    const exerciseMetadataPreInsert: Array<{
+      dayIndex: number;
+      exercise: WorkoutExercise;
+      exerciseData: {
+        id: number;
+        name: string;
+        intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation';
+        exerciseType: 'compound' | 'isolation';
+        muscles: Array<{ name: string; role: string }>;
+      };
+      isPrimary: boolean;
+    }> = [];
+
+    for (
+      let dayIndex = 0;
+      dayIndex < createPlanDto.workoutDays.length;
+      dayIndex++
+    ) {
+      const workoutDay = createPlanDto.workoutDays[dayIndex];
+      const totalExercises = workoutDay.exercises.length;
+
+      for (const exercise of workoutDay.exercises) {
+        const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
+        if (!exerciseData) {
+          throw new Error(`Exercise data not found for: ${exercise.name}`);
+        }
+
+        // Determine if this exercise is primary
+        const isPrimary = ExerciseService.determineIsPrimary(
+          exerciseData.intensityCategory,
+          exercise.orderInWorkout,
+          totalExercises,
+        );
+
+        prescriptionRequests.push({
+          intensityCategory: exerciseData.intensityCategory,
+          trainingType: createPlanDto.trainingType,
+          trainingPhase: 'accumulation', // Default phase for new plans
+          weekInPhase: 1, // Week 1
+          isPrimary: isPrimary,
+        });
+
+        exerciseMetadataPreInsert.push({
+          dayIndex,
+          exercise,
+          exerciseData,
+          isPrimary,
+        });
+      }
+    }
+
+    // Generate all prescriptions in one batch request (outside transaction)
+    const prescriptions =
+      await this.aiEngineIntegration.generateBatchPrescriptions(
+        prescriptionRequests,
       );
-      index++;
+
+    // Validate response length matches request length
+    if (prescriptions.length !== prescriptionRequests.length) {
+      throw new Error(
+        `Prescription API returned ${prescriptions.length} prescriptions but expected ${prescriptionRequests.length}`,
+      );
     }
 
     await this.db.transaction(async (tx) => {
@@ -75,7 +170,7 @@ export class PlansService {
         .values({
           athleteId: createPlanDto.athleteId,
           name: createPlanDto.name,
-          description: createPlanDto.description,
+          description: createPlanDto.description ?? null,
           trainingType: createPlanDto.trainingType,
           periodizationModel: createPlanDto.periodizationModel,
           frequency: createPlanDto.frequency,
@@ -89,51 +184,198 @@ export class PlansService {
         .returning({ id: workoutPlans.id })
         .then(([workoutPlan]) => workoutPlan.id);
 
-      for (const workoutDay of createPlanDto.workoutDays) {
+      const workoutDayValues = createPlanDto.workoutDays.map((workoutDay) => {
         const musclesWithRoles: Array<{ name: string; role: string }> = [];
 
         for (const exercise of workoutDay.exercises) {
-          const muscles = exerciseMuscleMap.get(exercise.name.toLowerCase());
-          if (muscles) {
-            for (const muscle of muscles) {
+          const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
+          if (exerciseData) {
+            for (const muscle of exerciseData.muscles) {
               musclesWithRoles.push(muscle);
             }
           }
         }
 
-        const [insertedWorkoutDay] = await tx
-          .insert(workoutDays)
-          .values({
+        // dayOfWeek must be in enum format (0=Monday, 1=Tuesday, ..., 6=Sunday) to match
+        // database schema and getCurrentWorkoutDay queries. If frontend uses JavaScript's
+        // getDay() (0=Sunday), it must convert using jsDayToDayOfWeek before sending.
+        const dayOfWeekValue = workoutDay.dayOfWeek;
+
+        return {
+          values: {
             workoutPlanId: workoutPlanId,
             name: workoutDay.name,
-            dayOfWeek: workoutDay.dayOfWeek,
+            dayOfWeek: dayOfWeekValue,
             orderInWeek: workoutDay.orderInWeek,
-            muscleImageUrl: null, // Will be updated after image generation
-          })
-          .returning({ id: workoutDays.id });
+            muscleImageUrl: null,
+          },
+          muscles: musclesWithRoles,
+        };
+      });
 
-        // Generate muscle image (outside transaction to avoid blocking)
-        // We'll update the URL in a separate query
-        try {
-          const muscleImageUrl =
-            await this.muscleImageIntegration.generateAndSaveImage(
-              insertedWorkoutDay.id,
-              musclesWithRoles,
-            );
+      const insertedWorkoutDays = await tx
+        .insert(workoutDays)
+        .values(workoutDayValues.map((wd) => wd.values))
+        .returning({ id: workoutDays.id });
 
-          // Update workout day with image URL
-          await tx
-            .update(workoutDays)
-            .set({ muscleImageUrl })
-            .where(eq(workoutDays.id, insertedWorkoutDay.id));
-        } catch (error) {
-          // Log error but don't block plan creation if image generation fails
-          console.error(
-            `Failed to generate muscle image for workout day ${insertedWorkoutDay.id}:`,
-            error,
-          );
+      // Map the returned IDs to the muscle data
+      insertedWorkoutDays.forEach((insertedDay, index) => {
+        workoutDaysData.push({
+          id: insertedDay.id,
+          muscles: workoutDayValues[index].muscles,
+        });
+      });
+
+      // Map workout day IDs to exercise metadata
+      const exerciseMetadata: Array<{
+        dayIndex: number;
+        workoutDayId: number;
+        exercise: WorkoutExercise;
+        exerciseData: {
+          id: number;
+          name: string;
+          intensityCategory:
+            | 'compound_heavy'
+            | 'compound_moderate'
+            | 'isolation';
+          exerciseType: 'compound' | 'isolation';
+          muscles: Array<{ name: string; role: string }>;
+        };
+        isPrimary: boolean;
+      }> = [];
+
+      let prescriptionIndex = 0;
+      for (
+        let dayIndex = 0;
+        dayIndex < insertedWorkoutDays.length;
+        dayIndex++
+      ) {
+        const workoutDayId = insertedWorkoutDays[dayIndex].id;
+        const workoutDay = createPlanDto.workoutDays[dayIndex];
+
+        for (const exercise of workoutDay.exercises) {
+          const preInsertMeta = exerciseMetadataPreInsert[prescriptionIndex];
+          exerciseMetadata.push({
+            dayIndex,
+            workoutDayId,
+            exercise: preInsertMeta.exercise,
+            exerciseData: preInsertMeta.exerciseData,
+            isPrimary: preInsertMeta.isPrimary,
+          });
+          prescriptionIndex++;
         }
       }
+
+      // Map prescriptions back to exercises and insert
+      const allExerciseInserts = exerciseMetadata.map((meta, index) => ({
+        workoutDayId: meta.workoutDayId,
+        exerciseId: meta.exerciseData.id,
+        orderInWorkout: meta.exercise.orderInWorkout,
+        targetSetsMin: meta.exercise.targetSetsMin,
+        targetSetsMax:
+          meta.exercise.targetSetsMax ?? meta.exercise.targetSetsMin,
+        targetRepsMin: meta.exercise.targetRepsMin,
+        targetRepsMax:
+          meta.exercise.targetRepsMax ?? meta.exercise.targetRepsMin,
+        targetRpe: prescriptions[index].target_rpe,
+        targetRir: prescriptions[index].target_rir,
+        restPeriodSeconds: prescriptions[index].rest_period_seconds,
+        notes: meta.exercise.notes ?? null,
+        isPrimary: meta.isPrimary,
+        warmUpSets: 0,
+      }));
+
+      // Batch insert all exercises at once
+      if (allExerciseInserts.length > 0) {
+        await tx.insert(workoutDayExercises).values(allExerciseInserts);
+      }
+    });
+
+    // Generate muscle images in batch outside transaction
+    await this.workoutsService.generateMuscleImagesForWorkoutDay(
+      workoutDaysData,
+    );
+  }
+
+  async updatePlan(
+    athleteId: number,
+    planId: number,
+    fieldsToUpdate: {
+      name: string;
+      description?: string;
+      trainingType: TrainingType;
+      periodizationModel: PeriodizationModel;
+      frequency: number;
+      durationWeeks: number;
+      focusAreas?: string[];
+    },
+  ) {
+    await this.db
+      .update(workoutPlans)
+      .set({
+        name: fieldsToUpdate.name,
+        description: fieldsToUpdate.description ?? null,
+        trainingType: fieldsToUpdate.trainingType,
+        periodizationModel: fieldsToUpdate.periodizationModel,
+        frequency: fieldsToUpdate.frequency,
+        durationWeeks: fieldsToUpdate.durationWeeks,
+        focusAreas: fieldsToUpdate.focusAreas,
+      })
+      .where(
+        and(eq(workoutPlans.id, planId), eq(workoutPlans.athleteId, athleteId)),
+      );
+  }
+
+  async deletePlan(athleteId: number, planId: number) {
+    await this.db
+      .delete(workoutPlans)
+      .where(
+        and(eq(workoutPlans.id, planId), eq(workoutPlans.athleteId, athleteId)),
+      );
+  }
+
+  async activatePlan(athleteId: number, planId: number) {
+    await this.db.transaction(async (tx) => {
+      const planResult = await tx
+        .select({ durationWeeks: workoutPlans.durationWeeks })
+        .from(workoutPlans)
+        .where(
+          and(
+            eq(workoutPlans.id, planId),
+            eq(workoutPlans.athleteId, athleteId),
+          ),
+        )
+        .limit(1);
+
+      if (!planResult || planResult.length === 0) {
+        throw new NotFoundException('Plan not found');
+      }
+
+      const durationWeeks = planResult[0].durationWeeks;
+
+      await tx
+        .update(workoutPlans)
+        .set({
+          isActive: false,
+          endDate: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(workoutPlans.athleteId, athleteId),
+            eq(workoutPlans.isActive, true),
+          ),
+        );
+
+      await tx
+        .update(workoutPlans)
+        .set({
+          isActive: true,
+          startDate: new Date().toISOString(),
+          endDate: new Date(
+            new Date().getTime() + durationWeeks * 7 * 24 * 60 * 60 * 1000,
+          ).toISOString(),
+        })
+        .where(eq(workoutPlans.id, planId));
     });
   }
 }

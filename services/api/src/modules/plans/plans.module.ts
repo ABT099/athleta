@@ -4,12 +4,13 @@ import { ConfigModule } from '@nestjs/config';
 import { PlansController } from './plans.controller';
 import { PlansService } from './plans.service';
 import { ExerciseModule } from '../exercise/exercise.module';
-import { MuscleImageIntegration } from '../../integrations/muscle-image.integration';
+import { WorkoutsModule } from '../workouts/workouts.module';
+import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
 
 @Module({
-  imports: [HttpModule, ConfigModule, ExerciseModule],
+  imports: [HttpModule, ConfigModule, ExerciseModule, WorkoutsModule],
   controllers: [PlansController],
-  providers: [PlansService, MuscleImageIntegration],
+  providers: [PlansService, AIEngineIntegration],
   exports: [PlansService],
 })
 export class PlansModule {}

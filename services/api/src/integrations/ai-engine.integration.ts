@@ -13,6 +13,20 @@ export interface ProblematicExerciseDto {
   reason: string;
 }
 
+export interface PrescriptionRequestDto {
+  intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation';
+  trainingType: 'strength' | 'hypertrophy' | 'hybrid';
+  trainingPhase: 'accumulation' | 'intensification' | 'realization';
+  weekInPhase: number;
+  isPrimary: boolean;
+}
+
+export interface PrescriptionResponseDto {
+  target_rpe: number;
+  target_rir: number;
+  rest_period_seconds: number;
+}
+
 @Injectable()
 export class AIEngineIntegration {
   private readonly logger = new Logger(AIEngineIntegration.name);
@@ -38,7 +52,8 @@ export class AIEngineIntegration {
       );
       return data;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       this.logger.warn(
         `Failed to fetch joint stress profile for athlete ${athleteId}: ${errorMessage}`,
       );
@@ -58,7 +73,8 @@ export class AIEngineIntegration {
       );
       return data;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       this.logger.warn(
         `Failed to fetch problematic exercises for athlete ${athleteId}: ${errorMessage}`,
       );
@@ -67,16 +83,12 @@ export class AIEngineIntegration {
   }
 
   async generatePrescription(
-    intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation',
-    trainingType: 'strength' | 'hypertrophy' | 'hybrid',
-    trainingPhase: 'accumulation' | 'intensification' | 'realization' | 'deload',
+    intensityCategory: PrescriptionRequestDto['intensityCategory'],
+    trainingType: PrescriptionRequestDto['trainingType'],
+    trainingPhase: PrescriptionRequestDto['trainingPhase'],
     weekInPhase: number,
     isPrimary: boolean = true,
-  ): Promise<{
-    target_rpe: number;
-    target_rir: number;
-    rest_period_seconds: number;
-  }> {
+  ): Promise<PrescriptionResponseDto> {
     try {
       const { data } = await firstValueFrom(
         this.httpService.post<{
@@ -93,12 +105,42 @@ export class AIEngineIntegration {
       );
       return data;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Failed to generate prescription: ${errorMessage}`);
+      throw error;
+    }
+  }
+
+  async generateBatchPrescriptions(
+    prescriptions: PrescriptionRequestDto[],
+  ): Promise<PrescriptionResponseDto[]> {
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post<{
+          prescriptions: Array<{
+            target_rpe: number;
+            target_rir: number;
+            rest_period_seconds: number;
+          }>;
+        }>(`${this.baseURL}/api/prescriptions/generate-batch`, {
+          prescriptions: prescriptions.map((p) => ({
+            intensity_category: p.intensityCategory,
+            training_type: p.trainingType,
+            training_phase: p.trainingPhase,
+            week_in_phase: p.weekInPhase,
+            is_primary: p.isPrimary,
+          })),
+        }),
+      );
+      return data.prescriptions;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `Failed to generate prescription: ${errorMessage}`,
+        `Failed to generate batch prescriptions: ${errorMessage}`,
       );
       throw error;
     }
   }
 }
-

@@ -65,9 +65,9 @@ export class CreatePlanDto {
   @IsString()
   name: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  description: string;
+  description?: string;
 
   @IsNotEmpty()
   @IsEnum(TrainingType)

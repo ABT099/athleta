@@ -180,7 +180,7 @@ export const workoutPlans = pgTable(
     id: serial().primaryKey().notNull(),
     athleteId: integer('athlete_id').notNull(),
     name: varchar({ length: 255 }).notNull(),
-    description: text().notNull(),
+    description: text(),
     trainingType: trainingTypeEnum('training_type')
       .default('hypertrophy')
       .notNull(),
@@ -208,7 +208,6 @@ export const workoutPlans = pgTable(
     check('workout_plans_id_not_null', sql`NOT NULL id`),
     check('workout_plans_athlete_id_not_null', sql`NOT NULL athlete_id`),
     check('workout_plans_name_not_null', sql`NOT NULL name`),
-    check('workout_plans_description_not_null', sql`NOT NULL description`),
     check('workout_plans_training_type_not_null', sql`NOT NULL training_type`),
     check(
       'workout_plans_periodization_model_not_null',

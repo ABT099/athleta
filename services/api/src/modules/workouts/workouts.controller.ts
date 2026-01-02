@@ -1,41 +1,53 @@
 import {
   Controller,
-  Post,
   Put,
   Param,
   ParseIntPipe,
   Body,
-  ParseBoolPipe,
-  Query,
+  Get,
 } from '@nestjs/common';
 import { WorkoutsService } from './workouts.service';
 import { SubstituteExerciseDto } from './dto/substitute-exercise.dto';
-import { CreateWorkoutDto } from './dto/create-workout.dto';
+import { UpdateWorkoutDayExerciseDto } from './dto/update-workout-day-exercises.dto';
+import { jsDayToDayOfWeek } from 'src/constants';
+import { CurrentUser } from 'src/decorators/user.decorator';
 
 @Controller('workouts')
 export class WorkoutsController {
   constructor(private readonly workoutsService: WorkoutsService) {}
 
-  // @Post()
-  // async createWorkout(
-  //   @Body() dto: CreateWorkoutDto,
-  //   @Query('initialPlan', ParseBoolPipe) initialPlan: boolean,
-  // ): Promise<{ message: string }> {
-  //   await this.workoutsService.createWorkout();
-  //   return { message: 'Workout created successfully' };
-  // }
-
-  @Put('days/:workoutDayId/exercises/:exerciseId/substitute')
+  @Put(':workoutDayId/exercises/:exerciseId/substitute')
   async substituteExercise(
     @Param('workoutDayId', ParseIntPipe) workoutDayId: number,
     @Param('exerciseId', ParseIntPipe) exerciseId: number,
     @Body() dto: SubstituteExerciseDto,
-  ): Promise<{ message: string }> {
+  ): Promise<void> {
     await this.workoutsService.substituteExercise(
       workoutDayId,
       exerciseId,
       dto.substituteExerciseId,
     );
-    return { message: 'Exercise substituted successfully' };
+  }
+
+  @Put(':workoutDayId/exercises')
+  async updateWorkoutDayExercise(
+    @Param('workoutDayId', ParseIntPipe) workoutDayId: number,
+    @Body() dto: UpdateWorkoutDayExerciseDto,
+  ): Promise<void> {
+    return await this.workoutsService.updateWorkoutDayExercise(
+      workoutDayId,
+      dto.exercisesToRemove,
+      dto.exercisesToAdd,
+    );
+  }
+
+  @Get('current')
+  async getCurrentWorkoutDay(@CurrentUser() user) {
+    const jsDay = new Date().getDay();
+    const currentDayOfWeek = jsDayToDayOfWeek(jsDay);
+    return await this.workoutsService.getCurrentWorkoutDay(
+      user.id,
+      currentDayOfWeek,
+    );
   }
 }
