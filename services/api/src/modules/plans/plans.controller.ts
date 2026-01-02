@@ -57,6 +57,8 @@ export class PlansController {
       frequency: dto.frequency,
       durationWeeks: dto.durationWeeks,
       focusAreas: dto.focusAreas,
+      workoutDaysToAdd: dto.workoutDaysToAdd ?? [],
+      workoutDaysToRemove: dto.workoutDaysToRemove ?? [],
     });
   }
 
