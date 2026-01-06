@@ -64,14 +64,19 @@ jobs:
         include:
           - service: ai-engine
             context: ./services/ai-engine
+            dockerfile: ./services/ai-engine/Dockerfile
           - service: api
-            context: ./services/api
+            context: .
+            dockerfile: ./services/api/Dockerfile
           - service: exercise-inference
-            context: ./services/exercise-inference
+            context: .
+            dockerfile: ./services/exercise-inference/Dockerfile
           - service: muscle-image-api
             context: ./services/muscle-image
+            dockerfile: ./services/muscle-image/Dockerfile
           - service: migrator
             context: ./migrator
+            dockerfile: ./migrator/Dockerfile
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -99,6 +104,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
