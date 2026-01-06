@@ -7,11 +7,11 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 
 # Install dependencies first (cached layer)
-COPY package.json package-lock.json ./
+COPY services/api/package.json services/api/package-lock.json ./
 RUN npm ci
 
 # Copy source and build
-COPY . .
+COPY services/api/ ./
 RUN npm run build
 
 # Prune dev dependencies
@@ -30,12 +30,11 @@ COPY --from=builder --chown=app:app /app/dist ./dist
 COPY --from=builder --chown=app:app /app/node_modules ./node_modules
 COPY --from=builder --chown=app:app /app/package.json ./
 
-# Copy proto files for gRPC
-COPY --from=builder --chown=app:app /app/proto ./proto
+# Copy centralized proto files for gRPC
+COPY --chown=app:app proto/ ./proto/
 
 USER app
 
 EXPOSE 8000
 
 CMD ["node", "dist/src/main.js"]
-

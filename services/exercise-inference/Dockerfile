@@ -6,22 +6,25 @@ WORKDIR /app
 # Install build dependencies
 RUN apk add --no-cache git protobuf
 
-# Copy go mod files
-COPY go.mod go.sum* ./
+# Copy go mod files from service directory
+COPY services/exercise-inference/go.mod services/exercise-inference/go.sum* ./
 RUN go mod download
 
-# Install protobuf plugin
+# Install protobuf plugins
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
-# Copy proto files and generate go code
+# Copy centralized proto files
 COPY proto/ ./proto/
+
+# Generate Go code from proto
 RUN protoc --go_out=. --go_opt=paths=source_relative \
     --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-    proto/inference.proto
+    --proto_path=proto \
+    inference/v1/inference.proto
 
 # Copy source code
-COPY . .
+COPY services/exercise-inference/ ./
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/server
