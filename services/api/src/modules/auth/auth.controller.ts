@@ -8,6 +8,7 @@ import {
   Query,
   Res,
   UseInterceptors,
+  Logger,
 } from '@nestjs/common';
 import { AuthenticationService } from './services/authentication.service';
 import { TokenManagementService } from './services/token-management.service';
@@ -31,6 +32,8 @@ type AuthenticatedRequest = {
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authenticationService: AuthenticationService,
     private readonly tokenManagementService: TokenManagementService,
@@ -42,6 +45,8 @@ export class AuthController {
   @UseGuards(LocalAuthGuard)
   @Post('login')
   async login(@Request() req: AuthenticatedRequest) {
+    this.logger.log('Login endpoint hit - user authenticated successfully');
+    this.logger.debug(`User ID: ${req.user.id}, hasInitialPlan: ${req.user.hasInitialPlan}`);
     return this.authenticationService.login(req.user);
   }
 

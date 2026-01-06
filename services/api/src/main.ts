@@ -1,9 +1,14 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './filters/http-exception.filter';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
+
+  // Enable global exception filter for detailed error logging
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // Enable global validation pipe for automatic DTO validation
   app.useGlobalPipes(
@@ -29,7 +34,12 @@ async function bootstrap() {
     ],
   });
 
-  await app.listen(process.env.PORT ?? 8080);
+  const port = process.env.PORT ?? 8080;
+  await app.listen(port);
+  
+  logger.log(`🚀 Application is running on: http://localhost:${port}`);
+  logger.log(`📝 Health check available at: http://localhost:${port}/health`);
+  logger.log(`🔐 Auth endpoints available at: http://localhost:${port}/auth/*`);
 }
 
 bootstrap();

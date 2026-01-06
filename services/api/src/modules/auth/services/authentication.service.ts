@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { TokenManagementService } from './token-management.service';
@@ -17,6 +18,8 @@ import { CurrentAuthUser, JwtToken } from '../auth.types';
 
 @Injectable()
 export class AuthenticationService {
+  private readonly logger = new Logger(AuthenticationService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly jwtService: JwtService,
@@ -27,30 +30,46 @@ export class AuthenticationService {
     email: string,
     password: string,
   ): Promise<{ id: number; hasInitialPlan: boolean } | null> {
-    const user = await this.db
-      .select({
-        id: users.id,
-        password: users.password,
-        hasInitialPlan: users.hasInitialPlan,
-      })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1)
-      .then((rows) => rows[0]);
+    this.logger.log(`validateUser called for email: ${email}`);
+    
+    try {
+      const user = await this.db
+        .select({
+          id: users.id,
+          password: users.password,
+          hasInitialPlan: users.hasInitialPlan,
+        })
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1)
+        .then((rows) => rows[0]);
 
-    if (!user) {
-      throw new NotFoundException();
+      if (!user) {
+        this.logger.warn(`User not found with email: ${email} - throwing NotFoundException`);
+        throw new NotFoundException();
+      }
+
+      this.logger.debug(`User found with ID: ${user.id}, has password: ${!!user.password}`);
+
+      if (!user.password) {
+        this.logger.warn(`User ${user.id} is OAuth user without password`);
+        return null; // OAuth users don't have passwords
+      }
+
+      const passwordMatch = await compare(password, user.password);
+      this.logger.debug(`Password comparison result: ${passwordMatch}`);
+      
+      if (!passwordMatch) {
+        this.logger.warn(`Password mismatch for user ${user.id}`);
+        return null;
+      }
+
+      this.logger.log(`User ${user.id} validated successfully`);
+      return { id: user.id, hasInitialPlan: user.hasInitialPlan };
+    } catch (error) {
+      this.logger.error(`Error in validateUser for email: ${email}`, error.stack);
+      throw error;
     }
-
-    if (!user.password) {
-      return null; // OAuth users don't have passwords
-    }
-
-    if (!(await compare(password, user.password))) {
-      return null;
-    }
-
-    return { id: user.id, hasInitialPlan: user.hasInitialPlan };
   }
 
   async login(user: CurrentAuthUser): Promise<JwtToken> {
