@@ -38,6 +38,7 @@ export class AuthController {
     private readonly forgotPasswordService: ForgotPasswordService,
   ) {}
 
+  @AllowAnonymous()
   @UseGuards(LocalAuthGuard)
   @Post('login')
   async login(@Request() req: AuthenticatedRequest) {
