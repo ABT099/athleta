@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import { ClsService } from 'nestjs-cls';
 
 export interface JointStressProfileDto {
   avoidJoints: string[];
@@ -35,10 +36,22 @@ export class AIEngineIntegration {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly cls: ClsService,
   ) {
     this.baseURL =
       this.configService.get<string>('AI_ENGINE_URL') ||
       'http://localhost:8000';
+
+    this.httpService.axiosRef.interceptors.request.use((config) => {
+      const authToken = this.cls.get<string>('authToken');
+      if (authToken && config.url?.includes(this.baseURL)) {
+        if (!config.headers) {
+          config.headers = {} as any;
+        }
+        config.headers.Authorization = authToken;
+      }
+      return config;
+    });
   }
 
   async getJointStressProfile(
