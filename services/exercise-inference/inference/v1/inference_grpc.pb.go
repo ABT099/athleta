@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.0
 // - protoc             v6.33.2
-// source: proto/inference.proto
+// source: inference/v1/inference.proto
 
-package proto
+package inferencev1
 
 import (
 	context "context"
@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ExerciseInferenceService_BatchParseExercises_FullMethodName  = "/inference.ExerciseInferenceService/BatchParseExercises"
-	ExerciseInferenceService_ParseSingleExercise_FullMethodName  = "/inference.ExerciseInferenceService/ParseSingleExercise"
-	ExerciseInferenceService_FindSimilarExercises_FullMethodName = "/inference.ExerciseInferenceService/FindSimilarExercises"
+	ExerciseInferenceService_BatchParseExercises_FullMethodName       = "/inference.v1.ExerciseInferenceService/BatchParseExercises"
+	ExerciseInferenceService_ParseSingleExercise_FullMethodName       = "/inference.v1.ExerciseInferenceService/ParseSingleExercise"
+	ExerciseInferenceService_ParseExerciseWithMatching_FullMethodName = "/inference.v1.ExerciseInferenceService/ParseExerciseWithMatching"
+	ExerciseInferenceService_FindSimilarExercises_FullMethodName      = "/inference.v1.ExerciseInferenceService/FindSimilarExercises"
 )
 
 // ExerciseInferenceServiceClient is the client API for ExerciseInferenceService service.
@@ -31,11 +32,13 @@ const (
 // ExerciseInferenceService provides exercise parsing and biomechanical inference
 type ExerciseInferenceServiceClient interface {
 	// BatchParseExercises parses multiple exercise names and returns complete biomechanical profiles
-	BatchParseExercises(ctx context.Context, in *BatchParseRequest, opts ...grpc.CallOption) (*BatchExerciseData, error)
+	BatchParseExercises(ctx context.Context, in *BatchParseExercisesRequest, opts ...grpc.CallOption) (*BatchParseExercisesResponse, error)
 	// ParseSingleExercise parses a single exercise name
-	ParseSingleExercise(ctx context.Context, in *ParseRequest, opts ...grpc.CallOption) (*ExerciseData, error)
+	ParseSingleExercise(ctx context.Context, in *ParseSingleExerciseRequest, opts ...grpc.CallOption) (*ParseSingleExerciseResponse, error)
+	// ParseExerciseWithMatching parses an exercise name with detailed matching results including ambiguity handling
+	ParseExerciseWithMatching(ctx context.Context, in *ParseExerciseWithMatchingRequest, opts ...grpc.CallOption) (*ParseExerciseWithMatchingResponse, error)
 	// FindSimilarExercises finds exercises with similar movement patterns and modifiers
-	FindSimilarExercises(ctx context.Context, in *SimilarityRequest, opts ...grpc.CallOption) (*SimilarityResponse, error)
+	FindSimilarExercises(ctx context.Context, in *FindSimilarExercisesRequest, opts ...grpc.CallOption) (*FindSimilarExercisesResponse, error)
 }
 
 type exerciseInferenceServiceClient struct {
@@ -46,9 +49,9 @@ func NewExerciseInferenceServiceClient(cc grpc.ClientConnInterface) ExerciseInfe
 	return &exerciseInferenceServiceClient{cc}
 }
 
-func (c *exerciseInferenceServiceClient) BatchParseExercises(ctx context.Context, in *BatchParseRequest, opts ...grpc.CallOption) (*BatchExerciseData, error) {
+func (c *exerciseInferenceServiceClient) BatchParseExercises(ctx context.Context, in *BatchParseExercisesRequest, opts ...grpc.CallOption) (*BatchParseExercisesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(BatchExerciseData)
+	out := new(BatchParseExercisesResponse)
 	err := c.cc.Invoke(ctx, ExerciseInferenceService_BatchParseExercises_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -56,9 +59,9 @@ func (c *exerciseInferenceServiceClient) BatchParseExercises(ctx context.Context
 	return out, nil
 }
 
-func (c *exerciseInferenceServiceClient) ParseSingleExercise(ctx context.Context, in *ParseRequest, opts ...grpc.CallOption) (*ExerciseData, error) {
+func (c *exerciseInferenceServiceClient) ParseSingleExercise(ctx context.Context, in *ParseSingleExerciseRequest, opts ...grpc.CallOption) (*ParseSingleExerciseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ExerciseData)
+	out := new(ParseSingleExerciseResponse)
 	err := c.cc.Invoke(ctx, ExerciseInferenceService_ParseSingleExercise_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -66,9 +69,19 @@ func (c *exerciseInferenceServiceClient) ParseSingleExercise(ctx context.Context
 	return out, nil
 }
 
-func (c *exerciseInferenceServiceClient) FindSimilarExercises(ctx context.Context, in *SimilarityRequest, opts ...grpc.CallOption) (*SimilarityResponse, error) {
+func (c *exerciseInferenceServiceClient) ParseExerciseWithMatching(ctx context.Context, in *ParseExerciseWithMatchingRequest, opts ...grpc.CallOption) (*ParseExerciseWithMatchingResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SimilarityResponse)
+	out := new(ParseExerciseWithMatchingResponse)
+	err := c.cc.Invoke(ctx, ExerciseInferenceService_ParseExerciseWithMatching_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *exerciseInferenceServiceClient) FindSimilarExercises(ctx context.Context, in *FindSimilarExercisesRequest, opts ...grpc.CallOption) (*FindSimilarExercisesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FindSimilarExercisesResponse)
 	err := c.cc.Invoke(ctx, ExerciseInferenceService_FindSimilarExercises_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -83,11 +96,13 @@ func (c *exerciseInferenceServiceClient) FindSimilarExercises(ctx context.Contex
 // ExerciseInferenceService provides exercise parsing and biomechanical inference
 type ExerciseInferenceServiceServer interface {
 	// BatchParseExercises parses multiple exercise names and returns complete biomechanical profiles
-	BatchParseExercises(context.Context, *BatchParseRequest) (*BatchExerciseData, error)
+	BatchParseExercises(context.Context, *BatchParseExercisesRequest) (*BatchParseExercisesResponse, error)
 	// ParseSingleExercise parses a single exercise name
-	ParseSingleExercise(context.Context, *ParseRequest) (*ExerciseData, error)
+	ParseSingleExercise(context.Context, *ParseSingleExerciseRequest) (*ParseSingleExerciseResponse, error)
+	// ParseExerciseWithMatching parses an exercise name with detailed matching results including ambiguity handling
+	ParseExerciseWithMatching(context.Context, *ParseExerciseWithMatchingRequest) (*ParseExerciseWithMatchingResponse, error)
 	// FindSimilarExercises finds exercises with similar movement patterns and modifiers
-	FindSimilarExercises(context.Context, *SimilarityRequest) (*SimilarityResponse, error)
+	FindSimilarExercises(context.Context, *FindSimilarExercisesRequest) (*FindSimilarExercisesResponse, error)
 	mustEmbedUnimplementedExerciseInferenceServiceServer()
 }
 
@@ -98,13 +113,16 @@ type ExerciseInferenceServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedExerciseInferenceServiceServer struct{}
 
-func (UnimplementedExerciseInferenceServiceServer) BatchParseExercises(context.Context, *BatchParseRequest) (*BatchExerciseData, error) {
+func (UnimplementedExerciseInferenceServiceServer) BatchParseExercises(context.Context, *BatchParseExercisesRequest) (*BatchParseExercisesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BatchParseExercises not implemented")
 }
-func (UnimplementedExerciseInferenceServiceServer) ParseSingleExercise(context.Context, *ParseRequest) (*ExerciseData, error) {
+func (UnimplementedExerciseInferenceServiceServer) ParseSingleExercise(context.Context, *ParseSingleExerciseRequest) (*ParseSingleExerciseResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ParseSingleExercise not implemented")
 }
-func (UnimplementedExerciseInferenceServiceServer) FindSimilarExercises(context.Context, *SimilarityRequest) (*SimilarityResponse, error) {
+func (UnimplementedExerciseInferenceServiceServer) ParseExerciseWithMatching(context.Context, *ParseExerciseWithMatchingRequest) (*ParseExerciseWithMatchingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ParseExerciseWithMatching not implemented")
+}
+func (UnimplementedExerciseInferenceServiceServer) FindSimilarExercises(context.Context, *FindSimilarExercisesRequest) (*FindSimilarExercisesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method FindSimilarExercises not implemented")
 }
 func (UnimplementedExerciseInferenceServiceServer) mustEmbedUnimplementedExerciseInferenceServiceServer() {
@@ -130,7 +148,7 @@ func RegisterExerciseInferenceServiceServer(s grpc.ServiceRegistrar, srv Exercis
 }
 
 func _ExerciseInferenceService_BatchParseExercises_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(BatchParseRequest)
+	in := new(BatchParseExercisesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -142,13 +160,13 @@ func _ExerciseInferenceService_BatchParseExercises_Handler(srv interface{}, ctx 
 		FullMethod: ExerciseInferenceService_BatchParseExercises_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExerciseInferenceServiceServer).BatchParseExercises(ctx, req.(*BatchParseRequest))
+		return srv.(ExerciseInferenceServiceServer).BatchParseExercises(ctx, req.(*BatchParseExercisesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ExerciseInferenceService_ParseSingleExercise_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ParseRequest)
+	in := new(ParseSingleExerciseRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -160,13 +178,31 @@ func _ExerciseInferenceService_ParseSingleExercise_Handler(srv interface{}, ctx 
 		FullMethod: ExerciseInferenceService_ParseSingleExercise_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExerciseInferenceServiceServer).ParseSingleExercise(ctx, req.(*ParseRequest))
+		return srv.(ExerciseInferenceServiceServer).ParseSingleExercise(ctx, req.(*ParseSingleExerciseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ExerciseInferenceService_ParseExerciseWithMatching_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ParseExerciseWithMatchingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExerciseInferenceServiceServer).ParseExerciseWithMatching(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExerciseInferenceService_ParseExerciseWithMatching_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExerciseInferenceServiceServer).ParseExerciseWithMatching(ctx, req.(*ParseExerciseWithMatchingRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ExerciseInferenceService_FindSimilarExercises_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SimilarityRequest)
+	in := new(FindSimilarExercisesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -178,7 +214,7 @@ func _ExerciseInferenceService_FindSimilarExercises_Handler(srv interface{}, ctx
 		FullMethod: ExerciseInferenceService_FindSimilarExercises_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ExerciseInferenceServiceServer).FindSimilarExercises(ctx, req.(*SimilarityRequest))
+		return srv.(ExerciseInferenceServiceServer).FindSimilarExercises(ctx, req.(*FindSimilarExercisesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -187,7 +223,7 @@ func _ExerciseInferenceService_FindSimilarExercises_Handler(srv interface{}, ctx
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var ExerciseInferenceService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "inference.ExerciseInferenceService",
+	ServiceName: "inference.v1.ExerciseInferenceService",
 	HandlerType: (*ExerciseInferenceServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -199,10 +235,14 @@ var ExerciseInferenceService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ExerciseInferenceService_ParseSingleExercise_Handler,
 		},
 		{
+			MethodName: "ParseExerciseWithMatching",
+			Handler:    _ExerciseInferenceService_ParseExerciseWithMatching_Handler,
+		},
+		{
 			MethodName: "FindSimilarExercises",
 			Handler:    _ExerciseInferenceService_FindSimilarExercises_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto/inference.proto",
+	Metadata: "inference/v1/inference.proto",
 }

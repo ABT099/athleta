@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package inference.v1;
+
+option go_package = "github.com/athleta/exercise-inference/inference/v1;inferencev1";
+
+// ExerciseInferenceService provides exercise parsing and biomechanical inference
+service ExerciseInferenceService {
+  // BatchParseExercises parses multiple exercise names and returns complete biomechanical profiles
+  rpc BatchParseExercises(BatchParseExercisesRequest) returns (BatchParseExercisesResponse);
+
+  // ParseSingleExercise parses a single exercise name
+  rpc ParseSingleExercise(ParseSingleExerciseRequest) returns (ParseSingleExerciseResponse);
+
+  // ParseExerciseWithMatching parses an exercise name with detailed matching results including ambiguity handling
+  rpc ParseExerciseWithMatching(ParseExerciseWithMatchingRequest) returns (ParseExerciseWithMatchingResponse);
+
+  // FindSimilarExercises finds exercises with similar movement patterns and modifiers
+  rpc FindSimilarExercises(FindSimilarExercisesRequest) returns (FindSimilarExercisesResponse);
+}
+
+// BatchParseExercisesRequest contains multiple exercise names to parse
+message BatchParseExercisesRequest {
+  repeated string exercise_names = 1;
+}
+
+// BatchParseExercisesResponse contains parsed data for multiple exercises
+message BatchParseExercisesResponse {
+  repeated ExerciseData exercises = 1;
+}
+
+// ParseSingleExerciseRequest contains a single exercise name to parse
+message ParseSingleExerciseRequest {
+  string exercise_name = 1;
+}
+
+// ParseSingleExerciseResponse contains the complete biomechanical profile of an exercise
+message ParseSingleExerciseResponse {
+  ExerciseData exercise_data = 1;
+}
+
+// ParseExerciseWithMatchingRequest contains a single exercise name to parse with matching details
+message ParseExerciseWithMatchingRequest {
+  string exercise_name = 1;
+}
+
+// ParseExerciseWithMatchingResponse represents the result of parsing an exercise name with matching
+message ParseExerciseWithMatchingResponse {
+  ResultType result_type = 1;
+  MatchCandidate top_match = 2; // Primary result (for MATCH)
+  repeated MatchCandidate candidates = 3; // Top 3 alternatives (for AMBIGUOUS/LOW_CONFIDENCE)
+  string normalized_input = 4; // What we actually matched against
+}
+
+// ExerciseData represents the complete biomechanical profile of an exercise
+message ExerciseData {
+  // Basic information
+  string name = 1;
+  string equipment = 2; // Extracted from name (e.g., "barbell", "dumbbell")
+
+  // Movement classification
+  string movement_pattern = 3; // e.g., "push", "pull", "squat", "hinge"
+  string exercise_type = 4; // "compound" or "isolation"
+
+  // Auto-generated safety/difficulty metrics
+  float injury_risk_level = 5; // 1.0 (low), 2.0 (medium), 3.0 (high)
+  float complexity_score = 6; // 0.0-1.0, affects familiarity progression
+  repeated string joint_stress_areas = 7; // e.g., ["shoulder", "elbow"]
+  string intensity_category = 8; // "compound_heavy", "compound_moderate", "isolation"
+
+  // Muscle targeting with roles
+  repeated MuscleTarget muscle_targets = 9;
+
+  // Extracted modifiers (for reference/debugging)
+  ExerciseModifiers modifiers = 10;
+}
+
+// MuscleTarget represents a muscle engaged in the exercise with its role
+message MuscleTarget {
+  string muscle_name = 1; // e.g., "mid_chest", "anterior_delt"
+  string role = 2; // "prime_mover", "synergist", "stabilizer"
+}
+
+// ExerciseModifiers contains all extracted modifiers from the exercise name
+message ExerciseModifiers {
+  string implement = 1; // barbell, dumbbell, kettlebell, cable, machine, bodyweight, landmine, band
+  string laterality = 2; // bilateral, unilateral, alternating, isometric_hold
+  string angle = 3; // flat, incline, decline, overhead, floor_level
+  string grip_stance = 4; // neutral, pronated, supinated, wide, narrow, staggered, split
+  string plane = 5; // sagittal, frontal, transverse
+  string tempo = 6; // eccentric_focus, explosive, tempo, pause, accommodating_resistance
+}
+
+// FindSimilarExercisesRequest specifies criteria for finding similar exercises
+message FindSimilarExercisesRequest {
+  string exercise_name = 1; // Exercise to find similar exercises for
+  bool same_equipment = 2; // Filter to same equipment type
+  bool same_laterality = 3; // Filter to same laterality (uni/bilateral)
+  bool same_angle = 4; // Filter to same angle
+  int32 limit = 5; // Maximum number of results (default 20)
+}
+
+// FindSimilarExercisesResponse contains names of similar exercises
+message FindSimilarExercisesResponse {
+  repeated string exercise_names = 1; // List of similar exercise names
+}
+
+// ResultType represents the type of match result
+enum ResultType {
+  RESULT_TYPE_UNSPECIFIED = 0;
+  RESULT_TYPE_MATCH = 1;
+  RESULT_TYPE_AMBIGUOUS = 2;
+  RESULT_TYPE_LOW_CONFIDENCE = 3;
+  RESULT_TYPE_NO_MATCH = 4;
+}
+
+// MatchCandidate represents a ranked exercise candidate
+message MatchCandidate {
+  string exercise_id = 1;
+  string canonical_name = 2;
+  float confidence = 3;
+  string match_method = 4;
+  repeated string muscle_groups = 5;
+}

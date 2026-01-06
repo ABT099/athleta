@@ -29,19 +29,23 @@ export interface ExerciseData {
   modifiers: ExerciseModifiers;
 }
 
-interface BatchParseRequest {
+interface BatchParseExercisesRequest {
   exerciseNames: string[];
 }
 
-interface BatchExerciseData {
+interface BatchParseExercisesResponse {
   exercises: ExerciseData[];
 }
 
-interface ParseRequest {
+interface ParseSingleExerciseRequest {
   exerciseName: string;
 }
 
-interface SimilarityRequest {
+interface ParseSingleExerciseResponse {
+  exerciseData: ExerciseData;
+}
+
+interface FindSimilarExercisesRequest {
   exerciseName: string;
   sameEquipment?: boolean;
   sameLaterality?: boolean;
@@ -49,18 +53,20 @@ interface SimilarityRequest {
   limit?: number;
 }
 
-interface SimilarityResponse {
+interface FindSimilarExercisesResponse {
   exerciseNames: string[];
 }
 
 interface ExerciseInferenceService {
   batchParseExercises(
-    request: BatchParseRequest,
-  ): Observable<BatchExerciseData>;
-  parseSingleExercise(request: ParseRequest): Observable<ExerciseData>;
+    request: BatchParseExercisesRequest,
+  ): Observable<BatchParseExercisesResponse>;
+  parseSingleExercise(
+    request: ParseSingleExerciseRequest,
+  ): Observable<ParseSingleExerciseResponse>;
   findSimilarExercises(
-    request: SimilarityRequest,
-  ): Observable<SimilarityResponse>;
+    request: FindSimilarExercisesRequest,
+  ): Observable<FindSimilarExercisesResponse>;
 }
 
 @Injectable()
@@ -95,9 +101,10 @@ export class InferenceService implements OnModuleInit {
    */
   async parseSingleExercise(exerciseName: string): Promise<ExerciseData> {
     try {
-      return await firstValueFrom(
+      const result = await firstValueFrom(
         this.inferenceService.parseSingleExercise({ exerciseName }),
       );
+      return result.exerciseData;
     } catch (error) {
       console.error('Failed to parse exercise via gRPC:', error);
       throw new Error('Exercise inference service unavailable');

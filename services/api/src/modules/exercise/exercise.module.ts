@@ -17,8 +17,11 @@ import { ExerciseController } from './exercise.controller';
         name: 'INFERENCE_PACKAGE',
         transport: Transport.GRPC,
         options: {
-          package: 'inference',
-          protoPath: join(__dirname, '../../../proto/inference.proto'),
+          package: 'inference.v1',
+          protoPath: join(
+            __dirname,
+            '../../../../../proto/inference/v1/inference.proto',
+          ),
           url: process.env.EXERCISE_INFERENCE_URL || 'localhost:50051',
         },
       },

@@ -14,12 +14,12 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
+	inferencev1 "github.com/athleta/exercise-inference/inference/v1"
 	"github.com/athleta/exercise-inference/internal/config"
 	grpcService "github.com/athleta/exercise-inference/internal/grpc"
 	"github.com/athleta/exercise-inference/internal/inference"
 	"github.com/athleta/exercise-inference/internal/matcher"
 	"github.com/athleta/exercise-inference/internal/neo4j"
-	pb "github.com/athleta/exercise-inference/proto"
 )
 
 func main() {
@@ -56,7 +56,7 @@ func main() {
 	configPath := getEnv("CONFIG_PATH", "./config")
 	exercisesPath := fmt.Sprintf("%s/exercises.json", configPath)
 	scoringWeightsPath := fmt.Sprintf("%s/scoring_weights.json", configPath)
-	
+
 	log.Println("Loading configuration...")
 	configLoader, err := config.NewLoader(exercisesPath, scoringWeightsPath)
 	if err != nil {
@@ -78,12 +78,12 @@ func main() {
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer()
-	pb.RegisterExerciseInferenceServiceServer(grpcServer, service)
+	inferencev1.RegisterExerciseInferenceServiceServer(grpcServer, service)
 
 	// Register health check service
 	healthServer := health.NewServer()
 	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
-	
+
 	// Set the overall server health status to serving
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	// Optionally set specific service health (use your actual proto service name)
@@ -114,7 +114,7 @@ func main() {
 	// Start serving
 	log.Printf("✓ gRPC server listening on :%s", grpcPort)
 	log.Println("Service ready to accept requests")
-	
+
 	if err := grpcServer.Serve(listener); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
