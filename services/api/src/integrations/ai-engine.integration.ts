@@ -3,30 +3,13 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { ClsService } from 'nestjs-cls';
-
-export interface JointStressProfileDto {
-  avoidJoints: string[];
-  reason: string;
-}
-
-export interface ProblematicExerciseDto {
-  exerciseId: number;
-  reason: string;
-}
-
-export interface PrescriptionRequestDto {
-  intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation';
-  trainingType: 'strength' | 'hypertrophy' | 'hybrid';
-  trainingPhase: 'accumulation' | 'intensification' | 'realization';
-  weekInPhase: number;
-  isPrimary: boolean;
-}
-
-export interface PrescriptionResponseDto {
-  target_rpe: number;
-  target_rir: number;
-  rest_period_seconds: number;
-}
+import { AxiosRequestHeaders } from 'axios';
+import {
+  JointStressProfileDto,
+  PrescriptionRequestDto,
+  PrescriptionResponseDto,
+  ProblematicExerciseDto,
+} from './integrations.types';
 
 @Injectable()
 export class AIEngineIntegration {
@@ -46,7 +29,7 @@ export class AIEngineIntegration {
       const authToken = this.cls.get<string>('authToken');
       if (authToken && config.url?.includes(this.baseURL)) {
         if (!config.headers) {
-          config.headers = {} as any;
+          config.headers = {} as AxiosRequestHeaders;
         }
         config.headers.Authorization = authToken;
       }

@@ -10,9 +10,10 @@ import { compare, hash } from 'bcrypt';
 import {
   DRIZZLE,
   type DrizzleDB,
-} from 'src/modules/database/database.provider';
+} from 'src/modules/common/database/database.provider';
 import { athletes, users } from 'src/db/schema';
 import { eq } from 'drizzle-orm';
+import { CurrentAuthUser, JwtToken } from '../auth.types';
 
 @Injectable()
 export class AuthenticationService {
@@ -52,11 +53,7 @@ export class AuthenticationService {
     return { id: user.id, hasInitialPlan: user.hasInitialPlan };
   }
 
-  async login(user: { id: number; hasInitialPlan: boolean }): Promise<{
-    access_token: string;
-    refresh_token: string;
-    hasInitialPlan: boolean;
-  }> {
+  async login(user: CurrentAuthUser): Promise<JwtToken> {
     const payload = { sub: user.id };
     const access_token = this.jwtService.sign(payload);
     const refresh_token =
@@ -82,7 +79,7 @@ export class AuthenticationService {
       weight: number;
       trainingExperience: 'beginner' | 'intermediate' | 'advanced';
     },
-  ) {
+  ): Promise<JwtToken> {
     const existingUser = await this.db
       .select({
         id: users.id,

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, Inject, Logger } from '@nestjs/common';
-import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
+import { DRIZZLE, type DrizzleDB } from '../common/database/database.provider';
 import {
   workoutDayExercises,
   exercises,
@@ -10,28 +10,18 @@ import { eq, and, inArray, sql } from 'drizzle-orm';
 import { WorkoutExerciseDto } from '../plans/dto/create-plan.dto';
 import { ExerciseService } from '../exercise/exercise.service';
 import { MuscleImageIntegration } from 'src/integrations/muscle-image.integration';
+import { AIEngineIntegration } from 'src/integrations/ai-engine.integration';
+import { PrescriptionRequestDto } from 'src/integrations/integrations.types';
+import { DayOfWeek, TrainingType } from 'src/constants';
 import {
-  AIEngineIntegration,
-  type PrescriptionRequestDto,
-} from 'src/integrations/ai-engine.integration';
-import { DayOfWeek } from 'src/constants';
-
-export type CreateWorkoutExerciseInput = {
-  name: string;
-  targetSetsMin: number;
-  targetSetsMax?: number;
-  targetRepsMin: number;
-  targetRepsMax?: number;
-  orderInWorkout: number;
-  notes?: string;
-};
-
-export type CreateWorkoutDayInput = {
-  name: string;
-  dayOfWeek: number;
-  orderInWeek: number;
-  exercises: CreateWorkoutExerciseInput[];
-};
+  IntensityCategory,
+  ExerciseType,
+  MuscleTarget,
+} from '../exercise/exercise.types';
+import {
+  CreateWorkoutExerciseInput,
+  CreateWorkoutDayInput,
+} from './workout.types';
 
 @Injectable()
 export class WorkoutsService {
@@ -133,13 +123,13 @@ export class WorkoutsService {
       ]),
     );
 
-    const musclesWithRoles: Array<{ name: string; role: string }> = [];
+    const musclesTargets: Array<MuscleTarget> = [];
 
     for (const exercise of exercisesToAdd) {
       const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
       if (exerciseData) {
         for (const muscle of exerciseData.muscles) {
-          musclesWithRoles.push(muscle);
+          musclesTargets.push(muscle);
         }
       }
     }
@@ -171,7 +161,7 @@ export class WorkoutsService {
       );
     }
 
-    const trainingType = workoutPlanData[0].trainingType;
+    const trainingType = workoutPlanData[0].trainingType as TrainingType;
 
     // Get current exercise count to calculate total exercises
     const existingExercisesCount = await this.db
@@ -269,14 +259,14 @@ export class WorkoutsService {
     // Move image generation outside transaction to avoid holding it open
     if (exercisesToAdd.length > 0) {
       await this.generateMuscleImagesForWorkoutDay([
-        { id: workoutDayId, muscles: musclesWithRoles },
+        { id: workoutDayId, muscles: musclesTargets },
       ]);
     }
   }
 
   async createWorkoutDays(
     workoutPlanId: number,
-    trainingType: string,
+    trainingType: TrainingType,
     workoutDaysData: CreateWorkoutDayInput[],
   ): Promise<number[]> {
     if (!workoutDaysData || workoutDaysData.length === 0) {
@@ -308,9 +298,9 @@ export class WorkoutsService {
       exerciseData: {
         id: number;
         name: string;
-        intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation';
-        exerciseType: 'compound' | 'isolation';
-        muscles: Array<{ name: string; role: string }>;
+        intensityCategory: IntensityCategory;
+        exerciseType: ExerciseType;
+        muscles: Array<MuscleTarget>;
       };
       isPrimary: boolean;
     }> = [];
@@ -333,7 +323,7 @@ export class WorkoutsService {
 
         prescriptionRequests.push({
           intensityCategory: exerciseData.intensityCategory,
-          trainingType: trainingType as any,
+          trainingType: trainingType,
           trainingPhase: 'accumulation',
           weekInPhase: 1,
           isPrimary: isPrimary,
@@ -367,7 +357,7 @@ export class WorkoutsService {
 
     // Prepare workout day values
     const workoutDayValues = workoutDaysData.map((workoutDay) => {
-      const musclesWithRoles: Array<{ name: string; role: string }> = [];
+      const musclesWithRoles: Array<MuscleTarget> = [];
 
       for (const exercise of workoutDay.exercises) {
         const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
@@ -393,7 +383,7 @@ export class WorkoutsService {
     // Insert workout days in transaction
     const workoutDaysDataForImages: Array<{
       id: number;
-      muscles: Array<{ name: string; role: string }>;
+      muscles: Array<MuscleTarget>;
     }> = [];
 
     const insertedWorkoutDayIds = await this.db.transaction(async (tx) => {
@@ -412,7 +402,21 @@ export class WorkoutsService {
       });
 
       // Prepare exercise inserts
-      const allExerciseInserts: Array<any> = [];
+      const allExerciseInserts: Array<{
+        workoutDayId: number;
+        exerciseId: number;
+        orderInWorkout: number;
+        targetSetsMin: number;
+        targetSetsMax: number;
+        targetRepsMin: number;
+        targetRepsMax: number;
+        targetRpe: number | null;
+        targetRir: number | null;
+        restPeriodSeconds: number | null;
+        notes: string | null;
+        isPrimary: boolean;
+        warmUpSets: number;
+      }> = [];
       let prescriptionIndex = 0;
 
       for (
@@ -423,7 +427,7 @@ export class WorkoutsService {
         const workoutDayId = insertedWorkoutDays[dayIndex].id;
         const workoutDay = workoutDaysData[dayIndex];
 
-        for (const exercise of workoutDay.exercises) {
+        for (let i = 0; i < workoutDay.exercises.length; i++) {
           const preInsertMeta = exerciseMetadataPreInsert[prescriptionIndex];
           allExerciseInserts.push({
             workoutDayId: workoutDayId,

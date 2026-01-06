@@ -1,28 +1,10 @@
-import {
-  Injectable,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthenticationService } from './authentication.service';
 import { AppleAuthService } from './apple-auth.service';
 import { GoogleAuthService } from './google-auth.service';
+import { OAuthProvider } from '../auth.constants';
 
-export interface OAuthUserProfile {
-  id: string;
-  email: string;
-  name?: {
-    givenName?: string;
-    familyName?: string;
-    firstName?: string;
-    lastName?: string;
-  };
-  emails?: Array<{ value: string }>;
-}
-
-export enum OAuthProvider {
-  GOOGLE = 'google',
-  APPLE = 'apple',
-}
 @Injectable()
 export class OAuthService {
   private readonly appleClientId: string;
@@ -47,7 +29,7 @@ export class OAuthService {
       this.configService.getOrThrow<string>('OAUTH_REDIRECT_URI');
   }
 
-  async startOAuth(params: URLSearchParams) {
+  startOAuth(params: URLSearchParams) {
     let idpClient: string;
     const internalClient = params.get('client_id');
     const redirectUri = params.get('redirect_uri');
@@ -68,7 +50,7 @@ export class OAuthService {
       throw new BadRequestException('Invalid redirect URI');
     }
 
-    let state = platform + '|' + params.get('state');
+    const state = platform + '|' + params.get('state');
 
     if (internalClient == OAuthProvider.GOOGLE) {
       idpClient = this.googleClientId;
@@ -91,7 +73,7 @@ export class OAuthService {
     return redirectTo + '?' + paramsToSend.toString();
   }
 
-  async handleOAuthCallback(incomingParams: URLSearchParams) {
+  handleOAuthCallback(incomingParams: URLSearchParams) {
     const combinedPlatformAndState = incomingParams.get('state');
 
     if (!combinedPlatformAndState) {
@@ -112,12 +94,8 @@ export class OAuthService {
     );
   }
 
-  async getOAuthToken(
-    provider: OAuthProvider,
-    identifier: string
-  ) {
-
-    let userInfo: { id: number, hasInitialPlan: boolean } | null = null;
+  async getOAuthToken(provider: OAuthProvider, identifier: string) {
+    let userInfo: { id: number; hasInitialPlan: boolean } | null = null;
 
     if (provider == OAuthProvider.GOOGLE) {
       userInfo = await this.googleAuthService.validateGoogleUser(identifier);
@@ -132,19 +110,28 @@ export class OAuthService {
     return await this.authenticationService.login(userInfo);
   }
 
-  async registerOAuth(provider: OAuthProvider, identifier: string, athlete: {
-    age: number,
-    gender: 'male' | 'female',
-    weight: number,
-    trainingExperience: 'beginner' | 'intermediate' | 'advanced',
-  }) {
-
-    let userInfo: { id: number, hasInitialPlan: boolean } | null = null;
+  async registerOAuth(
+    provider: OAuthProvider,
+    identifier: string,
+    athlete: {
+      age: number;
+      gender: 'male' | 'female';
+      weight: number;
+      trainingExperience: 'beginner' | 'intermediate' | 'advanced';
+    },
+  ) {
+    let userInfo: { id: number; hasInitialPlan: boolean } | null = null;
 
     if (provider == OAuthProvider.GOOGLE) {
-      userInfo = await this.googleAuthService.registerWithGoogle(identifier, athlete);
+      userInfo = await this.googleAuthService.registerWithGoogle(
+        identifier,
+        athlete,
+      );
     } else if (provider == OAuthProvider.APPLE) {
-      userInfo = await this.appleAuthService.registerWithApple(identifier, athlete);
+      userInfo = await this.appleAuthService.registerWithApple(
+        identifier,
+        athlete,
+      );
     }
 
     if (!userInfo) {

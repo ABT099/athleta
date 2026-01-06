@@ -13,23 +13,27 @@ import { CreatePlanDto } from './dto/create-plan.dto';
 import { PlansService } from './plans.service';
 import { CurrentUser } from 'src/decorators/user.decorator';
 import { UpdatePlanDto } from './dto/update-plan.dto';
+import type { CurrentAuthUser } from '../auth/auth.types';
 
 @Controller('plans')
 export class PlansController {
   constructor(private readonly plansService: PlansService) {}
 
   @Get()
-  getPlans(@CurrentUser() user) {
+  getPlans(@CurrentUser() user: CurrentAuthUser) {
     return this.plansService.getPlans(user.id);
   }
 
   @Get(':planId')
-  getPlan(@Param('planId', ParseIntPipe) planId: number, @CurrentUser() user) {
+  getPlan(
+    @Param('planId', ParseIntPipe) planId: number,
+    @CurrentUser() user: CurrentAuthUser,
+  ) {
     return this.plansService.getPlan(user.id, planId);
   }
 
   @Post()
-  createPlan(@Body() dto: CreatePlanDto, @CurrentUser() user) {
+  createPlan(@Body() dto: CreatePlanDto, @CurrentUser() user: CurrentAuthUser) {
     return this.plansService.createPlan({
       athleteId: user.id,
       name: dto.name,
@@ -47,7 +51,7 @@ export class PlansController {
   updatePlan(
     @Param('planId', ParseIntPipe) planId: number,
     @Body() dto: UpdatePlanDto,
-    @CurrentUser() user,
+    @CurrentUser() user: CurrentAuthUser,
   ) {
     return this.plansService.updatePlan(user.id, planId, {
       name: dto.name,
@@ -65,7 +69,7 @@ export class PlansController {
   @Delete(':planId')
   deletePlan(
     @Param('planId', ParseIntPipe) planId: number,
-    @CurrentUser() user,
+    @CurrentUser() user: CurrentAuthUser,
   ) {
     return this.plansService.deletePlan(user.id, planId);
   }
@@ -73,7 +77,7 @@ export class PlansController {
   @Patch(':planId/activate')
   activatePlan(
     @Param('planId', ParseIntPipe) planId: number,
-    @CurrentUser() user,
+    @CurrentUser() user: CurrentAuthUser,
   ) {
     return this.plansService.activatePlan(user.id, planId);
   }

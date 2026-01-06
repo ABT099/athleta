@@ -1,22 +1,35 @@
-import { Injectable, NotFoundException, Inject } from '@nestjs/common';
-import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
-import { exercises, muscleGroups, exerciseMuscles } from 'src/db/schema';
-import { eq, ne, lte, inArray, and, sql } from 'drizzle-orm';
-import { MuscleSimilarityUtil } from './utils/muscle-similarity.util';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { and, eq, inArray, not, sql } from 'drizzle-orm';
+import { exerciseMuscles, exercises, muscleGroups } from 'src/db/schema';
 import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
+import { DRIZZLE, type DrizzleDB } from '../common/database/database.provider';
+import { InferenceService } from './inference.service';
+import { MuscleSimilarityUtil } from './utils/muscle-similarity.util';
 import {
-  SubstitutionResultDto,
-  ExerciseDto,
-  MatchDetailsDto,
-  MuscleActivationDto,
-} from './dto/substitution-result.dto';
-import { SubstitutionFiltersDto } from './dto/substitution-filters.dto';
-import { InferenceService, type ExerciseData } from './inference.service';
+  ExerciseType,
+  IntensityCategory,
+  MatchDetails,
+  MuscleActivation,
+  MuscleRole,
+  MuscleTarget,
+  SubstitutionResult,
+} from './exercise.types';
+
+type SubstitutionFilters = {
+  excludeJointStress?: string[];
+  excludeIds?: number[];
+  limit?: number;
+};
+
+type SubstitutionContext = {
+  filters: SubstitutionFilters;
+  athleteId?: number;
+};
 
 type ExerciseEntity = typeof exercises.$inferSelect;
 
 interface ExerciseWithMuscles extends ExerciseEntity {
-  muscles: MuscleActivationDto[];
+  muscles: MuscleActivation[];
 }
 
 @Injectable()
@@ -27,11 +40,17 @@ export class ExerciseService {
     private readonly inferenceService: InferenceService,
   ) {}
 
+  /**
+   * Find exercise substitutions with optional athlete personalization.
+   * When athleteId is provided, automatically enriches filters with AI insights.
+   *
+   * @param originalExerciseId - The exercise to find substitutions for
+   * @param context - Optional filters and athlete ID for personalization
+   */
   async findSubstitutions(
     originalExerciseId: number,
-    filters?: SubstitutionFiltersDto,
-  ): Promise<SubstitutionResultDto[]> {
-    // Get original exercise with muscles
+    context: SubstitutionContext = { filters: {} },
+  ): Promise<SubstitutionResult[]> {
     const originalExercise =
       await this.getExerciseWithMuscles(originalExerciseId);
 
@@ -41,57 +60,115 @@ export class ExerciseService {
       );
     }
 
-    // Build query conditions
-    const conditions = [ne(exercises.id, originalExerciseId)];
+    // Apply personalization if athlete context provided
+    const enrichedFilters = await this.enrichFiltersWithPersonalization(
+      context.filters,
+      context.athleteId,
+    );
 
-    if (filters?.availableEquipment && filters.availableEquipment.length > 0) {
-      conditions.push(inArray(exercises.equipment, filters.availableEquipment));
+    const candidateExercises = await this.fetchCandidateExercises(
+      originalExerciseId,
+      enrichedFilters,
+    );
+
+    const patternScores = await this.fetchPatternSimilarities(
+      originalExercise.name,
+    );
+
+    return this.scoreAndRankCandidates(
+      originalExercise,
+      candidateExercises,
+      patternScores,
+      enrichedFilters.limit || 5,
+    );
+  }
+
+  private async enrichFiltersWithPersonalization(
+    baseFilters: SubstitutionFilters,
+    athleteId?: number,
+  ): Promise<SubstitutionFilters> {
+    if (!athleteId) {
+      return baseFilters;
     }
 
-    if (filters?.maxComplexity !== undefined) {
-      conditions.push(lte(exercises.complexityScore, filters.maxComplexity));
-    }
+    try {
+      const [jointProfile, problematicExercises] = await Promise.all([
+        this.aiEngineIntegration.getJointStressProfile(athleteId),
+        this.aiEngineIntegration.getProblematicExercises(athleteId),
+      ]);
 
-    if (filters?.maxInjuryRisk !== undefined) {
-      conditions.push(lte(exercises.injuryRiskLevel, filters.maxInjuryRisk));
+      return {
+        ...baseFilters,
+        excludeJointStress: this.mergeUniqueValues(
+          baseFilters.excludeJointStress,
+          jointProfile.avoidJoints,
+        ),
+        excludeIds: this.mergeUniqueValues(
+          baseFilters.excludeIds,
+          problematicExercises.map(
+            (pe: { exerciseId: number }) => pe.exerciseId,
+          ),
+        ),
+      };
+    } catch (error) {
+      console.warn(
+        'Failed to fetch athlete personalization, using base filters:',
+        error,
+      );
+      return baseFilters;
     }
+  }
 
-    if (filters?.excludeIds && filters.excludeIds.length > 0) {
-      filters.excludeIds.forEach((id) => {
-        conditions.push(ne(exercises.id, id));
-      });
+  private async fetchCandidateExercises(
+    originalExerciseId: number,
+    filters: SubstitutionFilters,
+  ): Promise<ExerciseWithMuscles[]> {
+    const conditions = [not(eq(exercises.id, originalExerciseId))];
+
+    if (filters.excludeIds && filters.excludeIds.length > 0) {
+      conditions.push(not(inArray(exercises.id, filters.excludeIds)));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-    const candidateExercises = await this.db.query.exercises.findMany({
+    const rawCandidates = await this.db.query.exercises.findMany({
       where: whereClause,
     });
 
-    // Filter out exercises with excluded joint stress (if specified)
-    let filteredExercises = candidateExercises;
-    if (filters?.excludeJointStress && filters.excludeJointStress.length > 0) {
-      filteredExercises = candidateExercises.filter((exercise) => {
-        const hasExcludedJoint = filters.excludeJointStress!.some((joint) =>
-          exercise.jointStressAreas?.includes(joint),
-        );
-        return !hasExcludedJoint;
-      });
+    const filteredByJointStress = this.filterByJointStress(
+      rawCandidates,
+      filters.excludeJointStress,
+    );
+
+    const candidateIds = filteredByJointStress.map((e) => e.id);
+    return this.getMultipleExercisesWithMuscles(candidateIds);
+  }
+
+  private filterByJointStress(
+    exercises: ExerciseEntity[],
+    excludeJointStress?: string[],
+  ): ExerciseEntity[] {
+    if (!excludeJointStress || excludeJointStress.length === 0) {
+      return exercises;
     }
 
-    // Get muscles for all candidate exercises
-    const candidateIds = filteredExercises.map((e) => e.id);
-    const exercisesWithMuscles =
-      await this.getMultipleExercisesWithMuscles(candidateIds);
+    return exercises.filter((exercise) => {
+      const hasExcludedJoint = excludeJointStress.some((joint) =>
+        exercise.jointStressAreas?.includes(joint),
+      );
+      return !hasExcludedJoint;
+    });
+  }
 
-    // NEW: Get pattern-based similar exercises from Neo4j (automatic)
-    let patternScores = new Map<string, number>();
+  private async fetchPatternSimilarities(
+    exerciseName: string,
+  ): Promise<Map<string, number>> {
     try {
       const similarByPattern =
         await this.inferenceService.findSimilarExercisesByPattern(
-          originalExercise.name,
+          exerciseName,
           { limit: 20 },
         );
-      patternScores = MuscleSimilarityUtil.mapPatternMatchesToScores(
+      return MuscleSimilarityUtil.mapPatternMatchesToScores(
         similarByPattern,
         20,
       );
@@ -100,94 +177,78 @@ export class ExerciseService {
         'Pattern matching unavailable, using muscle-only scoring:',
         error,
       );
-      // Empty map = fallback to muscle-only scoring
+      return new Map();
     }
-
-    // Calculate similarity scores with hybrid approach
-    const scoredExercises = exercisesWithMuscles
-      .map((exercise) => {
-        const matchDetails = this.calculateMatchDetails(
-          originalExercise,
-          exercise,
-        );
-
-        // Get muscle-based similarity score
-        const muscleScore = this.calculateSimilarityScore(matchDetails);
-
-        // Get pattern-based similarity score from Neo4j results
-        const patternScore = patternScores.get(exercise.name) || 0;
-
-        // NEW: Calculate hybrid score (60% muscle + 40% pattern)
-        const hybridScore = muscleScore * 0.6 + patternScore * 0.4;
-
-        // NEW: Calculate pattern similarity for match details
-        const patternSimilarity =
-          MuscleSimilarityUtil.calculatePatternSimilarity(
-            {
-              movementPattern: originalExercise.movementPattern || '',
-              equipment: originalExercise.equipment || '',
-              exerciseType: originalExercise.exerciseType || '',
-            },
-            {
-              movementPattern: exercise.movementPattern || '',
-              equipment: exercise.equipment || '',
-              exerciseType: exercise.exerciseType || '',
-            },
-          );
-
-        // Enhanced match details with pattern information
-        const enhancedMatchDetails = {
-          ...matchDetails,
-          patternSimilarity,
-          modifierMatch: patternScore, // Neo4j score includes modifier matching
-        };
-
-        return {
-          exercise: this.mapToExerciseDto(exercise),
-          similarityScore: hybridScore, // Use hybrid score
-          reason:
-            MuscleSimilarityUtil.generateSubstitutionReason(
-              enhancedMatchDetails,
-            ),
-          matchDetails: enhancedMatchDetails,
-        };
-      })
-      .sort((a, b) => b.similarityScore - a.similarityScore)
-      .slice(0, filters?.limit || 5);
-
-    return scoredExercises;
   }
 
-  async findPersonalizedSubstitutions(
-    originalExerciseId: number,
-    athleteId: number,
-    filters?: SubstitutionFiltersDto,
-  ): Promise<SubstitutionResultDto[]> {
-    // Get AI engine insights for athlete
-    const [jointProfile, problematicExercises] = await Promise.all([
-      this.aiEngineIntegration.getJointStressProfile(athleteId),
-      this.aiEngineIntegration.getProblematicExercises(athleteId),
-    ]);
+  private scoreAndRankCandidates(
+    originalExercise: ExerciseWithMuscles,
+    candidates: ExerciseWithMuscles[],
+    patternScores: Map<string, number>,
+    limit: number,
+  ): SubstitutionResult[] {
+    return candidates
+      .map((candidate) =>
+        this.createSubstitutionResult(
+          originalExercise,
+          candidate,
+          patternScores,
+        ),
+      )
+      .sort((a, b) => b.similarityScore - a.similarityScore)
+      .slice(0, limit);
+  }
 
-    // Merge AI insights into filters
-    const enhancedFilters: SubstitutionFiltersDto = {
-      ...filters,
-      excludeJointStress: [
-        ...(filters?.excludeJointStress || []),
-        ...jointProfile.avoidJoints,
-      ],
-      excludeIds: [
-        ...(filters?.excludeIds || []),
-        ...problematicExercises.map((pe) => pe.exerciseId),
-      ],
+  private createSubstitutionResult(
+    original: ExerciseWithMuscles,
+    candidate: ExerciseWithMuscles,
+    patternScores: Map<string, number>,
+  ): SubstitutionResult {
+    const matchDetails = this.calculateMatchDetails(original, candidate);
+    const muscleScore = this.calculateMuscleSimilarityScore(matchDetails);
+    const patternScore = patternScores.get(candidate.name) || 0;
+
+    // Hybrid scoring: 60% muscle-based + 40% pattern-based
+    const hybridScore = muscleScore * 0.6 + patternScore * 0.4;
+
+    const patternSimilarity = MuscleSimilarityUtil.calculatePatternSimilarity(
+      {
+        movementPattern: original.movementPattern || '',
+        equipment: original.equipment || '',
+        exerciseType: original.exerciseType || '',
+      },
+      {
+        movementPattern: candidate.movementPattern || '',
+        equipment: candidate.equipment || '',
+        exerciseType: candidate.exerciseType || '',
+      },
+    );
+
+    const enhancedMatchDetails: MatchDetails = {
+      ...matchDetails,
+      patternSimilarity,
+      modifierMatch: patternScore,
     };
 
-    return this.findSubstitutions(originalExerciseId, enhancedFilters);
+    return {
+      exercise: {
+        id: candidate.id,
+        name: candidate.name,
+        equipment: candidate.equipment || '',
+        muscles: candidate.muscles,
+        injuryRiskLevel: candidate.injuryRiskLevel,
+        jointStressAreas: candidate.jointStressAreas || [],
+        movementPattern: candidate.movementPattern || '',
+        exerciseType: candidate.exerciseType,
+        complexityScore: candidate.complexityScore,
+      },
+      similarityScore: hybridScore,
+      reason:
+        MuscleSimilarityUtil.generateSubstitutionReason(enhancedMatchDetails),
+      matchDetails: enhancedMatchDetails,
+    };
   }
 
-  /**
-   * Get a single exercise with its muscle activations
-   */
   private async getExerciseWithMuscles(
     exerciseId: number,
   ): Promise<ExerciseWithMuscles | null> {
@@ -199,7 +260,6 @@ export class ExerciseService {
       return null;
     }
 
-    // Get muscle activations for this exercise
     const musclesRaw = await this.db
       .select({
         id: muscleGroups.id,
@@ -214,7 +274,6 @@ export class ExerciseService {
       )
       .where(eq(exerciseMuscles.exerciseId, exerciseId));
 
-    // Convert role to activation percent for similarity calculations
     const muscles = musclesRaw.map((m) => ({
       ...m,
       activationPercent: this.roleToActivationPercent(m.role),
@@ -226,9 +285,6 @@ export class ExerciseService {
     };
   }
 
-  /**
-   * Get multiple exercises with their muscle activations
-   */
   private async getMultipleExercisesWithMuscles(
     exerciseIds: number[],
   ): Promise<ExerciseWithMuscles[]> {
@@ -236,12 +292,10 @@ export class ExerciseService {
       return [];
     }
 
-    // Get all exercises
     const exercisesData = await this.db.query.exercises.findMany({
       where: inArray(exercises.id, exerciseIds),
     });
 
-    // Get all muscle activations for these exercises
     const allMusclesRaw = await this.db
       .select({
         exerciseId: exerciseMuscles.exerciseId,
@@ -257,8 +311,7 @@ export class ExerciseService {
       )
       .where(inArray(exerciseMuscles.exerciseId, exerciseIds));
 
-    // Group muscles by exercise ID and convert role to activation percent
-    const musclesByExercise = new Map<number, MuscleActivationDto[]>();
+    const musclesByExercise = new Map<number, MuscleActivation[]>();
     allMusclesRaw.forEach((muscle) => {
       if (!musclesByExercise.has(muscle.exerciseId)) {
         musclesByExercise.set(muscle.exerciseId, []);
@@ -271,7 +324,6 @@ export class ExerciseService {
       });
     });
 
-    // Combine exercises with their muscles
     return exercisesData.map((exercise) => ({
       ...exercise,
       muscles: musclesByExercise.get(exercise.id) || [],
@@ -281,8 +333,7 @@ export class ExerciseService {
   private calculateMatchDetails(
     exercise1: ExerciseWithMuscles,
     exercise2: ExerciseWithMuscles,
-  ): MatchDetailsDto {
-    // Use weighted muscle similarity based on activation percentages
+  ): MatchDetails {
     const muscleSimilarity =
       MuscleSimilarityUtil.calculateWeightedMuscleSimilarity(
         exercise1.muscles,
@@ -316,35 +367,21 @@ export class ExerciseService {
       movementPatternMatch,
       exerciseTypeMatch,
       complexitySimilarity,
+      patternSimilarity: 0, // Filled in by caller
+      modifierMatch: 0, // Filled in by caller
+      hierarchyDistance: 0, // Placeholder for future use
     };
   }
 
-  private calculateSimilarityScore(matchDetails: MatchDetailsDto): number {
+  private calculateMuscleSimilarityScore(matchDetails: MatchDetails): number {
     return (
-      matchDetails.muscleSimilarity * 0.5 + // Increased weight for muscle similarity
+      matchDetails.muscleSimilarity * 0.5 +
       matchDetails.movementPatternMatch * 0.25 +
       matchDetails.exerciseTypeMatch * 0.2 +
       matchDetails.complexitySimilarity * 0.05
     );
   }
 
-  private mapToExerciseDto(exercise: ExerciseWithMuscles): ExerciseDto {
-    return {
-      id: exercise.id,
-      name: exercise.name,
-      equipment: exercise.equipment || '',
-      muscles: exercise.muscles,
-      injuryRiskLevel: exercise.injuryRiskLevel,
-      jointStressAreas: exercise.jointStressAreas || [],
-      movementPattern: exercise.movementPattern || '',
-      exerciseType: exercise.exerciseType as 'compound' | 'isolation',
-      complexityScore: exercise.complexityScore,
-    };
-  }
-
-  /**
-   * Convert muscle role to activation percent for similarity calculations
-   */
   private roleToActivationPercent(role: string): number {
     switch (role) {
       case 'prime_mover':
@@ -373,7 +410,7 @@ export class ExerciseService {
    * @returns true if exercise should be primary, false if accessory
    */
   static determineIsPrimary(
-    intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation',
+    intensityCategory: IntensityCategory,
     orderInWorkout: number,
     totalExercises: number,
   ): boolean {
@@ -412,6 +449,14 @@ export class ExerciseService {
   }
 
   /**
+   * Merges two arrays removing duplicates.
+   */
+  private mergeUniqueValues<T>(arr1?: T[], arr2?: T[]): T[] {
+    const combined = [...(arr1 || []), ...(arr2 || [])];
+    return [...new Set(combined)];
+  }
+
+  /**
    * Batch upsert exercises from exercise names
    * This is called internally when creating workouts with custom exercise names
    */
@@ -419,9 +464,9 @@ export class ExerciseService {
     Array<{
       id: number;
       name: string;
-      intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation';
-      exerciseType: 'compound' | 'isolation';
-      muscles: Array<{ name: string; role: string }>;
+      intensityCategory: IntensityCategory;
+      exerciseType: ExerciseType;
+      muscles: Array<MuscleTarget>;
     }>
   > {
     if (exerciseNames.length === 0) {
@@ -429,7 +474,7 @@ export class ExerciseService {
     }
 
     // Get unique exercise names
-    const uniqueNames = [...new Set(exerciseNames)];
+    const uniqueNames = this.mergeUniqueValues(exerciseNames);
 
     // Check which exercises already exist and get their IDs
     const existingExercises = await this.db
@@ -476,12 +521,9 @@ export class ExerciseService {
               injuryRiskLevel: exercise.injuryRiskLevel,
               jointStressAreas: exercise.jointStressAreas,
               movementPattern: exercise.movementPattern,
-              exerciseType: exercise.exerciseType as 'compound' | 'isolation',
+              exerciseType: exercise.exerciseType,
               complexityScore: exercise.complexityScore,
-              intensityCategory: exercise.intensityCategory as
-                | 'compound_heavy'
-                | 'compound_moderate'
-                | 'isolation',
+              intensityCategory: exercise.intensityCategory,
             })),
           )
           .onConflictDoUpdate({
@@ -513,24 +555,24 @@ export class ExerciseService {
         const allMuscleInserts: {
           exerciseId: number;
           muscleGroupId: number;
-          role: 'prime_mover' | 'synergist' | 'stabilizer';
+          role: MuscleRole;
         }[] = [];
         for (const exerciseData of inferredExercises) {
           const exerciseId = exerciseIdMap.get(exerciseData.name.toLowerCase());
           if (!exerciseId) continue;
 
           for (const target of exerciseData.muscleTargets) {
-            const muscleId = muscleMap.get(target.muscleName);
+            const muscleId = muscleMap.get(target.name);
             if (!muscleId) {
               console.warn(
-                `Muscle not found: ${target.muscleName} for exercise ${exerciseData.name}`,
+                `Muscle not found: ${target.name} for exercise ${exerciseData.name}`,
               );
               continue;
             }
             allMuscleInserts.push({
               exerciseId,
               muscleGroupId: muscleId,
-              role: target.role as 'prime_mover' | 'synergist' | 'stabilizer',
+              role: target.role,
             });
           }
         }
@@ -581,17 +623,14 @@ export class ExerciseService {
       .where(inArray(exerciseMuscles.exerciseId, allExerciseIds));
 
     // Build a map of exercise ID to muscles
-    const exerciseMusclesMap = new Map<
-      number,
-      Array<{ name: string; role: string }>
-    >();
+    const exerciseMusclesMap = new Map<number, Array<MuscleTarget>>();
     for (const row of muscleData) {
       if (!exerciseMusclesMap.has(row.exerciseId)) {
         exerciseMusclesMap.set(row.exerciseId, []);
       }
       exerciseMusclesMap.get(row.exerciseId)!.push({
         name: row.muscleName,
-        role: row.role,
+        role: row.role as MuscleRole,
       });
     }
 
@@ -608,11 +647,8 @@ export class ExerciseService {
       return {
         id,
         name: metadata.name,
-        intensityCategory: metadata.intensityCategory as
-          | 'compound_heavy'
-          | 'compound_moderate'
-          | 'isolation',
-        exerciseType: metadata.exerciseType as 'compound' | 'isolation',
+        intensityCategory: metadata.intensityCategory,
+        exerciseType: metadata.exerciseType,
         muscles: exerciseMusclesMap.get(id) || [],
       };
     });

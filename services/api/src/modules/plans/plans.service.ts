@@ -1,22 +1,21 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { DRIZZLE, type DrizzleDB } from '../database/database.provider';
-import {
-  PeriodizationModel,
-  TrainingType,
-  jsDayToDayOfWeek,
-} from 'src/constants';
+import { DRIZZLE, type DrizzleDB } from '../common/database/database.provider';
+import { PeriodizationModel, TrainingType } from 'src/constants';
 import { workoutDays, workoutPlans, workoutDayExercises } from 'src/db/schema';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { ExerciseService } from '../exercise/exercise.service';
+import { WorkoutsService } from '../workouts/workouts.service';
+import { AIEngineIntegration } from 'src/integrations/ai-engine.integration';
 import {
-  WorkoutsService,
-  type CreateWorkoutDayInput,
-  type CreateWorkoutExerciseInput,
-} from '../workouts/workouts.service';
+  CreateWorkoutDayInput,
+  CreateWorkoutExerciseInput,
+} from '../workouts/workout.types';
+import { PrescriptionRequestDto } from 'src/integrations/integrations.types';
 import {
-  AIEngineIntegration,
-  type PrescriptionRequestDto,
-} from 'src/integrations/ai-engine.integration';
+  ExerciseType,
+  IntensityCategory,
+  MuscleTarget,
+} from '../exercise/exercise.types';
 
 type WorkoutDay = CreateWorkoutDayInput;
 type WorkoutExercise = CreateWorkoutExerciseInput;
@@ -44,12 +43,10 @@ export class PlansService {
       ),
       with: {
         workoutDays: {
-          orderBy: (workoutDays, { asc }) => [asc(workoutDays.orderInWeek)],
+          orderBy: [asc(workoutDays.orderInWeek)],
           with: {
             workoutDayExercises: {
-              orderBy: (workoutDayExercises, { asc }) => [
-                asc(workoutDayExercises.orderInWorkout),
-              ],
+              orderBy: [asc(workoutDayExercises.orderInWorkout)],
               with: {
                 exercise: true,
               },
@@ -94,7 +91,7 @@ export class PlansService {
     // Collect workout day data for batch image generation
     const workoutDaysData: Array<{
       id: number;
-      muscles: Array<{ name: string; role: string }>;
+      muscles: Array<MuscleTarget>;
     }> = [];
 
     // Collect all prescription requests for batch processing (before transaction)
@@ -109,9 +106,9 @@ export class PlansService {
       exerciseData: {
         id: number;
         name: string;
-        intensityCategory: 'compound_heavy' | 'compound_moderate' | 'isolation';
-        exerciseType: 'compound' | 'isolation';
-        muscles: Array<{ name: string; role: string }>;
+        intensityCategory: IntensityCategory;
+        exerciseType: ExerciseType;
+        muscles: Array<MuscleTarget>;
       };
       isPrimary: boolean;
     }> = [];
@@ -195,7 +192,7 @@ export class PlansService {
         .then(([workoutPlan]) => workoutPlan.id);
 
       const workoutDayValues = createPlanDto.workoutDays.map((workoutDay) => {
-        const musclesWithRoles: Array<{ name: string; role: string }> = [];
+        const musclesWithRoles: Array<MuscleTarget> = [];
 
         for (const exercise of workoutDay.exercises) {
           const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
@@ -244,12 +241,9 @@ export class PlansService {
         exerciseData: {
           id: number;
           name: string;
-          intensityCategory:
-            | 'compound_heavy'
-            | 'compound_moderate'
-            | 'isolation';
-          exerciseType: 'compound' | 'isolation';
-          muscles: Array<{ name: string; role: string }>;
+          intensityCategory: IntensityCategory;
+          exerciseType: ExerciseType;
+          muscles: Array<MuscleTarget>;
         };
         isPrimary: boolean;
       }> = [];
@@ -263,7 +257,7 @@ export class PlansService {
         const workoutDayId = insertedWorkoutDays[dayIndex].id;
         const workoutDay = createPlanDto.workoutDays[dayIndex];
 
-        for (const exercise of workoutDay.exercises) {
+        for (let i = 0; i < workoutDay.exercises.length; i++) {
           const preInsertMeta = exerciseMetadataPreInsert[prescriptionIndex];
           exerciseMetadata.push({
             dayIndex,

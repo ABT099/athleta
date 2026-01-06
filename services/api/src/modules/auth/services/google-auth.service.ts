@@ -4,14 +4,37 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DRIZZLE } from 'src/modules/database/database.provider';
-import type { DrizzleDB } from 'src/modules/database/database.provider';
+import { DRIZZLE } from 'src/modules/common/database/database.provider';
+import type { DrizzleDB } from 'src/modules/common/database/database.provider';
 import { ConfigService } from '@nestjs/config';
-import { OAuthUserProfile } from './oauth.service';
+import { OAuthUserProfile } from '../auth.types';
 import { jwtDecode } from 'jwt-decode';
 import axios from 'axios';
 import { athletes, users } from 'src/db/schema';
 import { eq, or } from 'drizzle-orm';
+
+type GoogleIdToken = {
+  sub: string;
+  email: string;
+  given_name?: string;
+  family_name?: string;
+};
+
+type GoogleTokenResponse = {
+  access_token: string;
+  id_token: string;
+  expires_in: number;
+  token_type: string;
+  scope?: string;
+  refresh_token?: string;
+};
+
+type AthleteRegistrationData = {
+  age: number;
+  gender: 'male' | 'female';
+  weight: number;
+  trainingExperience: 'beginner' | 'intermediate' | 'advanced';
+};
 
 @Injectable()
 export class GoogleAuthService {
@@ -68,7 +91,7 @@ export class GoogleAuthService {
     return { id: existingUser.id, hasInitialPlan: existingUser.hasInitialPlan };
   }
 
-  async registerWithGoogle(code: string, athlete) {
+  async registerWithGoogle(code: string, athlete: AthleteRegistrationData) {
     const profile = await this.authenticateWithGoogle(code);
     const googleId = profile.id;
     const email = profile.emails?.[0]?.value || profile.email;
@@ -160,7 +183,7 @@ export class GoogleAuthService {
   }
 
   private async authenticateWithGoogle(code: string) {
-    const response = await axios.post(
+    const response = await axios.post<GoogleTokenResponse>(
       'https://oauth2.googleapis.com/token',
       new URLSearchParams({
         code: code,
@@ -182,7 +205,7 @@ export class GoogleAuthService {
       throw new BadRequestException('Invalid Google OAuth response');
     }
 
-    const decoded: any = jwtDecode(data.id_token);
+    const decoded = jwtDecode<GoogleIdToken>(data.id_token);
     const profile: OAuthUserProfile = {
       id: decoded.sub,
       email: decoded.email,

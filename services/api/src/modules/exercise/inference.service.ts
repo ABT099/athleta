@@ -1,11 +1,11 @@
 import { Injectable, Inject, OnModuleInit } from '@nestjs/common';
 import type { ClientGrpc } from '@nestjs/microservices';
 import { firstValueFrom, Observable } from 'rxjs';
-
-interface MuscleTarget {
-  muscleName: string;
-  role: string;
-}
+import {
+  ExerciseType,
+  IntensityCategory,
+  MuscleTarget,
+} from './exercise.types';
 
 interface ExerciseModifiers {
   implement: string;
@@ -20,11 +20,11 @@ export interface ExerciseData {
   name: string;
   equipment: string;
   movementPattern: string;
-  exerciseType: string;
+  exerciseType: ExerciseType;
   injuryRiskLevel: number;
   complexityScore: number;
   jointStressAreas: string[];
-  intensityCategory: string;
+  intensityCategory: IntensityCategory;
   muscleTargets: MuscleTarget[];
   modifiers: ExerciseModifiers;
 }

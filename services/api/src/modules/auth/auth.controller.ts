@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Request, UseGuards, Body, Query, Res, UseInterceptors } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Request,
+  UseGuards,
+  Body,
+  Query,
+  Res,
+  UseInterceptors,
+} from '@nestjs/common';
 import { AuthenticationService } from './services/authentication.service';
 import { TokenManagementService } from './services/token-management.service';
 import { OAuthService } from './services/oauth.service';
@@ -15,6 +25,10 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { OauthRegisterDto } from './dto/oauth-register.dto';
 import { RegisterDto } from './dto/register.dto';
 
+type AuthenticatedRequest = {
+  user: { id: number; hasInitialPlan: boolean };
+};
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -26,42 +40,42 @@ export class AuthController {
 
   @UseGuards(LocalAuthGuard)
   @Post('login')
-  async login(@Request() req) {
+  async login(@Request() req: AuthenticatedRequest) {
     return this.authenticationService.login(req.user);
   }
 
   @AllowAnonymous()
   @Post('register')
   async register(@Body() registerDto: RegisterDto) {
-    return this.authenticationService.register({
-      firstName: registerDto.firstName,
-      lastName: registerDto.lastName,
-      email: registerDto.email,
-      password: registerDto.password,
-    }, {  
-      age: registerDto.age,
-      gender: registerDto.gender,
-      weight: registerDto.weight,
-      trainingExperience: registerDto.trainingExperience,
-    });
+    return this.authenticationService.register(
+      {
+        firstName: registerDto.firstName,
+        lastName: registerDto.lastName,
+        email: registerDto.email,
+        password: registerDto.password,
+      },
+      {
+        age: registerDto.age,
+        gender: registerDto.gender,
+        weight: registerDto.weight,
+        trainingExperience: registerDto.trainingExperience,
+      },
+    );
   }
 
   @AllowAnonymous()
   @Get('oauth')
-  async oauth(@Query() query: Record<string, string>, @Res() res: Response) {
+  oauth(@Query() query: Record<string, string>, @Res() res: Response) {
     const params = new URLSearchParams(query);
-    const redirectUrl = await this.oauthService.startOAuth(params);
+    const redirectUrl = this.oauthService.startOAuth(params);
     return res.redirect(redirectUrl);
   }
 
   @AllowAnonymous()
   @Get('oauth/callback')
-  async oauthCallback(
-    @Query() query: Record<string, string>,
-    @Res() res: Response,
-  ) {
+  oauthCallback(@Query() query: Record<string, string>, @Res() res: Response) {
     const params = new URLSearchParams(query);
-    const redirectUrl = await this.oauthService.handleOAuthCallback(params);
+    const redirectUrl = this.oauthService.handleOAuthCallback(params);
     return res.redirect(redirectUrl);
   }
 

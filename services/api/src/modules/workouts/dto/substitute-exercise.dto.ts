@@ -4,4 +4,3 @@ export class SubstituteExerciseDto {
   @IsNumber()
   substituteExerciseId: number;
 }
-

@@ -9,7 +9,7 @@ import { passwordResetTokens, users } from 'src/db/schema';
 import {
   DRIZZLE,
   type DrizzleDB,
-} from 'src/modules/database/database.provider';
+} from 'src/modules/common/database/database.provider';
 import { and, eq, gt } from 'drizzle-orm';
 import { EmailService } from 'src/modules/common/email/email.service';
 import { hash } from 'bcrypt';

@@ -1,9 +1,9 @@
-export interface MuscleActivation {
+type MuscleActivation = {
   id: number;
   name: string;
   displayName: string;
   activationPercent: number;
-}
+};
 
 export class MuscleSimilarityUtil {
   /**

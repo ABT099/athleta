@@ -4,14 +4,22 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { DRIZZLE } from 'src/modules/database/database.provider';
-import type { DrizzleDB } from 'src/modules/database/database.provider';
-import type { OAuthUserProfile } from './oauth.service';
+import { DRIZZLE } from 'src/modules/common/database/database.provider';
+import type { DrizzleDB } from 'src/modules/common/database/database.provider';
+import type { OAuthUserProfile } from '../auth.types';
 import { eq, or } from 'drizzle-orm';
 import * as jwt from 'jsonwebtoken';
 import * as jwksClient from 'jwks-rsa';
 import { ConfigService } from '@nestjs/config';
 import { athletes, users } from 'src/db/schema';
+
+interface AppleJwtPayload extends jwt.JwtPayload {
+  email?: string;
+  name?: {
+    firstName?: string;
+    lastName?: string;
+  };
+}
 
 @Injectable()
 export class AppleAuthService {
@@ -198,7 +206,7 @@ export class AppleAuthService {
         algorithms: ['RS256'],
         audience: this.appleClientId,
         issuer: 'https://appleid.apple.com',
-      }) as jwt.JwtPayload;
+      }) as AppleJwtPayload;
 
       if (!payload.sub) {
         throw new UnauthorizedException('Invalid Apple ID token');

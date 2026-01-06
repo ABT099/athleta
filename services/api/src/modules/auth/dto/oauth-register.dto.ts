@@ -19,8 +19,8 @@ export class OauthRegisterDto {
 
   @IsNumber()
   @IsNotEmpty()
-  @Transform(({ obj }) =>
-    obj.weightUnit === 'lbs' ? obj.weight * 0.453592 : obj.weight,
+  @Transform(({ obj }: { obj: OauthRegisterDto }) =>
+    obj.weightUnit === WeightUnit.LBS ? obj.weight * 0.453592 : obj.weight,
   )
   weight: number;
 

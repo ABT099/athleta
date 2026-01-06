@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import { MuscleImageResponse } from './integrations.types';
 
 @Injectable()
 export class MuscleImageIntegration {
@@ -112,7 +113,7 @@ export class MuscleImageIntegration {
         `Requesting muscle image generation for workout day ${workoutDayId}`,
       );
       const response = await firstValueFrom(
-        this.httpService.post(
+        this.httpService.post<MuscleImageResponse>(
           `${this.baseURL}/generateAndStore`,
           {
             workoutDayId,
@@ -129,7 +130,6 @@ export class MuscleImageIntegration {
         ),
       );
 
-      // PHP returns { url: "https://pub-xxx.r2.dev/muscle-images/123.png" }
       if (!response.data || !response.data.url) {
         throw new Error('Invalid response from muscle image service');
       }

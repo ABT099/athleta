@@ -1,8 +1,11 @@
 import { Injectable, UnauthorizedException, Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { DRIZZLE, type DrizzleDB } from '../../database/database.provider';
+import {
+  DRIZZLE,
+  type DrizzleDB,
+} from '../../common/database/database.provider';
 import { refreshTokens } from 'src/db/schema';
-import { eq, and, gt, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 
 @Injectable()

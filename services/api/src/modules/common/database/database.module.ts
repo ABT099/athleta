@@ -7,4 +7,3 @@ import { drizzleProvider, DRIZZLE } from './database.provider';
   exports: [DRIZZLE],
 })
 export class DatabaseModule {}
-
