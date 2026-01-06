@@ -8,7 +8,6 @@ import {
   JointStressProfileDto,
   PrescriptionRequestDto,
   PrescriptionResponseDto,
-  ProblematicExerciseDto,
 } from './integrations.types';
 
 @Injectable()
@@ -55,26 +54,6 @@ export class AIEngineIntegration {
       );
       // Handle gracefully - return empty profile if AI engine unavailable
       return { avoidJoints: [], reason: 'AI engine unavailable' };
-    }
-  }
-
-  async getProblematicExercises(
-    athleteId: number,
-  ): Promise<ProblematicExerciseDto[]> {
-    try {
-      const { data } = await firstValueFrom(
-        this.httpService.get<ProblematicExerciseDto[]>(
-          `${this.baseURL}/api/form-quality/athlete/${athleteId}/problematic-exercises`,
-        ),
-      );
-      return data;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      this.logger.warn(
-        `Failed to fetch problematic exercises for athlete ${athleteId}: ${errorMessage}`,
-      );
-      return [];
     }
   }
 

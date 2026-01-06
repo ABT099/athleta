@@ -92,22 +92,14 @@ export class ExerciseService {
     }
 
     try {
-      const [jointProfile, problematicExercises] = await Promise.all([
-        this.aiEngineIntegration.getJointStressProfile(athleteId),
-        this.aiEngineIntegration.getProblematicExercises(athleteId),
-      ]);
+      const jointProfile =
+        await this.aiEngineIntegration.getJointStressProfile(athleteId);
 
       return {
         ...baseFilters,
         excludeJointStress: this.mergeUniqueValues(
           baseFilters.excludeJointStress,
           jointProfile.avoidJoints,
-        ),
-        excludeIds: this.mergeUniqueValues(
-          baseFilters.excludeIds,
-          problematicExercises.map(
-            (pe: { exerciseId: number }) => pe.exerciseId,
-          ),
         ),
       };
     } catch (error) {

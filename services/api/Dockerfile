@@ -35,6 +35,6 @@ COPY --chown=app:app proto/ ./proto/
 
 USER app
 
-EXPOSE 8000
+EXPOSE 8080
 
 CMD ["node", "dist/src/main.js"]

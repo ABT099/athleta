@@ -11,11 +11,6 @@ export interface JointStressProfileDto {
   reason: string;
 }
 
-export interface ProblematicExerciseDto {
-  exerciseId: number;
-  reason: string;
-}
-
 export interface PrescriptionRequestDto {
   intensityCategory: IntensityCategory;
   trainingType: TrainingType;

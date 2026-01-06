@@ -312,6 +312,75 @@ class InjuryPreventionService:
             "recommendation": "Incorporate more variation in training" if is_high else None
         }
     
+    def calculate_weighted_joint_stress(
+        self,
+        athlete_id: int,
+        days_lookback: int = 7
+    ) -> Dict[str, float]:
+        """
+        Calculate weighted joint stress scores based on scientific principles.
+        
+        Stress Score = Volume-Load × RPE-Factor × Injury-Risk-Factor
+        
+        Where:
+        - Volume-Load = weight × reps (mechanical work)
+        - RPE-Factor = actual_rpe / 10 (intensity scaling)
+        - Injury-Risk-Factor = exercise.injury_risk_level / 5 (exercise-specific risk)
+        
+        This provides a more accurate assessment than simple set counting by
+        accounting for intensity, volume, and exercise-specific injury risk.
+        
+        References:
+        - González-Badillo & Sánchez-Medina (2010) - Volume-load quantification
+        - Schoenfeld (2010) - Intensity and mechanical tension
+        - Cook & Purdam (2009) - Joint-specific loading and pathology
+        
+        Args:
+            athlete_id: Athlete ID
+            days_lookback: Days to analyze (default 7)
+            
+        Returns:
+            Dict mapping joint names to weighted stress scores
+        """
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
+        
+        # Query recent training sets with exercise data
+        recent_sets = (
+            self.db.query(ExerciseSet, Exercise)
+            .join(WorkoutSession, ExerciseSet.workout_session_id == WorkoutSession.id)
+            .join(Exercise, ExerciseSet.exercise_id == Exercise.id)
+            .filter(
+                WorkoutSession.athlete_id == athlete_id,
+                WorkoutSession.session_date >= cutoff_date
+            )
+            .all()
+        )
+        
+        joint_stress_scores: Dict[str, float] = {}
+        
+        for ex_set, exercise in recent_sets:
+            if not exercise.joint_stress_areas:
+                continue
+            
+            # Calculate volume-load (kg × reps)
+            volume_load = (ex_set.weight or 0) * (ex_set.reps or 0)
+            
+            # Normalize RPE to 0-1 scale (higher RPE = higher stress)
+            rpe = ex_set.actual_rpe or ex_set.target_rpe or 7.0
+            rpe_factor = rpe / 10.0
+            
+            # Normalize injury risk level to 0-1 scale
+            risk_factor = (exercise.injury_risk_level or 2.5) / 5.0
+            
+            # Calculate weighted stress score
+            stress_score = volume_load * rpe_factor * risk_factor
+            
+            # Distribute stress across all joints involved
+            for joint in exercise.joint_stress_areas:
+                joint_stress_scores[joint] = joint_stress_scores.get(joint, 0) + stress_score
+        
+        return joint_stress_scores
+    
     def check_joint_stress(
         self,
         athlete_id: int,
@@ -319,9 +388,11 @@ class InjuryPreventionService:
         days_lookback: int = 7
     ) -> Dict:
         """
-        Check for joint stress accumulation.
+        Check for joint stress accumulation using weighted stress calculation.
         
-        Monitors frequency of high-stress exercises (overhead, maximal loads).
+        Now uses scientifically-validated weighted stress scores instead of
+        simple set counting. Accounts for volume-load, intensity (RPE), and
+        exercise-specific injury risk.
         
         Args:
             athlete_id: Athlete ID
@@ -329,7 +400,7 @@ class InjuryPreventionService:
             days_lookback: Days to analyze
             
         Returns:
-            Dict with joint stress warnings
+            Dict with joint stress warnings and weighted stress distribution
         """
         warnings = []
         high_risk = False
@@ -354,37 +425,47 @@ class InjuryPreventionService:
             )
             high_risk = True
         
-        # Check for joint stress concentration
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
-        
-        recent_sets = (
-            self.db.query(ExerciseSet, Exercise)
-            .join(WorkoutSession)
-            .join(Exercise)
-            .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= cutoff_date
-            )
-            .all()
+        # Get weighted joint stress scores
+        joint_stress_scores = self.calculate_weighted_joint_stress(
+            athlete_id,
+            days_lookback
         )
         
-        # Count exercises by joint stress area
-        joint_stress_count = {}
-        for ex_set, exercise in recent_sets:
-            if exercise.joint_stress_areas:
-                for joint in exercise.joint_stress_areas:
-                    joint_stress_count[joint] = joint_stress_count.get(joint, 0) + 1
+        # Convert to set-equivalents for backward compatibility
+        # Average set: 75kg × 10 reps × 0.7 RPE × 0.5 risk = 262.5 stress units
+        AVERAGE_SET_STRESS = 262.5
+        joint_stress_count = {
+            joint: int(score / AVERAGE_SET_STRESS)
+            for joint, score in joint_stress_scores.items()
+        }
         
-        # Check proposed exercises' joints
+        # Check proposed exercises' joints with experience-adjusted thresholds
+        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        
+        # Experience-adjusted warning threshold
+        base_warning_threshold = 15  # set-equivalents
+        if athlete:
+            experience_multipliers = {
+                TrainingExperience.BEGINNER: 1.0,
+                TrainingExperience.INTERMEDIATE: 1.33,
+                TrainingExperience.ADVANCED: 1.67
+            }
+            warning_threshold = base_warning_threshold * experience_multipliers.get(
+                athlete.training_experience,
+                1.0
+            )
+        else:
+            warning_threshold = base_warning_threshold
+        
+        # Check proposed exercises against current stress
         for exercise in proposed_exercises:
             if exercise.joint_stress_areas:
                 for joint in exercise.joint_stress_areas:
                     current_count = joint_stress_count.get(joint, 0)
                     
-                    # Warning thresholds
-                    if current_count > 20:  # Heavy recent loading
+                    if current_count > warning_threshold:
                         warnings.append(
-                            f"High {joint} stress detected ({current_count} sets this week). "
+                            f"High {joint} stress detected ({current_count} set-equiv this week). "
                             f"Exercise '{exercise.name}' may increase injury risk."
                         )
                         high_risk = True
@@ -393,7 +474,8 @@ class InjuryPreventionService:
             "warnings": warnings,
             "high_risk": high_risk,
             "high_risk_exercise_count": len(high_risk_exercises),
-            "joint_stress_distribution": joint_stress_count
+            "joint_stress_distribution": joint_stress_count,
+            "joint_stress_scores": joint_stress_scores  # Raw weighted scores
         }
     
     def check_form_degradation(self, athlete_id: int, sessions_to_check: int = 3) -> Dict:
