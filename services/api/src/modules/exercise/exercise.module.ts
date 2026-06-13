@@ -1,11 +1,10 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
-import { ExerciseService } from './exercise.service';
-import { InferenceService } from './inference.service';
-import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { join } from 'path';
+import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
+import { ExerciseClientService } from './exercise-client.service';
 import { ExerciseController } from './exercise.controller';
 
 @Module({
@@ -14,18 +13,25 @@ import { ExerciseController } from './exercise.controller';
     ConfigModule,
     ClientsModule.register([
       {
-        name: 'INFERENCE_PACKAGE',
+        name: 'EXERCISE_PACKAGE',
         transport: Transport.GRPC,
         options: {
-          package: 'inference.v1',
-          protoPath: join(process.cwd(), 'proto/inference/v1/inference.proto'),
-          url: process.env.EXERCISE_INFERENCE_URL || 'localhost:50051',
+          package: 'exercise.v1',
+          protoPath: join(process.cwd(), 'proto/exercise/v1/exercise.proto'),
+          url: process.env.EXERCISE_SERVICE_URL || 'localhost:50051',
+          loader: {
+            keepCase: false,
+            enums: String,
+            defaults: true,
+            arrays: true,
+            objects: true,
+          },
         },
       },
     ]),
   ],
   controllers: [ExerciseController],
-  providers: [ExerciseService, InferenceService, AIEngineIntegration],
-  exports: [ExerciseService],
+  providers: [ExerciseClientService, AIEngineIntegration],
+  exports: [ExerciseClientService],
 })
 export class ExerciseModule {}

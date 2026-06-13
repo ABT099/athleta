@@ -1,27 +1,19 @@
 import { Injectable, NotFoundException, Inject, Logger } from '@nestjs/common';
 import { DRIZZLE, type DrizzleDB } from '../common/database/database.provider';
-import {
-  workoutDayExercises,
-  exercises,
-  workoutDays,
-  workoutPlans,
-} from 'src/db/schema';
+import { workoutDayExercises, workoutDays, workoutPlans } from 'src/db/schema';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { WorkoutExerciseDto } from '../plans/dto/create-plan.dto';
-import { ExerciseService } from '../exercise/exercise.service';
+import { ExerciseClientService } from '../exercise/exercise-client.service';
 import { MuscleImageIntegration } from 'src/integrations/muscle-image.integration';
 import { AIEngineIntegration } from 'src/integrations/ai-engine.integration';
 import { PrescriptionRequestDto } from 'src/integrations/integrations.types';
 import { DayOfWeek, TrainingType } from 'src/constants';
-import {
-  IntensityCategory,
-  ExerciseType,
-  MuscleTarget,
-} from '../exercise/exercise.types';
+import { InferredExercise, MuscleTarget } from '../exercise/exercise.types';
 import {
   CreateWorkoutExerciseInput,
   CreateWorkoutDayInput,
 } from './workout.types';
+import { determineIsPrimary } from './workout.utils';
 
 @Injectable()
 export class WorkoutsService {
@@ -29,7 +21,7 @@ export class WorkoutsService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
-    private readonly exerciseService: ExerciseService,
+    private readonly exerciseClient: ExerciseClientService,
     private readonly muscleImageIntegration: MuscleImageIntegration,
     private readonly AIEngineIntegration: AIEngineIntegration,
   ) {}
@@ -53,10 +45,9 @@ export class WorkoutsService {
       );
     }
 
-    // Verify substitute exercise exists
-    const substituteExercise = await this.db.query.exercises.findFirst({
-      where: eq(exercises.id, substituteExerciseId),
-    });
+    // Verify substitute exercise exists in the exercise service
+    const substituteExercise =
+      await this.exerciseClient.getExercise(substituteExerciseId);
 
     if (!substituteExercise) {
       throw new NotFoundException(
@@ -112,23 +103,16 @@ export class WorkoutsService {
 
     const allExerciseNames = exercisesToAdd.map((exercise) => exercise.name);
 
-    const exercisesWithMuscles =
-      await this.exerciseService.batchUpsertExercises(allExerciseNames);
-
-    // Store full exercise data for prescription generation
-    const exerciseDataMap = new Map(
-      exercisesWithMuscles.map((ex, index) => [
-        allExerciseNames[index].toLowerCase(),
-        ex,
-      ]),
-    );
+    const inferredExercises =
+      await this.exerciseClient.inferExercises(allExerciseNames);
+    const exerciseDataMap = this.mapByRequestedName(inferredExercises);
 
     const musclesTargets: Array<MuscleTarget> = [];
 
     for (const exercise of exercisesToAdd) {
       const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
       if (exerciseData) {
-        for (const muscle of exerciseData.muscles) {
+        for (const muscle of exerciseData.exercise.muscles) {
           musclesTargets.push(muscle);
         }
       }
@@ -184,14 +168,14 @@ export class WorkoutsService {
       }
 
       // Determine if this exercise is primary
-      const isPrimary = ExerciseService.determineIsPrimary(
-        exerciseData.intensityCategory,
+      const isPrimary = determineIsPrimary(
+        exerciseData.exercise.intensityCategory,
         exercise.orderInWorkout,
         totalExercises,
       );
 
       prescriptionRequests.push({
-        intensityCategory: exerciseData.intensityCategory,
+        intensityCategory: exerciseData.exercise.intensityCategory,
         trainingType: trainingType,
         trainingPhase: 'accumulation', // Default phase
         weekInPhase: 1, // Week 1
@@ -236,7 +220,7 @@ export class WorkoutsService {
       if (exercisesToAdd.length > 0) {
         const exerciseValues = exerciseMetadata.map((meta, index) => ({
           workoutDayId,
-          exerciseId: meta.exerciseData.id,
+          exerciseId: meta.exerciseData.exercise.id,
           orderInWorkout: meta.exercise.orderInWorkout,
           targetSetsMin: meta.exercise.targetSetsMin,
           targetSetsMax:
@@ -278,30 +262,16 @@ export class WorkoutsService {
       workoutDay.exercises.map((exercise) => exercise.name),
     );
 
-    // Batch upsert exercises
-    const exercisesWithMuscles =
-      await this.exerciseService.batchUpsertExercises(allExerciseNames);
-
-    // Create exercise data map
-    const exerciseDataMap = new Map(
-      exercisesWithMuscles.map((ex, index) => [
-        allExerciseNames[index].toLowerCase(),
-        ex,
-      ]),
-    );
+    const inferredExercises =
+      await this.exerciseClient.inferExercises(allExerciseNames);
+    const exerciseDataMap = this.mapByRequestedName(inferredExercises);
 
     // Collect prescription requests
     const prescriptionRequests: PrescriptionRequestDto[] = [];
     const exerciseMetadataPreInsert: Array<{
       dayIndex: number;
       exercise: CreateWorkoutExerciseInput;
-      exerciseData: {
-        id: number;
-        name: string;
-        intensityCategory: IntensityCategory;
-        exerciseType: ExerciseType;
-        muscles: Array<MuscleTarget>;
-      };
+      exerciseData: InferredExercise;
       isPrimary: boolean;
     }> = [];
 
@@ -315,14 +285,14 @@ export class WorkoutsService {
           throw new Error(`Exercise data not found for: ${exercise.name}`);
         }
 
-        const isPrimary = ExerciseService.determineIsPrimary(
-          exerciseData.intensityCategory,
+        const isPrimary = determineIsPrimary(
+          exerciseData.exercise.intensityCategory,
           exercise.orderInWorkout,
           totalExercises,
         );
 
         prescriptionRequests.push({
-          intensityCategory: exerciseData.intensityCategory,
+          intensityCategory: exerciseData.exercise.intensityCategory,
           trainingType: trainingType,
           trainingPhase: 'accumulation',
           weekInPhase: 1,
@@ -362,7 +332,7 @@ export class WorkoutsService {
       for (const exercise of workoutDay.exercises) {
         const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
         if (exerciseData) {
-          for (const muscle of exerciseData.muscles) {
+          for (const muscle of exerciseData.exercise.muscles) {
             musclesWithRoles.push(muscle);
           }
         }
@@ -431,7 +401,7 @@ export class WorkoutsService {
           const preInsertMeta = exerciseMetadataPreInsert[prescriptionIndex];
           allExerciseInserts.push({
             workoutDayId: workoutDayId,
-            exerciseId: preInsertMeta.exerciseData.id,
+            exerciseId: preInsertMeta.exerciseData.exercise.id,
             orderInWorkout: preInsertMeta.exercise.orderInWorkout,
             targetSetsMin: preInsertMeta.exercise.targetSetsMin,
             targetSetsMax:
@@ -515,5 +485,17 @@ export class WorkoutsService {
     await Promise.allSettled(imageGenerationPromises);
 
     this.logger.log('Completed batch muscle image generation');
+  }
+
+  /**
+   * Index inference results by the lowercased name they were requested with.
+   * Results come back in request order, one per name.
+   */
+  private mapByRequestedName(
+    inferred: InferredExercise[],
+  ): Map<string, InferredExercise> {
+    return new Map(
+      inferred.map((entry) => [entry.requestedName.toLowerCase(), entry]),
+    );
   }
 }

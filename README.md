@@ -2,6 +2,10 @@
 
 An all in one intelligent platform to enhance fitness progression with AI
 
+## Architecture
+
+![Alt Text](/assets/architecture.png)
+
 ## Folder structure
 
 ```
@@ -10,7 +14,7 @@ athleta/
 ├── services/
 │ ├── api/ # NestJS API service
 │ ├── ai-engine/ # Python AI/ML service
-│ ├── exercise-inference/ # Go service for exercise inference
+│ ├── exercise-service/ # Go service for exercise inference and logic
 │ └── muscle-image/ # PHP service for muscle images
 ├── docker-compose.yml
 ├── docker-compose.prod.yml

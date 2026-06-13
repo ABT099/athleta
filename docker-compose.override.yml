@@ -22,11 +22,11 @@ services:
       context: ./migrator
       dockerfile: Dockerfile
 
-  exercise-inference:
-    image: athleta/exercise-inference:local
+  exercise-service:
+    image: athleta/exercise-service:local
     build:
-      context: ./services/exercise-inference
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/exercise-service/Dockerfile
 
   muscle-image-api:
     image: athleta/muscle-image:local

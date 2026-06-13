@@ -128,13 +128,14 @@ services:
           cpus: "0.5"
           memory: 256M
 
-  exercise-inference:
-    container_name: athleta_exercise_inference
-    image: ghcr.io/${GITHUB_REPOSITORY}/exercise-inference:latest
+  exercise-service:
+    container_name: athleta_exercise_service
+    image: ghcr.io/${GITHUB_REPOSITORY}/exercise-service:latest
     environment:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER:-neo4j}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-password}
+      # POSTGRES_* are only used by the one-off `migrate` import command.
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER}
@@ -142,16 +143,10 @@ services:
       POSTGRES_DB: athleta
       GRPC_PORT: 50051
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
     networks:
       - backend
     depends_on:
-      db:
-        condition: service_healthy
       neo4j:
-        condition: service_healthy
-      muscle-image-api:
         condition: service_healthy
     healthcheck:
       test:
@@ -220,7 +215,7 @@ services:
         condition: service_healthy
       migrator:
         condition: service_completed_successfully
-      exercise-inference:
+      exercise-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -290,7 +285,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/athleta
       AI_ENGINE_URL: http://ai-engine:8000
-      EXERCISE_INFERENCE_URL: exercise-inference:50051
+      EXERCISE_SERVICE_URL: exercise-service:50051
       MUSCLE_IMAGE_URL: http://muscle-image-api:80
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       JWT_SECRET: ${JWT_SECRET}
@@ -306,7 +301,7 @@ services:
         condition: service_completed_successfully
       ai-engine:
         condition: service_healthy
-      exercise-inference:
+      exercise-service:
         condition: service_healthy
       muscle-image-api:
         condition: service_healthy

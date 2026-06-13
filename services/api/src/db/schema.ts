@@ -16,15 +16,6 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-export const exerciseTypeEnum = pgEnum('exercise_type_enum', [
-  'compound',
-  'isolation',
-]);
-export const intensityCategoryEnum = pgEnum('intensity_category_enum', [
-  'compound_heavy',
-  'compound_moderate',
-  'isolation',
-]);
 export const periodizationModelEnum = pgEnum('periodization_model_enum', [
   'linear',
   'undulating',
@@ -278,11 +269,8 @@ export const workoutDayExercises = pgTable(
       foreignColumns: [workoutDays.id],
       name: 'workout_day_exercises_workout_day_id_workout_days_id_fk',
     }),
-    foreignKey({
-      columns: [table.exerciseId],
-      foreignColumns: [exercises.id],
-      name: 'workout_day_exercises_exercise_id_exercises_id_fk',
-    }),
+    // exercise_id is a soft reference to an exercise owned by the
+    // exercise-service (Neo4j); there is no local exercises table.
     check('workout_day_exercises_id_not_null', sql`NOT NULL id`),
     check(
       'workout_day_exercises_workout_day_id_not_null',
@@ -322,52 +310,6 @@ export const workoutDayExercises = pgTable(
     ),
     check('workout_day_exercises_set_type_not_null', sql`NOT NULL set_type`),
     check('workout_day_exercises_rep_style_not_null', sql`NOT NULL rep_style`),
-  ],
-);
-
-export const exercises = pgTable(
-  'exercises',
-  {
-    id: serial().primaryKey().notNull(),
-    name: varchar({ length: 255 }).notNull(),
-    equipment: varchar({ length: 100 }).notNull(),
-    injuryRiskLevel: real('injury_risk_level').notNull(),
-    jointStressAreas: varchar('joint_stress_areas', { length: 255 })
-      .array()
-      .notNull(),
-    movementPattern: varchar('movement_pattern', { length: 100 }).notNull(),
-    exerciseType: exerciseTypeEnum('exercise_type').notNull(),
-    complexityScore: real('complexity_score').default(1).notNull(),
-    intensityCategory: intensityCategoryEnum('intensity_category')
-      .default('isolation')
-      .notNull(),
-  },
-  (table) => [
-    unique('exercises_name_unique').on(table.name),
-    check('exercises_id_not_null', sql`NOT NULL id`),
-    check('exercises_name_not_null', sql`NOT NULL name`),
-    check('exercises_equipment_not_null', sql`NOT NULL equipment`),
-    check(
-      'exercises_injury_risk_level_not_null',
-      sql`NOT NULL injury_risk_level`,
-    ),
-    check(
-      'exercises_joint_stress_areas_not_null',
-      sql`NOT NULL joint_stress_areas`,
-    ),
-    check(
-      'exercises_movement_pattern_not_null',
-      sql`NOT NULL movement_pattern`,
-    ),
-    check('exercises_exercise_type_not_null', sql`NOT NULL exercise_type`),
-    check(
-      'exercises_complexity_score_not_null',
-      sql`NOT NULL complexity_score`,
-    ),
-    check(
-      'exercises_intensity_category_not_null',
-      sql`NOT NULL intensity_category`,
-    ),
   ],
 );
 
@@ -445,72 +387,3 @@ export const passwordResetTokens = pgTable(
   ],
 );
 
-export const muscleGroups = pgTable(
-  'muscle_groups',
-  {
-    id: serial().primaryKey().notNull(),
-    name: varchar({ length: 50 }).notNull(),
-    displayName: varchar('display_name', { length: 100 }).notNull(),
-    size: varchar({ length: 20 }).notNull(),
-    baseRecoveryHours: integer('base_recovery_hours').notNull(),
-    isCompoundTarget: boolean('is_compound_target').default(false).notNull(),
-    antagonistId: integer('antagonist_id'),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.antagonistId],
-      foreignColumns: [table.id],
-      name: 'muscle_groups_antagonist_id_muscle_groups_id_fk',
-    }),
-    unique('muscle_groups_name_unique').on(table.name),
-    check('muscle_groups_id_not_null', sql`NOT NULL id`),
-    check('muscle_groups_name_not_null', sql`NOT NULL name`),
-    check('muscle_groups_display_name_not_null', sql`NOT NULL display_name`),
-    check('muscle_groups_size_not_null', sql`NOT NULL size`),
-    check(
-      'muscle_groups_base_recovery_hours_not_null',
-      sql`NOT NULL base_recovery_hours`,
-    ),
-    check(
-      'muscle_groups_is_compound_target_not_null',
-      sql`NOT NULL is_compound_target`,
-    ),
-  ],
-);
-
-export const exerciseMuscles = pgTable(
-  'exercise_muscles',
-  {
-    id: serial().primaryKey().notNull(),
-    exerciseId: integer('exercise_id').notNull(),
-    muscleGroupId: integer('muscle_group_id').notNull(),
-    role: varchar({ length: 20 }).notNull(),
-  },
-  (table) => [
-    index('exercise_muscles_exercise_idx').using(
-      'btree',
-      table.exerciseId.asc().nullsLast().op('int4_ops'),
-    ),
-    index('exercise_muscles_muscle_idx').using(
-      'btree',
-      table.muscleGroupId.asc().nullsLast().op('int4_ops'),
-    ),
-    foreignKey({
-      columns: [table.exerciseId],
-      foreignColumns: [exercises.id],
-      name: 'exercise_muscles_exercise_id_exercises_id_fk',
-    }).onDelete('cascade'),
-    foreignKey({
-      columns: [table.muscleGroupId],
-      foreignColumns: [muscleGroups.id],
-      name: 'exercise_muscles_muscle_group_id_muscle_groups_id_fk',
-    }).onDelete('cascade'),
-    check('exercise_muscles_id_not_null', sql`NOT NULL id`),
-    check('exercise_muscles_exercise_id_not_null', sql`NOT NULL exercise_id`),
-    check(
-      'exercise_muscles_muscle_group_id_not_null',
-      sql`NOT NULL muscle_group_id`,
-    ),
-    check('exercise_muscles_role_not_null', sql`NOT NULL role`),
-  ],
-);

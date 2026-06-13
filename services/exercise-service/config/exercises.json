@@ -1,0 +1,825 @@
+{
+  "exercises": [
+    {
+      "id": "bench_press",
+      "canonical_name": "Barbell Bench Press",
+      "aliases": ["bench press", "flat bench", "bb bench", "barbell bench", "chest press", "press bench", "flat barbell bench press"],
+      "slang": ["benching", "bench"],
+      "common_typos": ["bech press", "bench pres", "bnech press", "benchprss"],
+      "movement_pattern": "push",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "angle": "flat",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "mid_chest", "role": "prime_mover" },
+        { "name": "anterior_delt", "role": "synergist" },
+        { "name": "triceps", "role": "synergist" },
+        { "name": "upper_chest", "role": "stabilizer" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.95
+    },
+    {
+      "id": "incline_bench_press",
+      "canonical_name": "Incline Barbell Bench Press",
+      "aliases": ["incline bench press", "incline bench", "incline bb bench", "incline barbell bench", "chest press"],
+      "slang": ["incline benching"],
+      "common_typos": ["inclin bench press", "incline bech press"],
+      "movement_pattern": "push",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "angle": "incline",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "upper_chest", "role": "prime_mover" },
+        { "name": "anterior_delt", "role": "prime_mover" },
+        { "name": "mid_chest", "role": "synergist" },
+        { "name": "triceps", "role": "synergist" }
+      ],
+      "popularity_score": 0.9
+    },
+    {
+      "id": "decline_bench_press",
+      "canonical_name": "Decline Barbell Bench Press",
+      "aliases": ["decline bench press", "decline bench", "decline barbell bench"],
+      "slang": [],
+      "common_typos": ["declin bench press"],
+      "movement_pattern": "push",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "angle": "decline",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "lower_chest", "role": "prime_mover" },
+        { "name": "mid_chest", "role": "synergist" },
+        { "name": "triceps", "role": "synergist" },
+        { "name": "anterior_delt", "role": "synergist" }
+      ],
+      "popularity_score": 0.6
+    },
+    {
+      "id": "dumbbell_bench_press",
+      "canonical_name": "Dumbbell Bench Press",
+      "aliases": ["dumbbell bench press", "db bench press", "db bench", "dumbbell bench"],
+      "slang": ["db benching"],
+      "common_typos": ["dumbell bench press", "dumbbel bench press", "db bech press"],
+      "movement_pattern": "push",
+      "exercise_type": "compound",
+      "equipment": "dumbbell",
+      "angle": "flat",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "mid_chest", "role": "prime_mover" },
+        { "name": "anterior_delt", "role": "synergist" },
+        { "name": "triceps", "role": "synergist" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.88
+    },
+    {
+      "id": "incline_dumbbell_press",
+      "canonical_name": "Incline Dumbbell Press",
+      "aliases": ["incline dumbbell press", "incline db press", "incline dumbbell bench press", "incline db bench"],
+      "slang": [],
+      "common_typos": ["incline dumbell press"],
+      "movement_pattern": "push",
+      "exercise_type": "compound",
+      "equipment": "dumbbell",
+      "angle": "incline",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "upper_chest", "role": "prime_mover" },
+        { "name": "anterior_delt", "role": "prime_mover" },
+        { "name": "triceps", "role": "synergist" }
+      ],
+      "popularity_score": 0.82
+    },
+    {
+      "id": "overhead_press",
+      "canonical_name": "Overhead Press",
+      "aliases": ["overhead press", "ohp", "shoulder press", "military press", "standing press", "barbell overhead press"],
+      "slang": ["pressing"],
+      "common_typos": ["overhead pres", "overhed press"],
+      "movement_pattern": "push",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "angle": "overhead",
+      "force_vector": "vertical",
+      "muscle_targets": [
+        { "name": "anterior_delt", "role": "prime_mover" },
+        { "name": "lateral_delt", "role": "prime_mover" },
+        { "name": "triceps", "role": "synergist" },
+        { "name": "upper_chest", "role": "synergist" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.85
+    },
+    {
+      "id": "dumbbell_shoulder_press",
+      "canonical_name": "Dumbbell Shoulder Press",
+      "aliases": ["dumbbell shoulder press", "db shoulder press", "seated dumbbell press", "db overhead press", "dumbbell overhead press"],
+      "slang": [],
+      "common_typos": ["dumbell shoulder press"],
+      "movement_pattern": "push",
+      "exercise_type": "compound",
+      "equipment": "dumbbell",
+      "angle": "overhead",
+      "force_vector": "vertical",
+      "muscle_targets": [
+        { "name": "anterior_delt", "role": "prime_mover" },
+        { "name": "lateral_delt", "role": "prime_mover" },
+        { "name": "triceps", "role": "synergist" }
+      ],
+      "popularity_score": 0.8
+    },
+    {
+      "id": "push_up",
+      "canonical_name": "Push Up",
+      "aliases": ["push up", "pushup", "push-ups", "press up"],
+      "slang": ["pushups"],
+      "common_typos": ["push upp", "puhs up"],
+      "movement_pattern": "push",
+      "exercise_type": "compound",
+      "equipment": "bodyweight",
+      "angle": "flat",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "mid_chest", "role": "prime_mover" },
+        { "name": "anterior_delt", "role": "synergist" },
+        { "name": "triceps", "role": "synergist" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.85
+    },
+    {
+      "id": "dip",
+      "canonical_name": "Dip",
+      "aliases": ["dip", "dips", "chest dip", "tricep dip", "parallel bar dip"],
+      "slang": [],
+      "common_typos": ["dipps"],
+      "movement_pattern": "push",
+      "exercise_type": "compound",
+      "equipment": "bodyweight",
+      "angle": "decline",
+      "force_vector": "vertical",
+      "muscle_targets": [
+        { "name": "lower_chest", "role": "prime_mover" },
+        { "name": "triceps", "role": "prime_mover" },
+        { "name": "anterior_delt", "role": "synergist" }
+      ],
+      "popularity_score": 0.75
+    },
+    {
+      "id": "machine_chest_press",
+      "canonical_name": "Machine Chest Press",
+      "aliases": ["machine chest press", "chest press machine", "chest press", "seated chest press"],
+      "slang": [],
+      "common_typos": [],
+      "movement_pattern": "push",
+      "exercise_type": "compound",
+      "equipment": "machine",
+      "angle": "flat",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "mid_chest", "role": "prime_mover" },
+        { "name": "anterior_delt", "role": "synergist" },
+        { "name": "triceps", "role": "synergist" }
+      ],
+      "popularity_score": 0.65
+    },
+    {
+      "id": "barbell_row",
+      "canonical_name": "Barbell Row",
+      "aliases": ["barbell row", "bb row", "bent over row", "bor", "bent-over barbell row", "pendlay row"],
+      "slang": ["rowing"],
+      "common_typos": ["barbell ro", "barbel row"],
+      "movement_pattern": "pull",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "mid_back", "role": "prime_mover" },
+        { "name": "lats", "role": "prime_mover" },
+        { "name": "posterior_delt", "role": "synergist" },
+        { "name": "biceps", "role": "synergist" },
+        { "name": "erector_spinae", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.88
+    },
+    {
+      "id": "dumbbell_row",
+      "canonical_name": "Dumbbell Row",
+      "aliases": ["dumbbell row", "db row", "one arm row", "single arm row", "one arm dumbbell row", "single arm dumbbell row"],
+      "slang": [],
+      "common_typos": ["dumbell row"],
+      "movement_pattern": "pull",
+      "exercise_type": "compound",
+      "equipment": "dumbbell",
+      "laterality": "unilateral",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "lats", "role": "prime_mover" },
+        { "name": "mid_back", "role": "prime_mover" },
+        { "name": "posterior_delt", "role": "synergist" },
+        { "name": "biceps", "role": "synergist" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.8
+    },
+    {
+      "id": "cable_row",
+      "canonical_name": "Seated Cable Row",
+      "aliases": ["seated cable row", "cable row", "seated row", "low row"],
+      "slang": [],
+      "common_typos": ["cable ro"],
+      "movement_pattern": "pull",
+      "exercise_type": "compound",
+      "equipment": "cable",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "mid_back", "role": "prime_mover" },
+        { "name": "lats", "role": "prime_mover" },
+        { "name": "posterior_delt", "role": "synergist" },
+        { "name": "biceps", "role": "synergist" }
+      ],
+      "popularity_score": 0.75
+    },
+    {
+      "id": "lat_pulldown",
+      "canonical_name": "Lat Pulldown",
+      "aliases": ["lat pulldown", "pulldown", "lat pull down", "cable pulldown", "wide grip pulldown"],
+      "slang": ["pulldowns"],
+      "common_typos": ["lat pull-down", "lat puldown"],
+      "movement_pattern": "pull",
+      "exercise_type": "compound",
+      "equipment": "cable",
+      "force_vector": "vertical",
+      "muscle_targets": [
+        { "name": "lats", "role": "prime_mover" },
+        { "name": "biceps", "role": "synergist" },
+        { "name": "mid_back", "role": "synergist" },
+        { "name": "posterior_delt", "role": "synergist" }
+      ],
+      "popularity_score": 0.85
+    },
+    {
+      "id": "pull_up",
+      "canonical_name": "Pull Up",
+      "aliases": ["pull up", "pullup", "pull-up", "wide grip pull up"],
+      "slang": ["pulling up"],
+      "common_typos": ["pullp", "pul up"],
+      "movement_pattern": "pull",
+      "exercise_type": "compound",
+      "equipment": "bodyweight",
+      "grip": "pronated",
+      "force_vector": "vertical",
+      "muscle_targets": [
+        { "name": "lats", "role": "prime_mover" },
+        { "name": "biceps", "role": "synergist" },
+        { "name": "mid_back", "role": "synergist" },
+        { "name": "posterior_delt", "role": "synergist" }
+      ],
+      "popularity_score": 0.9
+    },
+    {
+      "id": "chin_up",
+      "canonical_name": "Chin Up",
+      "aliases": ["chin up", "chinup", "chin-up"],
+      "slang": ["chins"],
+      "common_typos": ["chin upp"],
+      "movement_pattern": "pull",
+      "exercise_type": "compound",
+      "equipment": "bodyweight",
+      "grip": "supinated",
+      "force_vector": "vertical",
+      "muscle_targets": [
+        { "name": "lats", "role": "prime_mover" },
+        { "name": "biceps", "role": "prime_mover" },
+        { "name": "mid_back", "role": "synergist" }
+      ],
+      "popularity_score": 0.8
+    },
+    {
+      "id": "face_pull",
+      "canonical_name": "Cable Face Pull",
+      "aliases": ["face pull", "cable face pull", "rope face pull"],
+      "slang": [],
+      "common_typos": ["face pul"],
+      "movement_pattern": "pull",
+      "exercise_type": "isolation",
+      "equipment": "cable",
+      "force_vector": "horizontal",
+      "muscle_targets": [
+        { "name": "posterior_delt", "role": "prime_mover" },
+        { "name": "mid_back", "role": "synergist" },
+        { "name": "lower_traps", "role": "synergist" }
+      ],
+      "popularity_score": 0.65
+    },
+    {
+      "id": "squat",
+      "canonical_name": "Barbell Back Squat",
+      "aliases": ["squat", "back squat", "barbell squat", "bb squat", "barbell back squat"],
+      "slang": ["squatting"],
+      "common_typos": ["sqaut", "sqat"],
+      "movement_pattern": "squat",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "muscle_targets": [
+        { "name": "quadriceps", "role": "prime_mover" },
+        { "name": "glutes", "role": "prime_mover" },
+        { "name": "hamstrings", "role": "synergist" },
+        { "name": "erector_spinae", "role": "stabilizer" },
+        { "name": "abs", "role": "stabilizer" },
+        { "name": "calves", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.95
+    },
+    {
+      "id": "front_squat",
+      "canonical_name": "Barbell Front Squat",
+      "aliases": ["front squat", "barbell front squat", "bb front squat"],
+      "slang": [],
+      "common_typos": ["frot squat"],
+      "movement_pattern": "squat",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "muscle_targets": [
+        { "name": "quadriceps", "role": "prime_mover" },
+        { "name": "glutes", "role": "synergist" },
+        { "name": "abs", "role": "stabilizer" },
+        { "name": "erector_spinae", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.7
+    },
+    {
+      "id": "goblet_squat",
+      "canonical_name": "Goblet Squat",
+      "aliases": ["goblet squat", "kettlebell goblet squat", "dumbbell goblet squat"],
+      "slang": [],
+      "common_typos": ["goblit squat"],
+      "movement_pattern": "squat",
+      "exercise_type": "compound",
+      "equipment": "dumbbell",
+      "muscle_targets": [
+        { "name": "quadriceps", "role": "prime_mover" },
+        { "name": "glutes", "role": "prime_mover" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.65
+    },
+    {
+      "id": "leg_press",
+      "canonical_name": "Leg Press",
+      "aliases": ["leg press", "machine leg press", "45 degree leg press"],
+      "slang": [],
+      "common_typos": ["leg pres"],
+      "movement_pattern": "squat",
+      "exercise_type": "compound",
+      "equipment": "machine",
+      "muscle_targets": [
+        { "name": "quadriceps", "role": "prime_mover" },
+        { "name": "glutes", "role": "prime_mover" },
+        { "name": "hamstrings", "role": "synergist" }
+      ],
+      "popularity_score": 0.8
+    },
+    {
+      "id": "deadlift",
+      "canonical_name": "Conventional Deadlift",
+      "aliases": ["deadlift", "dead lift", "conventional deadlift", "dl", "barbell deadlift"],
+      "slang": ["deadlifting", "pulling"],
+      "common_typos": ["deadlif", "deadlit", "dedlift"],
+      "movement_pattern": "hinge",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "muscle_targets": [
+        { "name": "glutes", "role": "prime_mover" },
+        { "name": "hamstrings", "role": "prime_mover" },
+        { "name": "erector_spinae", "role": "prime_mover" },
+        { "name": "lats", "role": "synergist" },
+        { "name": "upper_traps", "role": "synergist" },
+        { "name": "forearms", "role": "synergist" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.95
+    },
+    {
+      "id": "romanian_deadlift",
+      "canonical_name": "Romanian Deadlift",
+      "aliases": ["romanian deadlift", "rdl", "stiff leg deadlift", "stiff-legged deadlift", "barbell rdl"],
+      "slang": ["rdls"],
+      "common_typos": ["romanian dedlift", "romanain deadlift"],
+      "movement_pattern": "hinge",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "muscle_targets": [
+        { "name": "hamstrings", "role": "prime_mover" },
+        { "name": "glutes", "role": "prime_mover" },
+        { "name": "erector_spinae", "role": "synergist" },
+        { "name": "forearms", "role": "synergist" }
+      ],
+      "popularity_score": 0.85
+    },
+    {
+      "id": "hip_thrust",
+      "canonical_name": "Barbell Hip Thrust",
+      "aliases": ["hip thrust", "barbell hip thrust", "glute bridge", "hip bridge"],
+      "slang": ["thrusts"],
+      "common_typos": ["hip thurst"],
+      "movement_pattern": "hinge",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "angle": "floor_level",
+      "muscle_targets": [
+        { "name": "glutes", "role": "prime_mover" },
+        { "name": "hamstrings", "role": "synergist" },
+        { "name": "quadriceps", "role": "stabilizer" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.8
+    },
+    {
+      "id": "good_morning",
+      "canonical_name": "Barbell Good Morning",
+      "aliases": ["good morning", "good mornings", "barbell good morning"],
+      "slang": [],
+      "common_typos": ["good mornig"],
+      "movement_pattern": "hinge",
+      "exercise_type": "compound",
+      "equipment": "barbell",
+      "muscle_targets": [
+        { "name": "hamstrings", "role": "prime_mover" },
+        { "name": "erector_spinae", "role": "prime_mover" },
+        { "name": "glutes", "role": "synergist" }
+      ],
+      "popularity_score": 0.5
+    },
+    {
+      "id": "kettlebell_swing",
+      "canonical_name": "Kettlebell Swing",
+      "aliases": ["kettlebell swing", "kb swing", "russian swing"],
+      "slang": ["swings"],
+      "common_typos": ["kettelbell swing"],
+      "movement_pattern": "hinge",
+      "exercise_type": "compound",
+      "equipment": "kettlebell",
+      "muscle_targets": [
+        { "name": "glutes", "role": "prime_mover" },
+        { "name": "hamstrings", "role": "prime_mover" },
+        { "name": "erector_spinae", "role": "synergist" },
+        { "name": "abs", "role": "stabilizer" },
+        { "name": "forearms", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.7
+    },
+    {
+      "id": "lunge",
+      "canonical_name": "Walking Lunge",
+      "aliases": ["walking lunge", "lunge", "lunges", "dumbbell lunge", "forward lunge"],
+      "slang": ["lunging"],
+      "common_typos": ["luge", "lung"],
+      "movement_pattern": "lunge",
+      "exercise_type": "compound",
+      "equipment": "bodyweight",
+      "laterality": "alternating",
+      "muscle_targets": [
+        { "name": "quadriceps", "role": "prime_mover" },
+        { "name": "glutes", "role": "prime_mover" },
+        { "name": "hamstrings", "role": "synergist" },
+        { "name": "calves", "role": "synergist" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.8
+    },
+    {
+      "id": "bulgarian_split_squat",
+      "canonical_name": "Bulgarian Split Squat",
+      "aliases": ["bulgarian split squat", "split squat", "rear foot elevated split squat", "rfess", "bss"],
+      "slang": ["bulgarians"],
+      "common_typos": ["bulgarian split sqaut"],
+      "movement_pattern": "lunge",
+      "exercise_type": "compound",
+      "equipment": "dumbbell",
+      "laterality": "unilateral",
+      "grip": "split",
+      "muscle_targets": [
+        { "name": "quadriceps", "role": "prime_mover" },
+        { "name": "glutes", "role": "prime_mover" },
+        { "name": "hamstrings", "role": "synergist" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.75
+    },
+    {
+      "id": "step_up",
+      "canonical_name": "Dumbbell Step Up",
+      "aliases": ["step up", "step ups", "dumbbell step up", "box step up"],
+      "slang": [],
+      "common_typos": ["step upp"],
+      "movement_pattern": "lunge",
+      "exercise_type": "compound",
+      "equipment": "dumbbell",
+      "laterality": "unilateral",
+      "muscle_targets": [
+        { "name": "quadriceps", "role": "prime_mover" },
+        { "name": "glutes", "role": "prime_mover" },
+        { "name": "calves", "role": "synergist" },
+        { "name": "abs", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.6
+    },
+    {
+      "id": "farmers_carry",
+      "canonical_name": "Farmers Carry",
+      "aliases": ["farmers carry", "farmer carry", "farmers walk", "farmer walk", "loaded carry"],
+      "slang": ["farmers"],
+      "common_typos": ["famers carry"],
+      "movement_pattern": "carry",
+      "exercise_type": "compound",
+      "equipment": "dumbbell",
+      "muscle_targets": [
+        { "name": "forearms", "role": "prime_mover" },
+        { "name": "upper_traps", "role": "prime_mover" },
+        { "name": "abs", "role": "prime_mover" },
+        { "name": "erector_spinae", "role": "synergist" },
+        { "name": "glutes", "role": "synergist" }
+      ],
+      "popularity_score": 0.6
+    },
+    {
+      "id": "bicep_curl",
+      "canonical_name": "Barbell Bicep Curl",
+      "aliases": ["bicep curl", "bicep curls", "barbell curl", "bb curl", "biceps curl", "barbell bicep curl"],
+      "slang": ["curling", "curls"],
+      "common_typos": ["bicep cur", "bicep curll", "bice curl"],
+      "movement_pattern": "pull",
+      "exercise_type": "isolation",
+      "equipment": "barbell",
+      "grip": "supinated",
+      "muscle_targets": [
+        { "name": "biceps", "role": "prime_mover" },
+        { "name": "forearms", "role": "synergist" }
+      ],
+      "popularity_score": 0.85
+    },
+    {
+      "id": "dumbbell_curl",
+      "canonical_name": "Dumbbell Bicep Curl",
+      "aliases": ["dumbbell curl", "db curl", "dumbbell bicep curl", "alternating dumbbell curl"],
+      "slang": [],
+      "common_typos": ["dumbell curl"],
+      "movement_pattern": "pull",
+      "exercise_type": "isolation",
+      "equipment": "dumbbell",
+      "grip": "supinated",
+      "muscle_targets": [
+        { "name": "biceps", "role": "prime_mover" },
+        { "name": "forearms", "role": "synergist" }
+      ],
+      "popularity_score": 0.8
+    },
+    {
+      "id": "hammer_curl",
+      "canonical_name": "Hammer Curl",
+      "aliases": ["hammer curl", "hammer curls", "neutral grip curl", "db hammer curl"],
+      "slang": ["hammers"],
+      "common_typos": ["hamer curl"],
+      "movement_pattern": "pull",
+      "exercise_type": "isolation",
+      "equipment": "dumbbell",
+      "grip": "neutral",
+      "muscle_targets": [
+        { "name": "biceps", "role": "prime_mover" },
+        { "name": "forearms", "role": "prime_mover" }
+      ],
+      "popularity_score": 0.7
+    },
+    {
+      "id": "lying_tricep_extension",
+      "canonical_name": "Lying Tricep Extension",
+      "aliases": ["lying tricep extension", "skull crusher", "skull crushers", "skullcrusher", "skullcrushers", "lying triceps extension", "french press"],
+      "slang": ["crushers"],
+      "common_typos": ["lying tricep extention", "skul crushers"],
+      "movement_pattern": "push",
+      "exercise_type": "isolation",
+      "equipment": "barbell",
+      "angle": "flat",
+      "muscle_targets": [
+        { "name": "triceps", "role": "prime_mover" }
+      ],
+      "popularity_score": 0.8
+    },
+    {
+      "id": "tricep_pushdown",
+      "canonical_name": "Cable Tricep Pushdown",
+      "aliases": ["tricep pushdown", "cable pushdown", "rope pushdown", "tricep pressdown", "triceps pushdown"],
+      "slang": ["pushdowns"],
+      "common_typos": ["tricep push down"],
+      "movement_pattern": "push",
+      "exercise_type": "isolation",
+      "equipment": "cable",
+      "muscle_targets": [
+        { "name": "triceps", "role": "prime_mover" }
+      ],
+      "popularity_score": 0.8
+    },
+    {
+      "id": "overhead_tricep_extension",
+      "canonical_name": "Overhead Tricep Extension",
+      "aliases": ["overhead tricep extension", "overhead triceps extension", "french press overhead", "cable overhead extension"],
+      "slang": [],
+      "common_typos": ["overhead tricep extention"],
+      "movement_pattern": "push",
+      "exercise_type": "isolation",
+      "equipment": "cable",
+      "angle": "overhead",
+      "muscle_targets": [
+        { "name": "triceps", "role": "prime_mover" }
+      ],
+      "popularity_score": 0.6
+    },
+    {
+      "id": "lateral_raise",
+      "canonical_name": "Dumbbell Lateral Raise",
+      "aliases": ["lateral raise", "side raise", "lateral raises", "db lateral raise", "side lateral raise", "dumbbell lateral raise"],
+      "slang": ["laterals", "side delts"],
+      "common_typos": ["latral raise", "lateral rais"],
+      "movement_pattern": "push",
+      "exercise_type": "isolation",
+      "equipment": "dumbbell",
+      "muscle_targets": [
+        { "name": "lateral_delt", "role": "prime_mover" },
+        { "name": "anterior_delt", "role": "synergist" }
+      ],
+      "popularity_score": 0.85
+    },
+    {
+      "id": "front_raise",
+      "canonical_name": "Dumbbell Front Raise",
+      "aliases": ["front raise", "front raises", "db front raise", "dumbbell front raise"],
+      "slang": [],
+      "common_typos": ["front rais"],
+      "movement_pattern": "push",
+      "exercise_type": "isolation",
+      "equipment": "dumbbell",
+      "muscle_targets": [
+        { "name": "anterior_delt", "role": "prime_mover" },
+        { "name": "lateral_delt", "role": "synergist" }
+      ],
+      "popularity_score": 0.6
+    },
+    {
+      "id": "rear_delt_fly",
+      "canonical_name": "Rear Delt Fly",
+      "aliases": ["rear delt fly", "reverse fly", "rear delt flye", "bent over fly", "reverse pec deck"],
+      "slang": ["rear delts"],
+      "common_typos": ["rear delt flie"],
+      "movement_pattern": "pull",
+      "exercise_type": "isolation",
+      "equipment": "dumbbell",
+      "muscle_targets": [
+        { "name": "posterior_delt", "role": "prime_mover" },
+        { "name": "mid_back", "role": "synergist" }
+      ],
+      "popularity_score": 0.65
+    },
+    {
+      "id": "chest_fly",
+      "canonical_name": "Dumbbell Chest Fly",
+      "aliases": ["chest fly", "dumbbell fly", "db fly", "chest flye", "pec fly", "cable fly", "pec deck"],
+      "slang": ["flyes", "flies"],
+      "common_typos": ["chest flie"],
+      "movement_pattern": "push",
+      "exercise_type": "isolation",
+      "equipment": "dumbbell",
+      "angle": "flat",
+      "muscle_targets": [
+        { "name": "mid_chest", "role": "prime_mover" },
+        { "name": "anterior_delt", "role": "synergist" }
+      ],
+      "popularity_score": 0.75
+    },
+    {
+      "id": "leg_extension",
+      "canonical_name": "Leg Extension",
+      "aliases": ["leg extension", "leg extensions", "machine leg extension", "quad extension"],
+      "slang": [],
+      "common_typos": ["leg extention"],
+      "movement_pattern": "squat",
+      "exercise_type": "isolation",
+      "equipment": "machine",
+      "muscle_targets": [
+        { "name": "quadriceps", "role": "prime_mover" }
+      ],
+      "popularity_score": 0.75
+    },
+    {
+      "id": "leg_curl",
+      "canonical_name": "Leg Curl",
+      "aliases": ["leg curl", "leg curls", "hamstring curl", "lying leg curl", "seated leg curl", "machine leg curl"],
+      "slang": [],
+      "common_typos": ["leg cur"],
+      "movement_pattern": "hinge",
+      "exercise_type": "isolation",
+      "equipment": "machine",
+      "muscle_targets": [
+        { "name": "hamstrings", "role": "prime_mover" }
+      ],
+      "popularity_score": 0.75
+    },
+    {
+      "id": "calf_raise",
+      "canonical_name": "Standing Calf Raise",
+      "aliases": ["calf raise", "calf raises", "standing calf raise", "machine calf raise", "seated calf raise"],
+      "slang": ["calves"],
+      "common_typos": ["calve raise", "calf rais"],
+      "movement_pattern": "squat",
+      "exercise_type": "isolation",
+      "equipment": "machine",
+      "muscle_targets": [
+        { "name": "calves", "role": "prime_mover" }
+      ],
+      "popularity_score": 0.7
+    },
+    {
+      "id": "shrug",
+      "canonical_name": "Barbell Shrug",
+      "aliases": ["shrug", "shrugs", "barbell shrug", "dumbbell shrug", "trap shrug"],
+      "slang": [],
+      "common_typos": ["shurg"],
+      "movement_pattern": "pull",
+      "exercise_type": "isolation",
+      "equipment": "barbell",
+      "muscle_targets": [
+        { "name": "upper_traps", "role": "prime_mover" },
+        { "name": "forearms", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.65
+    },
+    {
+      "id": "cable_crunch",
+      "canonical_name": "Cable Crunch",
+      "aliases": ["cable crunch", "kneeling cable crunch", "rope crunch", "crunch", "crunches"],
+      "slang": [],
+      "common_typos": ["cable cruch"],
+      "movement_pattern": "rotation",
+      "exercise_type": "isolation",
+      "equipment": "cable",
+      "muscle_targets": [
+        { "name": "abs", "role": "prime_mover" },
+        { "name": "hip_flexors", "role": "synergist" }
+      ],
+      "popularity_score": 0.6
+    },
+    {
+      "id": "plank",
+      "canonical_name": "Plank",
+      "aliases": ["plank", "planks", "front plank", "forearm plank"],
+      "slang": ["planking"],
+      "common_typos": ["plnak"],
+      "movement_pattern": "rotation",
+      "exercise_type": "isolation",
+      "equipment": "bodyweight",
+      "laterality": "isometric_hold",
+      "muscle_targets": [
+        { "name": "abs", "role": "prime_mover" },
+        { "name": "erector_spinae", "role": "synergist" },
+        { "name": "glutes", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.75
+    },
+    {
+      "id": "russian_twist",
+      "canonical_name": "Russian Twist",
+      "aliases": ["russian twist", "russian twists", "seated twist"],
+      "slang": [],
+      "common_typos": ["rusian twist"],
+      "movement_pattern": "rotation",
+      "exercise_type": "isolation",
+      "equipment": "bodyweight",
+      "muscle_targets": [
+        { "name": "abs", "role": "prime_mover" },
+        { "name": "hip_flexors", "role": "synergist" }
+      ],
+      "popularity_score": 0.6
+    },
+    {
+      "id": "cable_woodchop",
+      "canonical_name": "Cable Woodchop",
+      "aliases": ["cable woodchop", "woodchop", "wood chop", "cable chop", "high to low chop"],
+      "slang": [],
+      "common_typos": ["woodchopp"],
+      "movement_pattern": "rotation",
+      "exercise_type": "compound",
+      "equipment": "cable",
+      "muscle_targets": [
+        { "name": "abs", "role": "prime_mover" },
+        { "name": "erector_spinae", "role": "synergist" },
+        { "name": "glutes", "role": "stabilizer" }
+      ],
+      "popularity_score": 0.5
+    }
+  ]
+}
