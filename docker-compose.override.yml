@@ -34,10 +34,10 @@ services:
       context: ./services/muscle-image
       dockerfile: Dockerfile
 
-  ai-engine:
-    image: athleta/ai-engine:local
+  auto-regulation-service:
+    image: athleta/auto-regulation-service:local
     build:
-      context: ./services/ai-engine
+      context: ./services/auto-regulation-service
       dockerfile: Dockerfile
 
   api:

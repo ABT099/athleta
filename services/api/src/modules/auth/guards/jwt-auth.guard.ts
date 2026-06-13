@@ -32,8 +32,8 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       return true;
     }
 
-    // Extract and store auth token for AI engine forwarding
-    // This allows AI engine integration to include the user's JWT when making requests
+    // Extract and store auth token for auto-regulation service forwarding
+    // This allows auto-regulation service integration to include the user's JWT when making requests
     const authHeader = request.headers['authorization'];
     if (authHeader) {
       this.cls.set('authToken', authHeader);

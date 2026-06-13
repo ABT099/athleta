@@ -3,7 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { join } from 'path';
-import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
+import { AutoRegulationServiceIntegration } from '../../integrations/auto-regulation-service.integration';
 import { ExerciseClientService } from './exercise-client.service';
 import { ExerciseController } from './exercise.controller';
 
@@ -31,7 +31,7 @@ import { ExerciseController } from './exercise.controller';
     ]),
   ],
   controllers: [ExerciseController],
-  providers: [ExerciseClientService, AIEngineIntegration],
+  providers: [ExerciseClientService, AutoRegulationServiceIntegration],
   exports: [ExerciseClientService],
 })
 export class ExerciseModule {}

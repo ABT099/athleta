@@ -3,7 +3,7 @@
 -- ============================================
 --
 -- The exercise domain now lives entirely in exercise-service, backed by Neo4j.
--- The api and ai-engine reference exercises by integer ID only; those IDs are
+-- The api and auto-regulation-service reference exercises by integer ID only; those IDs are
 -- preserved by the exercise-service `migrate` command (Postgres -> Neo4j).
 --
 -- After this migration:

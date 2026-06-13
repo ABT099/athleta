@@ -5,7 +5,7 @@ import { workoutDays, workoutPlans, workoutDayExercises } from 'src/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { ExerciseClientService } from '../exercise/exercise-client.service';
 import { WorkoutsService } from '../workouts/workouts.service';
-import { AIEngineIntegration } from 'src/integrations/ai-engine.integration';
+import { AutoRegulationServiceIntegration } from 'src/integrations/auto-regulation-service.integration';
 import {
   CreateWorkoutDayInput,
   CreateWorkoutExerciseInput,
@@ -23,7 +23,7 @@ export class PlansService {
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly exerciseClient: ExerciseClientService,
     private readonly workoutsService: WorkoutsService,
-    private readonly aiEngineIntegration: AIEngineIntegration,
+    private readonly autoRegulationServiceIntegration: AutoRegulationServiceIntegration,
   ) {}
 
   async getPlans(athleteId: number) {
@@ -167,7 +167,7 @@ export class PlansService {
 
     // Generate all prescriptions in one batch request (outside transaction)
     const prescriptions =
-      await this.aiEngineIntegration.generateBatchPrescriptions(
+      await this.autoRegulationServiceIntegration.generateBatchPrescriptions(
         prescriptionRequests,
       );
 

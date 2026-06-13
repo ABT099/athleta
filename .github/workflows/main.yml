@@ -10,7 +10,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  test-ai-engine:
+  test-auto-regulation-service:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -23,12 +23,12 @@ jobs:
         run: uv python install 3.13
 
       - name: Install Python Dependencies
-        working-directory: services/ai-engine
+        working-directory: services/auto-regulation-service
         run: uv sync --all-extras
 
       - name: Run tests
-        working-directory: services/ai-engine
-        run: uv run pytest -m "not ml" --verbose --cov=app --cov-report=html --cov-report=term
+        working-directory: services/auto-regulation-service
+        run: uv run pytest -m "not ml" --verbose --cov=autoregulation --cov-report=html --cov-report=term
 
   test-exercise-service:
     runs-on: ubuntu-latest
@@ -51,7 +51,7 @@ jobs:
         run: go test -v ./...
 
   build-and-push:
-    needs: [test-ai-engine, test-exercise-service]
+    needs: [test-auto-regulation-service, test-exercise-service]
     runs-on: ubuntu-latest
 
     permissions:
@@ -62,9 +62,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - service: ai-engine
-            context: ./services/ai-engine
-            dockerfile: ./services/ai-engine/Dockerfile
+          - service: auto-regulation-service
+            context: ./services/auto-regulation-service
+            dockerfile: ./services/auto-regulation-service/Dockerfile
           - service: api
             context: .
             dockerfile: ./services/api/Dockerfile
@@ -165,8 +165,8 @@ jobs:
 
             # 6. PULL
             # Pull largest images first, one by one
-            echo "Pulling AI Engine..."
-            docker compose pull ai-engine
+            echo "Pulling Auto Regulation Service..."
+            docker compose pull auto-regulation-service
             echo "Pulling Neo4j..."
             docker compose pull neo4j
             echo "Pulling Database..."

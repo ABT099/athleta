@@ -5,7 +5,7 @@ import { eq, and, inArray, sql } from 'drizzle-orm';
 import { WorkoutExerciseDto } from '../plans/dto/create-plan.dto';
 import { ExerciseClientService } from '../exercise/exercise-client.service';
 import { MuscleImageIntegration } from 'src/integrations/muscle-image.integration';
-import { AIEngineIntegration } from 'src/integrations/ai-engine.integration';
+import { AutoRegulationServiceIntegration } from 'src/integrations/auto-regulation-service.integration';
 import { PrescriptionRequestDto } from 'src/integrations/integrations.types';
 import { DayOfWeek, TrainingType } from 'src/constants';
 import { InferredExercise, MuscleTarget } from '../exercise/exercise.types';
@@ -23,7 +23,7 @@ export class WorkoutsService {
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly exerciseClient: ExerciseClientService,
     private readonly muscleImageIntegration: MuscleImageIntegration,
-    private readonly AIEngineIntegration: AIEngineIntegration,
+    private readonly AutoRegulationServiceIntegration: AutoRegulationServiceIntegration,
   ) {}
 
   async substituteExercise(
@@ -192,7 +192,7 @@ export class WorkoutsService {
     // Generate all prescriptions in one batch request
     const prescriptions =
       exercisesToAdd.length > 0
-        ? await this.AIEngineIntegration.generateBatchPrescriptions(
+        ? await this.AutoRegulationServiceIntegration.generateBatchPrescriptions(
             prescriptionRequests,
           )
         : [];
@@ -311,7 +311,7 @@ export class WorkoutsService {
     // Generate prescriptions
     const prescriptions =
       prescriptionRequests.length > 0
-        ? await this.AIEngineIntegration.generateBatchPrescriptions(
+        ? await this.AutoRegulationServiceIntegration.generateBatchPrescriptions(
             prescriptionRequests,
           )
         : [];

@@ -13,7 +13,7 @@ athleta/
 ├── migrator/ # Database migration (Flyway)
 ├── services/
 │ ├── api/ # NestJS API service
-│ ├── ai-engine/ # Python AI/ML service
+│ ├── auto-regulation-service/ # Python AI/ML service
 │ ├── exercise-service/ # Go service for exercise inference and logic
 │ └── muscle-image/ # PHP service for muscle images
 ├── docker-compose.yml
