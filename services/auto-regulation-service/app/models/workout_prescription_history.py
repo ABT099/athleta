@@ -8,7 +8,7 @@ from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, String, Tex
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 
-from autoregulation.database import Base, get_schema_table_args, get_fk_reference
+from app.database import Base, get_schema_table_args, get_fk_reference
 
 
 class WorkoutPrescriptionHistory(Base):
@@ -47,7 +47,6 @@ class WorkoutPrescriptionHistory(Base):
     )
     exercise_id = Column(
         Integer,
-        ForeignKey(get_fk_reference("exercises.id"), ondelete="CASCADE"),
         nullable=False,
         index=True
     )
@@ -84,7 +83,6 @@ class WorkoutPrescriptionHistory(Base):
     # Relationships
     athlete = relationship("Athlete")
     workout_day = relationship("WorkoutDay")
-    exercise = relationship("Exercise")
     
     def __repr__(self):
         return f"<WorkoutPrescriptionHistory(athlete_id={self.athlete_id}, exercise_id={self.exercise_id}, date={self.prescribed_date})>"

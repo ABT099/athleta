@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, String, Boo
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 
-from autoregulation.database import Base, get_schema_table_args, get_fk_reference
+from app.database import Base, get_schema_table_args, get_fk_reference
 
 
 class ExerciseProgressionTracking(Base):
@@ -17,7 +17,7 @@ class ExerciseProgressionTracking(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id"), ondelete="CASCADE"), nullable=False, index=True)
-    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id"), ondelete="CASCADE"), nullable=False, index=True)
+    exercise_id = Column(Integer, nullable=False, index=True)
     workout_session_id = Column(Integer, ForeignKey(get_fk_reference("workout_sessions.id", "ai_analysis"), ondelete="CASCADE"), nullable=False)
     session_date = Column(DateTime, nullable=False)
     
@@ -42,7 +42,6 @@ class ExerciseProgressionTracking(Base):
     
     # Relationships
     athlete = relationship("Athlete", back_populates="exercise_progressions")
-    exercise = relationship("Exercise", back_populates="progression_tracking")
     workout_session = relationship("WorkoutSession", back_populates="exercise_progressions")
     
     def __repr__(self):

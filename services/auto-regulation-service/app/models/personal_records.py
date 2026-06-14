@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, UniqueConst
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 
-from autoregulation.database import Base, get_table_args_with_constraints, get_fk_reference
+from app.database import Base, get_table_args_with_constraints, get_fk_reference
 
 
 class ExercisePersonalRecord(Base):
@@ -18,7 +18,7 @@ class ExercisePersonalRecord(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id"), ondelete="CASCADE"), nullable=False, index=True)
-    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id"), ondelete="CASCADE"), nullable=False, index=True)
+    exercise_id = Column(Integer, nullable=False, index=True)
     
     # Rep-max PRs
     one_rep_max = Column(Float, nullable=True)
@@ -62,7 +62,6 @@ class ExercisePersonalRecord(Base):
     
     # Relationships
     athlete = relationship("Athlete", back_populates="personal_records")
-    exercise = relationship("Exercise", back_populates="personal_records")
     
     def __repr__(self):
         return f"<ExercisePersonalRecord(athlete_id={self.athlete_id}, exercise_id={self.exercise_id}, pr_count={self.total_pr_count})>"

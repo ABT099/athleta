@@ -6,8 +6,8 @@ Tests ACWR, HRV trends, and session RPE detection.
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
-from autoregulation.services.progressive_overload_engine import ProgressiveOverloadEngine
-from autoregulation.services.training_calculations import TrainingCalculations
+from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
+from app.shared.calculations import TrainingCalculations
 
 
 class TestACWRDeloadTrigger:
@@ -15,7 +15,7 @@ class TestACWRDeloadTrigger:
     
     def test_acwr_above_threshold(self):
         """Test that ACWR > 1.5 triggers deload."""
-        from autoregulation.services.progressive_overload_engine import ProgressiveOverloadEngine
+        from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
         from unittest.mock import Mock
         
         db = Mock()
@@ -59,7 +59,7 @@ class TestACWRDeloadTrigger:
     
     def test_acwr_in_safe_zone(self):
         """Test that ACWR in safe zone (0.8-1.3) doesn't trigger deload."""
-        from autoregulation.services.progressive_overload_engine import ProgressiveOverloadEngine
+        from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
         from unittest.mock import Mock
         
         db = Mock()
@@ -105,8 +105,8 @@ class TestSessionRPEDeloadTrigger:
     
     def test_srpe_spike_detection(self):
         """Test that sRPE spike (>20% increase) triggers deload."""
-        from autoregulation.services.progressive_overload_engine import ProgressiveOverloadEngine
-        from autoregulation.models import WorkoutSession
+        from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
+        from app.models import WorkoutSession
         from unittest.mock import Mock
         
         db = Mock()
@@ -138,8 +138,8 @@ class TestSessionRPEDeloadTrigger:
     
     def test_no_srpe_spike(self):
         """Test that normal sRPE doesn't trigger deload."""
-        from autoregulation.services.progressive_overload_engine import ProgressiveOverloadEngine
-        from autoregulation.models import WorkoutSession
+        from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
+        from app.models import WorkoutSession
         from unittest.mock import Mock
         
         db = Mock()
@@ -164,8 +164,8 @@ class TestCombinedDeloadTriggers:
     
     def test_multiple_triggers_any_one_triggers(self):
         """Test that any single trigger can cause deload."""
-        from autoregulation.services.progressive_overload_engine import ProgressiveOverloadEngine
-        from autoregulation.models import PerformanceTrend
+        from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
+        from app.models import PerformanceTrend
         from unittest.mock import Mock, patch
         
         db = Mock()

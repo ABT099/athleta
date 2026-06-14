@@ -2,8 +2,8 @@
 Unit tests for recovery analyzer.
 """
 import pytest
-from autoregulation.services.recovery_analyzer import RecoveryAnalyzer
-from autoregulation.utils.constants import SleepQuality
+from app.modules.volume import RecoveryAnalyzer
+from app.utils.constants import SleepQuality
 
 
 class TestRecoveryAnalyzer:
@@ -48,7 +48,7 @@ class TestRecoveryAnalyzer:
     
     def test_sleep_quality_multipliers(self):
         """Test sleep quality scoring."""
-        from autoregulation.utils.constants import SLEEP_QUALITY_MULTIPLIERS
+        from app.utils.constants import SLEEP_QUALITY_MULTIPLIERS
         
         # Verify sleep quality multipliers are correct
         assert SLEEP_QUALITY_MULTIPLIERS[SleepQuality.POOR] == 0.7

@@ -7,8 +7,8 @@ through AI processing to receiving next workout recommendations.
 import pytest
 from fastapi.testclient import TestClient
 from datetime import datetime, timedelta, timezone
-from autoregulation.main import app
-from autoregulation.utils.constants import (
+from app.main import app
+from app.utils.constants import (
     SleepQuality, Gender, TrainingExperience, TrainingType, 
     PeriodizationModel, TrainingPhase
 )
@@ -16,11 +16,11 @@ from tests.factories import (
     AthleteFactory, ExerciseFactory, WorkoutPlanFactory,
     WorkoutDayFactory
 )
-from autoregulation.models import WorkoutDayExercise
+from app.models import WorkoutDayExercise
 
 
 @pytest.fixture
-def client(db_session, mock_auth):
+def client(db_session):
     """Create a test client."""
     def override_get_db():
         try:
@@ -28,11 +28,9 @@ def client(db_session, mock_auth):
         finally:
             pass
     
-    from autoregulation.database import get_db
-    from autoregulation.auth import get_current_user
+    from app.database import get_db
     
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = mock_auth
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -103,7 +101,7 @@ class TestCompleteWorkoutWorkflow:
         
         This smoke test validates the endpoint structure and response format.
         """
-        from autoregulation.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
+        from app.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
         
         setup = setup_workout_plan
         athlete = setup["athlete"]
@@ -200,8 +198,8 @@ class TestCompleteWorkoutWorkflow:
     
     def test_complete_workout_creates_performance_trend(self, client, db_session, setup_workout_plan):
         """Test that completing a workout creates a PerformanceTrend record."""
-        from autoregulation.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
-        from autoregulation.models import PerformanceTrend
+        from app.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
+        from app.models import PerformanceTrend
         
         setup = setup_workout_plan
         athlete = setup["athlete"]
@@ -257,7 +255,7 @@ class TestCompleteWorkoutWorkflow:
     
     def test_complete_workout_with_poor_recovery_triggers_deload(self, client, db_session, setup_workout_plan):
         """Test that poor recovery metrics trigger appropriate deload recommendations."""
-        from autoregulation.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
+        from app.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
         
         setup = setup_workout_plan
         athlete = setup["athlete"]

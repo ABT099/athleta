@@ -72,7 +72,7 @@ alembic upgrade head
 ### 6. Start the API server
 
 ```bash
-uvicorn autoregulation.main:app --reload
+uvicorn app.main:app --reload
 ```
 
 The API will be available at `http://localhost:8000`
@@ -138,9 +138,9 @@ pytest
 ### Code Formatting
 
 ```bash
-black autoregulation/
-flake8 autoregulation/
-mypy autoregulation/
+black app/
+flake8 app/
+mypy app/
 ```
 
 ## License

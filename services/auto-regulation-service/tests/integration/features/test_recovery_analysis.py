@@ -5,8 +5,8 @@ Tests the nuanced approach to gender recovery modifiers and age-based progressio
 including training age considerations.
 """
 import pytest
-from autoregulation.services.recovery_analyzer import RecoveryAnalyzer
-from autoregulation.utils.constants import Gender, TrainingExperience
+from app.modules.volume import RecoveryAnalyzer
+from app.utils.constants import Gender, TrainingExperience
 
 
 @pytest.mark.integration

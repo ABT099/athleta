@@ -5,8 +5,8 @@ from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKe
 from sqlalchemy.orm import relationship, deferred
 from datetime import datetime, timezone
 
-from autoregulation.database import Base, get_schema_table_args, get_fk_reference
-from autoregulation.utils.constants import TrainingType, PeriodizationModel, TrainingPhase
+from app.database import Base, get_schema_table_args, get_fk_reference
+from app.utils.constants import TrainingType, PeriodizationModel, TrainingPhase
 
 
 class WorkoutPlan(Base):
@@ -130,7 +130,7 @@ class WorkoutDayExercise(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     workout_day_id = Column(Integer, ForeignKey(get_fk_reference("workout_days.id")), nullable=False)
-    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id")), nullable=False)
+    exercise_id = Column(Integer, nullable=False)
     
     # Exercise order in the workout
     order_in_workout = Column(Integer, nullable=False)
@@ -169,7 +169,6 @@ class WorkoutDayExercise(Base):
     
     # Relationships
     workout_day = relationship("WorkoutDay", back_populates="exercises")
-    exercise = relationship("Exercise", back_populates="workout_day_exercises")
     
     def __repr__(self):
         return f"<WorkoutDayExercise(id={self.id}, exercise_id={self.exercise_id})>"
@@ -228,7 +227,7 @@ class ExerciseSet(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     workout_session_id = Column(Integer, ForeignKey(get_fk_reference("workout_sessions.id", "ai_analysis")), nullable=False)
-    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id")), nullable=False)
+    exercise_id = Column(Integer, nullable=False)
     
     # Set information
     set_number = Column(Integer, nullable=False)
@@ -253,7 +252,6 @@ class ExerciseSet(Base):
     
     # Relationships
     workout_session = relationship("WorkoutSession", back_populates="exercise_sets")
-    exercise = relationship("Exercise")
     
     def __repr__(self):
         return f"<ExerciseSet(id={self.id}, exercise_id={self.exercise_id}, weight={self.weight}, reps={self.reps})>"

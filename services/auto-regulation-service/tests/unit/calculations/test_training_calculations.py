@@ -2,8 +2,8 @@
 Unit tests for training calculations.
 """
 import pytest
-from autoregulation.services.training_calculations import TrainingCalculations
-from autoregulation.utils.constants import TrainingExperience, TrainingType, MuscleSize
+from app.shared.calculations import TrainingCalculations
+from app.utils.constants import TrainingExperience, TrainingType, MuscleSize
 
 
 class TestTrainingCalculations:

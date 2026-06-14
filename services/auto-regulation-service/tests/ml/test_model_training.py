@@ -12,7 +12,7 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
     LGBMRegressor = None
 
-from autoregulation.ml.workout_predictor import WorkoutPredictor
+from app.modules.ml.workout_predictor import WorkoutPredictor
 
 
 @pytest.mark.skipif(not LIGHTGBM_AVAILABLE, reason="LightGBM not available")

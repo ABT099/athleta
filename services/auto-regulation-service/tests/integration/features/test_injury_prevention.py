@@ -4,11 +4,11 @@ Tests for edge cases and robustness of current AI engine implementation.
 import json
 import pytest
 from datetime import datetime, timedelta, timezone
-from autoregulation.services.injury_prevention import InjuryPreventionService
-from autoregulation.models import (
-    Athlete, Exercise, WorkoutSession, ExerciseSet
+from app.modules.injury import InjuryPreventionService
+from app.models import (
+    Athlete, WorkoutSession, ExerciseSet
 )
-from autoregulation.utils.constants import Gender, TrainingExperience
+from app.utils.constants import Gender, TrainingExperience
 
 
 @pytest.mark.integration
@@ -108,7 +108,7 @@ class TestFormQualityServiceRobustness:
     
     def test_form_quality_service_handles_missing_data(self, db_session):
         """Test that form quality service handles missing data gracefully."""
-        from autoregulation.services.form_quality_service import FormQualityService
+        from app.modules.form import FormQualityService
         
         # Create athlete
         athlete = Athlete(

@@ -7,8 +7,8 @@ intensity techniques to break through it.
 import pytest
 from fastapi.testclient import TestClient
 from datetime import datetime, timezone, timedelta
-from autoregulation.main import app
-from autoregulation.utils.constants import (
+from app.main import app
+from app.utils.constants import (
     SleepQuality, Gender, TrainingExperience, TrainingType,
     PeriodizationModel, SetType
 )
@@ -16,11 +16,11 @@ from tests.factories import (
     AthleteFactory, ExerciseFactory, WorkoutPlanFactory,
     WorkoutDayFactory, WorkoutSessionFactory, ExerciseSetFactory
 )
-from autoregulation.models import WorkoutDayExercise
+from app.models import WorkoutDayExercise
 
 
 @pytest.fixture
-def client(db_session, mock_auth):
+def client(db_session):
     """Create a test client."""
     def override_get_db():
         try:
@@ -28,11 +28,9 @@ def client(db_session, mock_auth):
         finally:
             pass
     
-    from autoregulation.database import get_db
-    from autoregulation.auth import get_current_user
+    from app.database import get_db
     
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = mock_auth
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -125,7 +123,7 @@ class TestPlateauInterventionJourney:
     
     def test_plateau_detected_drop_set_suggested(self, client, db_session, setup_athlete_with_plateau):
         """Test that plateau is detected and drop set is recommended."""
-        from autoregulation.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
+        from app.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
         
         setup = setup_athlete_with_plateau
         athlete = setup["athlete"]
@@ -182,7 +180,7 @@ class TestPlateauInterventionJourney:
     
     def test_no_plateau_no_intervention(self, client, db_session):
         """Test that no intervention is suggested when there's progress."""
-        from autoregulation.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
+        from app.schemas.workout import WorkoutCompletionRequest, RecoveryMetricsData, ExerciseSetData
         
         # Create athlete with recent progress
         athlete = AthleteFactory.create(

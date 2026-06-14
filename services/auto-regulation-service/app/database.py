@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from typing import Generator, Dict, Any, Optional
 
-from autoregulation.config import settings
+from app.config import settings
 
 # Detect if using SQLite (for tests)
 IS_SQLITE = settings.DATABASE_URL.startswith("sqlite")

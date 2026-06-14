@@ -28,7 +28,7 @@ jobs:
 
       - name: Run tests
         working-directory: services/auto-regulation-service
-        run: uv run pytest -m "not ml" --verbose --cov=autoregulation --cov-report=html --cov-report=term
+        run: uv run pytest -m "not ml" --verbose --cov=app --cov-report=html --cov-report=term
 
   test-exercise-service:
     runs-on: ubuntu-latest

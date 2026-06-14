@@ -34,12 +34,7 @@ class Settings(BaseSettings):
                 UserWarning
             )
         return v
-    
-    # JWT - already present in env vars
-    JWT_SECRET: str
-    JWT_ALGORITHM: str = "HS256"
-    JWT_ISSUER: str = "athleta-api"
-    
+
     # Redis & Celery
     REDIS_URL: str = "redis://localhost:6379/0"
     CELERY_TASK_TIMEOUT: int = 1800  # 30 minutes

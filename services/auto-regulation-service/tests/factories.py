@@ -8,14 +8,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 
-from autoregulation.models import (
-    Athlete, Exercise, WorkoutPlan, WorkoutDay, WorkoutDayExercise,
-    WorkoutSession, ExerciseSet, RecoveryMetrics, MuscleGroupModel, ExerciseMuscle
+from app.models import (
+    Athlete, WorkoutPlan, WorkoutDay, WorkoutDayExercise,
+    WorkoutSession, ExerciseSet, RecoveryMetrics
 )
-from autoregulation.utils.constants import (
+from app.utils.constants import (
     Gender, TrainingExperience, TrainingType, PeriodizationModel,
     TrainingPhase
 )
+from tests.fake_exercise_service import FAKE
 
 
 class AthleteFactory:
@@ -77,145 +78,68 @@ class AthleteFactory:
 
 
 class ExerciseFactory:
-    """Factory for creating Exercise test instances."""
-    
+    """
+    Factory for registering exercises in the fake exercise-service.
+
+    Exercises now live in exercise-service and are read over gRPC, so this no
+    longer writes to the local DB. It registers an exercise in the in-memory
+    fake (returned by the patched ExerciseClient) and returns the protobuf
+    Exercise, whose ``.id`` callers use for ExerciseSet / WorkoutDayExercise.
+    The ``db`` argument is accepted for call-site compatibility and ignored.
+    """
+
     @staticmethod
     def create(
-        db: Session,
+        db: Optional[Session] = None,
         name: str = "Test Exercise",
-        muscles: List[tuple[str, int]] = None,
+        muscles: Optional[List[tuple]] = None,
         exercise_type: str = "compound",
         complexity_score: float = 1.0,
         injury_risk_level: float = 0.5,
         movement_pattern: Optional[str] = None,
-        **kwargs
-    ) -> Exercise:
+        intensity_category: Optional[str] = None,
+        joint_stress_areas: Optional[List[str]] = None,
+        **kwargs,
+    ):
         """
-        Create an Exercise instance with muscle activations.
-        
-        Args:
-            db: Database session
-            name: Exercise name
-            muscles: List of (muscle_name, activation_percent) tuples.
-                    Activation percent is converted to role:
-                    - >= 70%: prime_mover
-                    - >= 40%: synergist
-                    - < 40%: stabilizer
-            exercise_type: "compound" or "isolation"
-            complexity_score: Complexity score (0.0-2.0)
-            injury_risk_level: Injury risk level (0.0-1.0)
-            movement_pattern: Movement pattern (squat, hinge, push, pull, etc.)
-            **kwargs: Additional fields to set
-            
-        Returns:
-            Created Exercise instance with muscle links
+        Register an exercise. ``muscles`` is a list of (muscle_name, value)
+        tuples where value is a role string or an activation percentage.
         """
         if muscles is None:
-            # Default to mid_chest with high activation (will be prime_mover)
             muscles = [("mid_chest", 90)]
-        
-        exercise = Exercise(
+        return FAKE.add_exercise(
             name=name,
+            muscles=muscles,
             exercise_type=exercise_type,
+            intensity_category=intensity_category,
+            movement_pattern=movement_pattern or "",
             complexity_score=complexity_score,
             injury_risk_level=injury_risk_level,
-            movement_pattern=movement_pattern,
-            **kwargs
+            joint_stress_areas=joint_stress_areas,
         )
-        db.add(exercise)
-        db.flush()
-        
-        # Create muscle links
-        for muscle_name, activation_percent in muscles:
-            # Get or query muscle from database
-            muscle = db.query(MuscleGroupModel).filter(
-                MuscleGroupModel.name == muscle_name
-            ).first()
-            
-            if muscle:
-                # Convert activation percentage to role
-                if activation_percent >= 70:
-                    role = "prime_mover"
-                elif activation_percent >= 40:
-                    role = "synergist"
-                else:
-                    role = "stabilizer"
-                
-                link = ExerciseMuscle(
-                    exercise_id=exercise.id,
-                    muscle_group_id=muscle.id,
-                    role=role
-                )
-                db.add(link)
-            else:
-                # Warn when muscle is not found to help catch typos and missing data
-                import warnings
-                warnings.warn(
-                    f"Muscle '{muscle_name}' not found in database for exercise '{name}'. "
-                    f"Muscle link will not be created. Check if muscle name is correct or if muscle groups are seeded.",
-                    UserWarning
-                )
-        
-        db.flush()
-        return exercise
-    
+
     @staticmethod
-    def create_compound(
-        db: Session,
-        name: str = "Bench Press",
-        muscles: List[tuple[str, int]] = None,
-        **kwargs
-    ) -> Exercise:
-        """Create a compound exercise with typical activation pattern."""
+    def create_compound(db: Optional[Session] = None, name: str = "Bench Press",
+                        muscles: Optional[List[tuple]] = None, **kwargs):
+        """Create a compound exercise with a typical activation pattern."""
         if muscles is None:
-            # Default compound exercise: bench press pattern
-            muscles = [
-                ("mid_chest", 90),
-                ("anterior_delt", 60),
-                ("triceps", 50)
-            ]
-            
-        # Set default movement pattern if not provided
-        if "movement_pattern" not in kwargs:
-            kwargs["movement_pattern"] = "push"
-            
+            muscles = [("mid_chest", 90), ("anterior_delt", 60), ("triceps", 50)]
+        kwargs.setdefault("movement_pattern", "push")
         return ExerciseFactory.create(
-            db,
-            name=name,
-            muscles=muscles,
-            exercise_type="compound",
-            complexity_score=1.2,
-            injury_risk_level=0.5,
-            **kwargs
+            db, name=name, muscles=muscles, exercise_type="compound",
+            complexity_score=1.2, injury_risk_level=0.5, **kwargs,
         )
-    
+
     @staticmethod
-    def create_isolation(
-        db: Session,
-        name: str = "Bicep Curl",
-        muscles: List[tuple[str, int]] = None,
-        **kwargs
-    ) -> Exercise:
-        """Create an isolation exercise with typical activation pattern."""
+    def create_isolation(db: Optional[Session] = None, name: str = "Bicep Curl",
+                         muscles: Optional[List[tuple]] = None, **kwargs):
+        """Create an isolation exercise with a typical activation pattern."""
         if muscles is None:
-            # Default isolation exercise: bicep curl pattern
-            muscles = [
-                ("biceps", 95),
-                ("forearms", 30)
-            ]
-            
-        # Set default movement pattern if not provided
-        if "movement_pattern" not in kwargs:
-            kwargs["movement_pattern"] = "pull"
-            
+            muscles = [("biceps", 95), ("forearms", 30)]
+        kwargs.setdefault("movement_pattern", "pull")
         return ExerciseFactory.create(
-            db,
-            name=name,
-            muscles=muscles,
-            exercise_type="isolation",
-            complexity_score=0.7,
-            injury_risk_level=0.2,
-            **kwargs
+            db, name=name, muscles=muscles, exercise_type="isolation",
+            complexity_score=0.7, injury_risk_level=0.2, **kwargs,
         )
 
 

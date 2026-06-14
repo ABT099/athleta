@@ -5,8 +5,8 @@ from sqlalchemy import Column, Integer, String, Enum, DateTime, Float, ForeignKe
 from sqlalchemy.orm import relationship, deferred
 from datetime import datetime, timezone
 
-from autoregulation.database import Base, get_schema_table_args, get_fk_reference
-from autoregulation.utils.constants import SleepQuality
+from app.database import Base, get_schema_table_args, get_fk_reference
+from app.utils.constants import SleepQuality
 
 
 class RecoveryMetrics(Base):

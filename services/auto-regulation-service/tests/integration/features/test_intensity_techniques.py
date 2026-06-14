@@ -8,9 +8,9 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch
 
-from autoregulation.main import app
-from autoregulation.database import get_db
-from autoregulation.utils.constants import (
+from app.main import app
+from app.database import get_db
+from app.utils.constants import (
     SetType, RepStyle, TrainingType, TrainingPhase, TrainingExperience,
     SleepQuality, Gender
 )
@@ -21,7 +21,7 @@ from tests.factories import (
 
 
 @pytest.fixture
-def client(db_session, mock_auth):
+def client(db_session):
     """Create a test client with database override."""
     def override_get_db():
         try:
@@ -29,10 +29,8 @@ def client(db_session, mock_auth):
         finally:
             pass
     
-    from autoregulation.auth import get_current_user
     
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = mock_auth
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -86,7 +84,7 @@ def setup_athlete_with_plan(db_session):
     )
     
     # Add exercises to workout day
-    from autoregulation.models import WorkoutDayExercise
+    from app.models import WorkoutDayExercise
     
     wde1 = WorkoutDayExercise(
         workout_day_id=workout_day.id,
@@ -499,7 +497,7 @@ class TestTechniqueTracking:
     
     def test_technique_stored_in_exercise_set(self, client, db_session, setup_athlete_with_plan):
         """Test that technique info is stored in ExerciseSet."""
-        from autoregulation.models import ExerciseSet, WorkoutSession
+        from app.models import ExerciseSet, WorkoutSession
         
         data = setup_athlete_with_plan
         
@@ -581,7 +579,7 @@ class TestBeginnerDoesNotGetAdvancedTechniques:
             workout_plan_id=plan.id
         )
         
-        from autoregulation.models import WorkoutDayExercise
+        from app.models import WorkoutDayExercise
         wde = WorkoutDayExercise(
             workout_day_id=workout_day.id,
             exercise_id=exercise.id,

@@ -8,7 +8,7 @@ from sqlalchemy import Column, Integer, DateTime, Float, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from autoregulation.database import Base, get_schema_table_args, get_fk_reference
+from app.database import Base, get_schema_table_args, get_fk_reference
 
 
 class FormQualityTrend(Base):
@@ -26,7 +26,7 @@ class FormQualityTrend(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id")), nullable=False)
-    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id")), nullable=False)
+    exercise_id = Column(Integer, nullable=False)
     date = Column(DateTime, nullable=False, index=True)
     
     # Average form score for this exercise on this date
@@ -48,7 +48,6 @@ class FormQualityTrend(Base):
     
     # Relationships
     athlete = relationship("Athlete")
-    exercise = relationship("Exercise")
     
     def __repr__(self):
         return f"<FormQualityTrend(id={self.id}, athlete_id={self.athlete_id}, exercise_id={self.exercise_id}, score={self.average_form_score})>"

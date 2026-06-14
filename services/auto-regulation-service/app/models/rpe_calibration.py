@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, Float, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 
-from autoregulation.database import Base, get_schema_table_args, get_fk_reference
+from app.database import Base, get_schema_table_args, get_fk_reference
 
 
 class AthleteRPECalibration(Base):
@@ -17,7 +17,7 @@ class AthleteRPECalibration(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     athlete_id = Column(Integer, ForeignKey(get_fk_reference("athletes.id"), ondelete="CASCADE"), nullable=False, index=True)
-    exercise_id = Column(Integer, ForeignKey(get_fk_reference("exercises.id"), ondelete="CASCADE"), nullable=False)
+    exercise_id = Column(Integer, nullable=False)
     
     # RPE data
     reported_rpe = Column(Float, nullable=False)
@@ -37,7 +37,6 @@ class AthleteRPECalibration(Base):
     
     # Relationships
     athlete = relationship("Athlete", back_populates="rpe_calibrations")
-    exercise = relationship("Exercise", back_populates="rpe_calibrations")
     
     def __repr__(self):
         return f"<AthleteRPECalibration(athlete_id={self.athlete_id}, exercise_id={self.exercise_id}, rpe={self.reported_rpe})>"

@@ -1,7 +1,7 @@
 """
 Pydantic schemas for request/response validation.
 """
-from autoregulation.schemas.workout import (
+from app.schemas.workout import (
     ExerciseSetData,
     RecoveryMetricsData,
     RecoveryMetricsResponse,

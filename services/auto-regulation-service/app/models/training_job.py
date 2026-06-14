@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, String, Enum, DateTime, ForeignKey, Text
 from datetime import datetime, timezone
 import enum
 
-from autoregulation.database import Base, get_table_args_with_constraints, get_fk_reference
+from app.database import Base, get_table_args_with_constraints, get_fk_reference
 
 
 class MLJobStatus(str, enum.Enum):

@@ -2,14 +2,14 @@
 Celery application configuration for async ML training tasks.
 """
 from celery import Celery
-from autoregulation.config import settings
+from app.config import settings
 
 # Create Celery instance
 celery_app = Celery(
     "athleta_ml_tasks",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["autoregulation.tasks.ml_training"]
+    include=["app.modules.ml.tasks"]
 )
 
 # Configure Celery
@@ -35,8 +35,8 @@ celery_app.conf.update(
     
     # Task routing
     task_routes={
-        "autoregulation.tasks.ml_training.retrain_athlete_model": {"queue": "ml_training"},
-        "autoregulation.tasks.ml_training.check_and_queue_retraining": {"queue": "ml_training"},
+        "app.modules.ml.tasks.retrain_athlete_model": {"queue": "ml_training"},
+        "app.modules.ml.tasks.check_and_queue_retraining": {"queue": "ml_training"},
     },
     
     # Retry settings

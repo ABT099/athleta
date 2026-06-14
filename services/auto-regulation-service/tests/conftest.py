@@ -12,13 +12,44 @@ from testcontainers.redis import RedisContainer
 
 # Set test environment BEFORE importing any app modules
 # This ensures database.py uses PostgreSQL mode, not SQLite
-os.environ["JWT_SECRET"] = "test-jwt-secret-for-testing"
 os.environ["DATABASE_URL"] = "postgresql://test:test@localhost:5432/test"  # Placeholder, will be overridden by container
 
-from autoregulation.database import Base
-from autoregulation.utils.constants import (
+from app.database import Base
+from app.utils.constants import (
     Gender, TrainingExperience, TrainingType, PeriodizationModel, TrainingPhase
 )
+
+
+@pytest.fixture(autouse=True)
+def fake_exercise_service(monkeypatch):
+    """
+    Reset the in-memory exercise-service and route every ExerciseClient call to
+    it (no real channel). Autouse so all tests run the real service logic with
+    the gRPC boundary faked. Tests register exercises via ExerciseFactory or by
+    calling methods on the returned fake directly.
+    """
+    from app.clients.exercise_client import ExerciseClient
+    from tests.fake_exercise_service import FAKE
+
+    FAKE.reset()
+
+    monkeypatch.setattr(ExerciseClient, "__init__", lambda self, *a, **k: None)
+    monkeypatch.setattr(ExerciseClient, "__enter__", lambda self: self)
+    monkeypatch.setattr(ExerciseClient, "__exit__", lambda self, *a: False)
+    monkeypatch.setattr(
+        ExerciseClient, "get_exercises",
+        lambda self, ids: FAKE.get_exercises(ids),
+    )
+    monkeypatch.setattr(
+        ExerciseClient, "get_muscles",
+        lambda self, names=None: FAKE.get_muscles(names),
+    )
+    monkeypatch.setattr(
+        ExerciseClient, "find_substitutions",
+        lambda self, exercise_id, exclude_joints=None, exclude_ids=None, limit=5:
+            FAKE.find_substitutions(exercise_id, exclude_joints, exclude_ids, limit),
+    )
+    return FAKE
 
 
 @pytest.fixture(scope="session")
@@ -63,7 +94,7 @@ def db_session(postgres_container):
     
     # Import all models - app.models.__init__.py imports everything
     # This ensures all tables are registered with Base.metadata before create_all
-    import autoregulation.models  # noqa: F401
+    import app.models  # noqa: F401
     
     # Force evaluation of all model relationships by accessing __tablename__
     # This ensures foreign key references are fully resolved
@@ -94,52 +125,9 @@ def db_session(postgres_container):
     TestingSessionLocal = sessionmaker(bind=engine)
     session = TestingSessionLocal()
     
-    # Seed muscle groups for tests (required since Drizzle manages these in production)
-    try:
-        from autoregulation.models import MuscleGroupModel
-        # Seed basic muscle groups needed for tests
-        muscle_groups_data = [
-            # Chest (3)
-            ("mid_chest", "Mid Chest", "large", 72, None),
-            ("upper_chest", "Upper Chest", "large", 72, None),
-            ("lower_chest", "Lower Chest", "large", 72, None),
-            # Back (4)
-            ("lats", "Lats", "large", 72, None),
-            ("mid_back", "Mid Back", "medium", 60, None),
-            ("upper_traps", "Upper Traps", "medium", 60, None),
-            ("lower_traps", "Lower Traps", "medium", 60, None),
-            # Shoulders (3)
-            ("anterior_delt", "Front Delts", "medium", 60, None),
-            ("lateral_delt", "Side Delts", "small", 48, None),
-            ("posterior_delt", "Rear Delts", "small", 48, None),
-            # Arms (3)
-            ("biceps", "Biceps", "small", 48, None),
-            ("triceps", "Triceps", "small", 48, None),
-            ("forearms", "Forearms", "small", 48, None),
-            # Legs (5)
-            ("quadriceps", "Quadriceps", "large", 72, None),
-            ("hamstrings", "Hamstrings", "large", 72, None),
-            ("glutes", "Glutes", "large", 72, None),
-            ("hip_flexors", "Hip Flexors", "medium", 60, None),
-            ("calves", "Calves", "small", 48, None),
-            # Core (2)
-            ("abs", "Abs", "medium", 60, None),
-            ("erector_spinae", "Lower Back", "medium", 60, None),
-        ]
-        
-        for name, display_name, size, recovery_hours, antagonist_id in muscle_groups_data:
-            mg = MuscleGroupModel(
-                name=name,
-                display_name=display_name,
-                size=size,
-                base_recovery_hours=recovery_hours,
-                antagonist_id=antagonist_id
-            )
-            session.add(mg)
-        session.commit()
-    except Exception:
-        # If seeding fails, rollback and continue
-        session.rollback()
+    # Muscles and exercises now live in exercise-service and are fetched over
+    # gRPC, so there is nothing to seed locally. Tests that exercise the
+    # gRPC-backed services should mock app.clients.exercise_client.ExerciseClient.
     
     try:
         yield session
@@ -164,24 +152,11 @@ def celery_worker(redis_container):
     Useful for testing Celery tasks in integration tests.
     ML tests can use this to test real task execution.
     """
-    from autoregulation.celery_app import celery_app
+    from app.celery_app import celery_app
     
     # The celery_app is already configured with REDIS_URL from environment
     # which was set by the redis_container fixture
     return celery_app
-
-
-@pytest.fixture
-def mock_auth():
-    """
-    Mock authentication for tests.
-    Returns a function that can be used to override get_current_user dependency.
-    """
-    def mock_get_current_user():
-        """Mock authentication that returns a test user."""
-        return {"user_id": "test-user-123"}
-    
-    return mock_get_current_user
 
 
 @pytest.fixture
@@ -211,9 +186,9 @@ def mock_ml_services(mocker):
         Dict with mocked ML service objects
     """
     mocks = {
-        'ml_predictor': mocker.patch('autoregulation.services.progressive_overload_engine.ML_AVAILABLE', False),
-        'model_manager': mocker.patch('autoregulation.ml.model_manager.ModelManager'),
-        'workout_predictor': mocker.patch('autoregulation.ml.workout_predictor.WorkoutPredictorService'),
+        'ml_predictor': mocker.patch('app.modules.progression.progressive_overload_engine.ML_AVAILABLE', False),
+        'model_manager': mocker.patch('app.modules.ml.model_manager.ModelManager'),
+        'workout_predictor': mocker.patch('app.modules.ml.workout_predictor.WorkoutPredictorService'),
     }
     return mocks
 
@@ -225,11 +200,9 @@ def sample_athlete(db_session):
     return AthleteFactory.create(db_session)
 
 
-@pytest.fixture
-def sample_exercise(db_session):
-    """Create a sample exercise for testing."""
-    from tests.factories import ExerciseFactory
-    return ExerciseFactory.create_compound(db_session, name="Bench Press")
+# NOTE: the former `sample_exercise` fixture (DB-backed Exercise) was removed.
+# Exercises now live in exercise-service and are fetched over gRPC; tests that
+# need exercise data should mock app.clients.exercise_client.ExerciseClient.
 
 
 @pytest.fixture

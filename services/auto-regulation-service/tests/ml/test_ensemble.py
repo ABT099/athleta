@@ -12,7 +12,7 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
     LGBMRegressor = None
 
-from autoregulation.ml.bayesian_ensemble import BayesianEnsemble
+from app.modules.ml.bayesian_ensemble import BayesianEnsemble
 
 
 @pytest.mark.skipif(not LIGHTGBM_AVAILABLE, reason="LightGBM not available")

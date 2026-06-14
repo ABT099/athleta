@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator, ConfigDict
 from datetime import datetime
 from typing import List, Optional, Dict
 
-from autoregulation.utils.constants import (
+from app.utils.constants import (
     TrainingType, 
     TrainingExperience,
     PeriodizationModel,

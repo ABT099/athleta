@@ -26,7 +26,7 @@ jobs:
 
       - name: Run all tests including ML
         working-directory: services/auto-regulation-service
-        run: uv run pytest --verbose --cov=autoregulation --cov-report=html --cov-report=term
+        run: uv run pytest --verbose --cov=app --cov-report=html --cov-report=term
 
       - name: Upload coverage
         if: always()

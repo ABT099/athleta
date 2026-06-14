@@ -7,9 +7,9 @@ from unittest.mock import Mock, MagicMock
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
-from autoregulation.ml.sequential_features import SequentialFeatureEngineer
-from autoregulation.models import PerformanceTrend, RecoveryMetrics
-from autoregulation.utils.constants import SleepQuality
+from app.modules.ml.sequential_features import SequentialFeatureEngineer
+from app.models import PerformanceTrend, RecoveryMetrics
+from app.utils.constants import SleepQuality
 
 
 class TestSequentialFeatureEngineer:

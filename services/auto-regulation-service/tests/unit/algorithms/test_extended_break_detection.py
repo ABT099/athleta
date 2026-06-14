@@ -6,11 +6,11 @@ applies appropriate volume/intensity reductions to account for detraining.
 """
 import pytest
 from datetime import datetime, timedelta, timezone
-from autoregulation.services.progressive_overload_engine import ProgressiveOverloadEngine
-from autoregulation.models import (
+from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
+from app.models import (
     Athlete, WorkoutPlan, WorkoutDay, WorkoutSession, ExerciseSet
 )
-from autoregulation.utils.constants import (
+from app.utils.constants import (
     Gender, TrainingExperience, TrainingType, PeriodizationModel, TrainingPhase
 )
 from tests.factories import (

@@ -5,8 +5,8 @@ import pytest
 from unittest.mock import Mock, MagicMock
 from sqlalchemy.orm import Session
 
-from autoregulation.ml.model_selector import ModelSelector
-from autoregulation.models import WorkoutSession
+from app.modules.ml.model_selector import ModelSelector
+from app.models import WorkoutSession
 
 
 @pytest.mark.unit

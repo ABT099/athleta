@@ -13,10 +13,10 @@ try:
 except ImportError:
     LIGHTGBM_AVAILABLE = False
 
-from autoregulation.ml.workout_predictor import WorkoutPredictor, WorkoutPredictorService
-from autoregulation.ml.model_selector import ModelSelector
-from autoregulation.ml.bayesian_ensemble import BayesianEnsemble
-from autoregulation.models import Athlete, WorkoutSession, PerformanceTrend
+from app.modules.ml.workout_predictor import WorkoutPredictor, WorkoutPredictorService
+from app.modules.ml.model_selector import ModelSelector
+from app.modules.ml.bayesian_ensemble import BayesianEnsemble
+from app.models import Athlete, WorkoutSession, PerformanceTrend
 
 
 @pytest.mark.skipif(not LIGHTGBM_AVAILABLE, reason="LightGBM not available")
@@ -75,7 +75,7 @@ class TestMLIntegration:
         db.query.side_effect = query_side_effect
         
         # Mock feature engineering
-        with patch('autoregulation.ml.workout_predictor.FeatureEngineer') as mock_fe:
+        with patch('app.modules.ml.workout_predictor.FeatureEngineer') as mock_fe:
             mock_fe_instance = Mock()
             mock_fe.return_value = mock_fe_instance
             
@@ -135,7 +135,7 @@ class TestMLIntegration:
     
     def test_model_manager_save_load(self):
         """Test model manager can save and load models."""
-        from autoregulation.ml.model_manager import ModelManager
+        from app.modules.ml.model_manager import ModelManager
         import tempfile
         import shutil
         

@@ -5,9 +5,8 @@ Tests volume tracking, landmark calculations, and recommendations.
 """
 import pytest
 from datetime import datetime, timedelta
-from autoregulation.services.volume_manager import VolumeManager
-from autoregulation.utils.constants import TrainingExperience
-from autoregulation.models import Athlete, Exercise, WorkoutSession, ExerciseSet
+from app.modules.volume import VolumeManager
+from app.utils.constants import TrainingExperience
 
 
 class TestVolumeLandmarks:
@@ -17,7 +16,7 @@ class TestVolumeLandmarks:
         """Test MEV/MAV/MRV for beginner."""
         # Create a mock db session (would need proper setup in real test)
         # For now, test the logic directly
-        from autoregulation.services.volume_manager import VolumeManager
+        from app.modules.volume import VolumeManager
         from unittest.mock import Mock
         
         db = Mock()
@@ -35,7 +34,7 @@ class TestVolumeLandmarks:
     
     def test_get_volume_landmarks_advanced(self):
         """Test MEV/MAV/MRV for advanced."""
-        from autoregulation.services.volume_manager import VolumeManager
+        from app.modules.volume import VolumeManager
         from unittest.mock import Mock
         
         db = Mock()
@@ -51,22 +50,15 @@ class TestVolumeLandmarks:
         assert landmarks["mrv"] >= 20
         assert landmarks["mav"] == (landmarks["mev"] + landmarks["mrv"]) // 2
     
-    def test_muscle_size_adjustment(self, db_session):
+    def test_muscle_size_adjustment(self):
         """Test that muscle size affects landmarks."""
-        from autoregulation.services.volume_manager import VolumeManager
-        from autoregulation.models import MuscleGroupModel
-        
-        vm = VolumeManager(db_session)
-        
-        # Ensure muscle groups exist in test database
-        large_muscle = db_session.query(MuscleGroupModel).filter(
-            MuscleGroupModel.name == "quadriceps"
-        ).first()
-        
-        small_muscle = db_session.query(MuscleGroupModel).filter(
-            MuscleGroupModel.name == "biceps"
-        ).first()
-        
+        from app.modules.volume import VolumeManager
+        from unittest.mock import Mock
+
+        vm = VolumeManager(Mock())
+
+        # quadriceps (large) and biceps (small) come from the fake exercise-service
+
         # Large muscle (quadriceps)
         large_landmarks = vm.get_volume_landmarks(
             TrainingExperience.INTERMEDIATE,
@@ -89,7 +81,7 @@ class TestVolumePosition:
     
     def test_below_mev_position(self):
         """Test detection when volume is below MEV."""
-        from autoregulation.services.volume_manager import VolumeManager
+        from app.modules.volume import VolumeManager
         from unittest.mock import Mock
         
         db = Mock()
@@ -115,7 +107,7 @@ class TestVolumePosition:
     
     def test_above_mrv_position(self):
         """Test detection when volume is above MRV."""
-        from autoregulation.services.volume_manager import VolumeManager
+        from app.modules.volume import VolumeManager
         from unittest.mock import Mock
         
         db = Mock()
@@ -141,7 +133,7 @@ class TestVolumePosition:
     
     def test_optimal_position(self):
         """Test detection when volume is in optimal range."""
-        from autoregulation.services.volume_manager import VolumeManager
+        from app.modules.volume import VolumeManager
         from unittest.mock import Mock
         
         db = Mock()
@@ -170,7 +162,7 @@ class TestVolumeAdjustmentRecommendations:
     
     def test_increase_volume_recommendation(self):
         """Test recommendation to increase volume when below MEV."""
-        from autoregulation.services.volume_manager import VolumeManager
+        from app.modules.volume import VolumeManager
         from unittest.mock import Mock
         
         db = Mock()
@@ -199,7 +191,7 @@ class TestVolumeAdjustmentRecommendations:
     
     def test_reduce_volume_recommendation(self):
         """Test recommendation to reduce volume when above MRV."""
-        from autoregulation.services.volume_manager import VolumeManager
+        from app.modules.volume import VolumeManager
         from unittest.mock import Mock
         
         db = Mock()
@@ -228,7 +220,7 @@ class TestVolumeAdjustmentRecommendations:
     
     def test_maintain_volume_recommendation(self):
         """Test recommendation to maintain volume when optimal."""
-        from autoregulation.services.volume_manager import VolumeManager
+        from app.modules.volume import VolumeManager
         from unittest.mock import Mock
         
         db = Mock()
@@ -260,7 +252,7 @@ class TestAllMuscleVolumeStatus:
     
     def test_get_all_muscle_status(self):
         """Test getting volume status for all muscle groups."""
-        from autoregulation.services.volume_manager import VolumeManager
+        from app.modules.volume import VolumeManager
         from unittest.mock import Mock
         
         db = Mock()
@@ -281,28 +273,9 @@ class TestAllMuscleVolumeStatus:
             }
         
         vm.get_volume_position = Mock(side_effect=mock_get_volume_position)
-        
-        # Mock the database query for muscle groups
-        from autoregulation.models import MuscleGroupModel
-        # Create mock muscles with name attribute properly configured
-        mock_muscle1 = Mock(spec=MuscleGroupModel)
-        mock_muscle1.name = "mid_chest"
-        mock_muscle1.display_name = "Mid Chest"
-        
-        mock_muscle2 = Mock(spec=MuscleGroupModel)
-        mock_muscle2.name = "biceps"
-        mock_muscle2.display_name = "Biceps"
-        
-        mock_muscle3 = Mock(spec=MuscleGroupModel)
-        mock_muscle3.name = "quadriceps"
-        mock_muscle3.display_name = "Quadriceps"
-        
-        mock_muscles = [mock_muscle1, mock_muscle2, mock_muscle3]
-        
-        mock_query = Mock()
-        mock_query.all = Mock(return_value=mock_muscles)
-        db.query = Mock(return_value=mock_query)
-        
+
+        # All muscle groups come from the fake exercise-service (GetMuscles).
+
         status = vm.get_all_muscle_volume_status(
             athlete_id=1,
             experience=TrainingExperience.INTERMEDIATE

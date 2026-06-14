@@ -3,7 +3,7 @@ Helper utilities for common database operations.
 """
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from autoregulation.models import Athlete
+from app.models import Athlete
 
 
 def get_athlete_or_404(db: Session, athlete_id: int) -> Athlete:

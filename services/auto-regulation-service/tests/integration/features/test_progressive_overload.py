@@ -9,9 +9,9 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 from sqlalchemy.orm import Session
 
-from autoregulation.services.progressive_overload_engine import ProgressiveOverloadEngine
-from autoregulation.services.intensity_technique_service import IntensityTechniqueService
-from autoregulation.utils.constants import (
+from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
+from app.modules.prescription import IntensityTechniqueService
+from app.utils.constants import (
     SetType, RepStyle, TrainingType, TrainingPhase, TrainingExperience,
     ExerciseType, Gender
 )
@@ -548,7 +548,7 @@ class TestRecoveryImpactOnTechniques:
         )
         
         # Even with phase trigger, low readiness should limit options
-        from autoregulation.utils.constants import SET_TYPE_CONFIG
+        from app.utils.constants import SET_TYPE_CONFIG
         if result["set_type"] != SetType.STRAIGHT:
             config = SET_TYPE_CONFIG.get(result["set_type"], {})
             # Should not recommend high-fatigue techniques

@@ -201,10 +201,8 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/athleta
       REDIS_URL: redis://redis:6379/0
+      EXERCISE_SERVICE_ADDR: exercise-service:50051
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
-      JWT_ISSUER: athleta-api
     networks:
       - public
       - backend
@@ -251,14 +249,12 @@ services:
   celery-worker:
     container_name: athleta_celery_worker
     image: ghcr.io/${GITHUB_REPOSITORY}/auto-regulation-service:latest
-    command: celery -A autoregulation.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=2
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/athleta
       REDIS_URL: redis://redis:6379/0
+      EXERCISE_SERVICE_ADDR: exercise-service:50051
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
-      JWT_ISSUER: athleta-api
     networks:
       - backend
     depends_on:
