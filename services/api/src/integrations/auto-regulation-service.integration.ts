@@ -5,6 +5,8 @@ import { firstValueFrom } from 'rxjs';
 import { ClsService } from 'nestjs-cls';
 import { AxiosRequestHeaders } from 'axios';
 import {
+  AnalyzeSessionPayload,
+  AnalyzeSessionResponse,
   JointStressProfileDto,
   PrescriptionRequestDto,
   PrescriptionResponseDto,
@@ -117,5 +119,23 @@ export class AutoRegulationServiceIntegration {
       );
       throw error;
     }
+  }
+
+  /**
+   * Push a just-logged session (athlete + plan + session + sets + recovery) to
+   * auto-regulation for analysis. auto-regulation computes over the pushed
+   * context — making zero calls back to api on this path — and returns the
+   * adjustments + write-backs (PRs to persist, current calibration factor).
+   */
+  async analyzeSession(
+    payload: AnalyzeSessionPayload,
+  ): Promise<AnalyzeSessionResponse> {
+    const { data } = await firstValueFrom(
+      this.httpService.post<AnalyzeSessionResponse>(
+        `${this.baseURL}/api/analysis/sessions`,
+        payload,
+      ),
+    );
+    return data;
   }
 }

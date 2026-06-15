@@ -1,60 +1,42 @@
 """
-Workout rotation helper service.
+Workout rotation helper.
 
-Handles determining the next workout in rotation based on order_in_week.
-Schedule generation is handled by the frontend using day_of_week configuration.
+Determines the next workout in rotation from the plan's day order. The plan is
+api-owned and arrives in the Analysis Context, so this is pure logic over the
+plan's days — no database access.
 """
 from typing import Optional
-from sqlalchemy.orm import Session
 
-from app.models import WorkoutPlan
+from app.clients.api_client import PlanDTO
 
 
 class WorkoutScheduler:
-    """
-    Simple helper for workout rotation logic.
-    
-    Determines next workout in rotation based on order_in_week.
-    """
-    
-    def __init__(self, db: Session):
-        self.db = db
-    
+    """Pure rotation logic over an api-owned plan's days."""
+
+    @staticmethod
     def get_next_workout_in_rotation(
-        self,
-        athlete_id: int,
         completed_workout_day_id: int,
-        plan_id: int
+        plan: Optional[PlanDTO],
     ) -> Optional[int]:
         """
-        Get the next workout day ID in rotation.
-        
+        Get the next workout day id in rotation (wraps around), or None.
+
         Args:
-            athlete_id: Athlete ID (unused, kept for API compatibility)
-            completed_workout_day_id: Just completed workout day ID
-            plan_id: Plan ID
-            
-        Returns:
-            Next workout day ID or None
+            completed_workout_day_id: the workout day that was just completed
+            plan: the athlete's active plan (with its days), from the context
         """
-        plan = self.db.query(WorkoutPlan).filter(WorkoutPlan.id == plan_id).first()
-        
-        if not plan or not plan.workout_days:
+        if plan is None or not plan.days:
             return None
-        
-        sorted_days = sorted(plan.workout_days, key=lambda d: d.order_in_week)
-        
-        # Find current position
+
+        sorted_days = sorted(plan.days, key=lambda d: d.order_in_week)
+
         current_idx = next(
             (i for i, d in enumerate(sorted_days) if d.id == completed_workout_day_id),
-            None
+            None,
         )
-        
         if current_idx is None:
-            # If not found, return first workout
+            # Completed day not in this plan — start from the first day.
             return sorted_days[0].id
-        
-        # Return next in rotation (wrap around)
+
         next_idx = (current_idx + 1) % len(sorted_days)
         return sorted_days[next_idx].id
-

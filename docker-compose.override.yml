@@ -16,12 +16,6 @@ services:
     ports:
       - "6379:6379"
 
-  migrator:
-    image: athleta/migrator:local
-    build:
-      context: ./migrator
-      dockerfile: Dockerfile
-
   exercise-service:
     image: athleta/exercise-service:local
     build:

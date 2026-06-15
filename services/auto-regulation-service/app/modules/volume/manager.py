@@ -8,7 +8,8 @@ from typing import Dict, List, Optional, Set
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
-from app.models import Athlete, WorkoutSession, ExerciseSet
+from app.models import MuscleVolumeLog  # algo-owned, local
+from app.modules.analysis import AnalysisContext
 from app.clients.exercise_client import ExerciseClient
 from app.grpc_gen.exercise.v1 import exercise_pb2 as exercise_pb
 from app.utils.constants import (
@@ -196,6 +197,55 @@ class VolumeManager:
         
         return prioritized
     
+    def log_session_volume(self, ctx: AnalysisContext) -> List[MuscleVolumeLog]:
+        """
+        Compute and persist this session's per-muscle effective sets + volume load
+        (activation-weighted) into the local muscle_volume_log, so weekly volume
+        math reads locally. Returns the created rows (added, not committed).
+        """
+        sets = ctx.sets
+        if not sets:
+            return []
+
+        from app.utils.constants import MUSCLE_ROLE_WEIGHTS
+
+        sets_by_exercise: Dict[int, list] = {}
+        for s in sets:
+            sets_by_exercise.setdefault(s.exercise_id, []).append(s)
+
+        exercises = self._get_exercises(sets_by_exercise.keys())
+
+        # muscle_name -> [effective_sets, volume_load]
+        per_muscle: Dict[str, List[float]] = {}
+        for ex_id, ex_sets in sets_by_exercise.items():
+            exercise = exercises.get(ex_id)
+            if not exercise:
+                continue
+            effective = self._calculate_effective_sets_from_sets(ex_sets)
+            for target in exercise.muscles:
+                activation_weight = MUSCLE_ROLE_WEIGHTS.get(
+                    target.role, MUSCLE_ROLE_WEIGHTS["stabilizer"]
+                )
+                acc = per_muscle.setdefault(target.name, [0.0, 0.0])
+                acc[0] += effective * activation_weight
+                for s in ex_sets:
+                    eff = self._get_set_effectiveness(s.rir)
+                    acc[1] += s.weight * s.reps * eff * activation_weight
+
+        rows = []
+        for muscle_name, (eff_sets, vol_load) in per_muscle.items():
+            row = MuscleVolumeLog(
+                athlete_id=ctx.athlete_id,
+                workout_session_id=ctx.session.id,
+                session_date=ctx.session.session_date,
+                muscle_name=muscle_name,
+                effective_sets=eff_sets,
+                volume_load=vol_load,
+            )
+            self.db.add(row)
+            rows.append(row)
+        return rows
+
     def calculate_current_volume(
         self,
         athlete_id: int,
@@ -203,125 +253,34 @@ class VolumeManager:
         days_lookback: int = 7
     ) -> Dict:
         """
-        Calculate current weekly volume for a muscle group.
-        
-        Args:
-            athlete_id: Athlete ID
-            muscle_name: Muscle group name to analyze
-            days_lookback: Days to look back (default 7 for weekly volume)
-            
-        Returns:
-            Dict with volume metrics
+        Current weekly volume for a muscle group, summed from the local
+        muscle_volume_log (no api-owned session/set reads).
         """
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
-        
-        # Confirm the muscle exists in exercise-service
-        muscle = self._get_muscle(muscle_name)
 
-        if not muscle:
-            return {
-                "muscle_group": muscle_name,
-                "total_sets": 0.0,
-                "total_volume_load": 0.0,
-                "exercises_count": 0,
-                "days_analyzed": days_lookback,
-                "note": "Muscle group not found"
-            }
-        
-        # Get recent workout sessions
-        sessions = (
-            self.db.query(WorkoutSession)
+        rows = (
+            self.db.query(MuscleVolumeLog)
             .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= cutoff_date
+                MuscleVolumeLog.athlete_id == athlete_id,
+                MuscleVolumeLog.muscle_name == muscle_name,
+                MuscleVolumeLog.session_date >= cutoff_date,
             )
-            .order_by(WorkoutSession.session_date.desc())
             .all()
         )
-        
-        total_sets = 0.0
-        total_volume_load = 0.0
-        exercises_tracked = set()
-        
-        # Load all sets for all sessions in one query to avoid N+1
-        session_ids = [s.id for s in sessions]
-        all_sets = (
-            self.db.query(ExerciseSet)
-            .filter(ExerciseSet.workout_session_id.in_(session_ids))
-            .all()
-        )
-        
-        # Group sets by session_id
-        sets_by_session = {}
-        for set_record in all_sets:
-            session_id = set_record.workout_session_id
-            if session_id not in sets_by_session:
-                sets_by_session[session_id] = []
-            sets_by_session[session_id].append(set_record)
-        
-        # Collect all exercise IDs
-        all_exercise_ids = set()
-        for sets_list in sets_by_session.values():
-            for set_record in sets_list:
-                all_exercise_ids.add(set_record.exercise_id)
-        
-        # Map exercise_id -> role for exercises that target this muscle, via a
-        # single GetExercises round-trip (forward lookup on each exercise's
-        # muscle targets). Replaces the old ExerciseMuscle join.
-        exercises = self._get_exercises(all_exercise_ids)
-        muscle_role_by_exercise = {}
-        for ex_id, exercise in exercises.items():
-            for target in exercise.muscles:
-                if target.name == muscle_name:
-                    muscle_role_by_exercise[ex_id] = target.role
-                    break
 
-        # Process sessions using pre-loaded data
-        for session in sessions:
-            sets = sets_by_session.get(session.id, [])
+        total_sets = sum(r.effective_sets for r in rows)
+        total_volume_load = sum(r.volume_load for r in rows)
 
-            # Group sets by exercise
-            exercise_sets = {}
-            for set_record in sets:
-                ex_id = set_record.exercise_id
-                if ex_id not in exercise_sets:
-                    exercise_sets[ex_id] = []
-                exercise_sets[ex_id].append(set_record)
-
-            # Check each exercise for muscle group targeting
-            for ex_id, sets_list in exercise_sets.items():
-                # Use pre-loaded exercise->role map instead of querying
-                role = muscle_role_by_exercise.get(ex_id)
-
-                if role:
-                    exercises_tracked.add(ex_id)
-
-                    # Weight sets by role (convert role to activation weight)
-                    from app.utils.constants import MUSCLE_ROLE_WEIGHTS
-                    activation_weight = MUSCLE_ROLE_WEIGHTS.get(role, MUSCLE_ROLE_WEIGHTS["stabilizer"])
-                    
-                    # Calculate effective sets (only RIR 0-4 count toward MEV/MRV)
-                    effective_sets = self._calculate_effective_sets_from_sets(sets_list)
-                    total_sets += effective_sets * activation_weight
-                    
-                    # Calculate volume load (weight × reps) weighted by activation
-                    for set_record in sets_list:
-                        effectiveness = self._get_set_effectiveness(set_record.rir)
-                        total_volume_load += (
-                            set_record.weight * set_record.reps * 
-                            effectiveness * activation_weight
-                        )
-        
         return {
             "muscle_group": muscle_name,
             "total_sets": round(total_sets, 1),
             "total_volume_load": round(total_volume_load, 1),
-            "exercises_count": len(exercises_tracked),
+            "exercises_count": len(rows),
             "days_analyzed": days_lookback,
-            "note": "Volume weighted by muscle activation % (RIR 0-4 count fully, RIR 5-6 count 50%, RIR 7+ count 0%). Volume load weighted by set effectiveness and activation."
+            "note": "Weekly volume from the local muscle_volume_log (effective sets, activation-weighted)."
         }
-    
-    def _calculate_effective_sets_from_sets(self, sets_list: List[ExerciseSet]) -> float:
+
+    def _calculate_effective_sets_from_sets(self, sets_list) -> float:
         """
         Calculate effective sets from completed workout sets.
         
@@ -401,30 +360,19 @@ class VolumeManager:
         self,
         athlete_id: int,
         muscle_name: str,
+        experience: TrainingExperience,
         lookback_weeks: int = 4
     ) -> Optional[str]:
         """
-        Determine current volume cycle phase (overreach, deload, normal).
-        
-        Args:
-            athlete_id: Athlete ID
-            muscle_name: Muscle group name to check
-            lookback_weeks: Weeks to look back
-            
-        Returns:
-            "overreach", "deload", or None (normal)
+        Determine current volume cycle phase (overreach, deload, normal) from the
+        local volume log. Experience is supplied by the caller (from the context).
         """
         # Get current volume
         current_volume = self.calculate_current_volume(
             athlete_id, muscle_name, days_lookback=lookback_weeks * 7
         )
-        
-        # Get athlete experience
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            return None
-        
-        landmarks = self.get_volume_landmarks(athlete.training_experience, muscle_name)
+
+        landmarks = self.get_volume_landmarks(experience, muscle_name)
         mrv = landmarks["mrv"]
         mev = landmarks["mev"]
         

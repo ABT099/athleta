@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.models import ExerciseSet, WorkoutSession
+from app.models import ExerciseProgressionTracking  # algo-owned, local per-exercise history
+from app.modules.analysis import AnalysisContext
 from app.clients.exercise_client import ExerciseClient
 from app.utils.constants import (
     TrainingExperience, TrainingType, TrainingPhase
@@ -43,32 +44,23 @@ class PlateauInterventionService:
 
     def detect_and_intervene(
         self,
-        athlete_id: int,
-        workout_day_id: int,
-        session_data: Dict,
+        ctx: AnalysisContext,
         performance_analysis: Dict
     ) -> Dict:
         """
-        Detect plateaus in completed workout and recommend interventions.
-        
-        Args:
-            athlete_id: Athlete ID
-            workout_day_id: Completed workout day ID
-            session_data: Completed workout session data
-            performance_analysis: Performance analysis from engine
-            
-        Returns:
-            Dict with plateau detections and intervention recommendations
+        Detect plateaus for the exercises in the completed session (from the
+        context) and recommend interventions. Plateau detection reads the local
+        per-exercise progression history.
         """
+        athlete_id = ctx.athlete_id
         interventions = []
         exercise_substitutions = {}
         volume_cycle_phase = None
         periodization_adjustment = None
-        
-        # Get exercises from completed session
-        exercise_sets = session_data.get("exercise_sets", [])
-        exercise_ids = list(set(s["exercise_id"] for s in exercise_sets if s.get("exercise_id")))
-        
+
+        # Exercises from the completed session
+        exercise_ids = ctx.exercise_ids
+
         # Check each exercise for plateau
         for exercise_id in exercise_ids:
             plateau_info = self._detect_plateau(athlete_id, exercise_id)
@@ -120,88 +112,29 @@ class PlateauInterventionService:
     
     def _detect_plateau(self, athlete_id: int, exercise_id: int) -> Dict:
         """
-        Detect if exercise has plateaued.
-        
-        Enhanced version that also checks for technique breakdown and RPE trends.
+        Detect if an exercise has plateaued, from the local per-exercise progression
+        history (ExerciseProgressionTracking carries per-session volume_load + RPE).
         """
-        # Get last 4-5 sessions for this exercise
-        recent_sets = (
-            self.db.query(ExerciseSet)
-            .join(WorkoutSession)
+        rows = (
+            self.db.query(ExerciseProgressionTracking)
             .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                ExerciseSet.exercise_id == exercise_id
+                ExerciseProgressionTracking.athlete_id == athlete_id,
+                ExerciseProgressionTracking.exercise_id == exercise_id,
             )
-            .order_by(desc(WorkoutSession.session_date))
-            .limit(30)  # Get enough sets to cover 4-5 sessions
+            .order_by(desc(ExerciseProgressionTracking.session_date))
+            .limit(5)
             .all()
         )
-        
-        if len(recent_sets) < 6:
-            return {"is_plateau": False, "sessions_analyzed": 0}
-        
-        # Group by session and analyze
-        session_data = {}
-        for set_record in recent_sets:
-            session_id = set_record.workout_session_id
-            if session_id not in session_data:
-                session_data[session_id] = {
-                    "sets": [],
-                    "session_date": None
-                }
-            session_data[session_id]["sets"].append(set_record)
-        
-        # Load all sessions upfront to avoid N+1 queries
-        session_ids = list(session_data.keys())
-        sessions = (
-            self.db.query(WorkoutSession)
-            .filter(WorkoutSession.id.in_(session_ids))
-            .all()
-        )
-        session_map = {s.id: s for s in sessions}
-        
-        # Populate session dates from map
-        for session_id in session_data.keys():
-            if not session_data[session_id]["session_date"]:
-                session = session_map.get(session_id)
-                if session:
-                    session_data[session_id]["session_date"] = session.session_date
-        
-        # Analyze each session
-        sessions_analyzed = []
-        for session_id, data in session_data.items():
-            sets = data["sets"]
-            if not sets:
-                continue
-            
-            # Get best set (highest volume)
-            best_set = max(sets, key=lambda s: s.weight * s.reps)
-            avg_rpe = sum(s.rpe for s in sets if s.rpe) / len([s for s in sets if s.rpe]) if any(s.rpe for s in sets) else None
-            
-            sessions_analyzed.append({
-                "session_id": session_id,
-                "date": data["session_date"],
-                "weight": best_set.weight,
-                "reps": best_set.reps,
-                "volume": best_set.weight * best_set.reps,
-                "avg_rpe": avg_rpe
-            })
-        
-        # Sort by date (most recent first)
-        # Handle None dates and ensure all datetimes are in UTC for consistent sorting
-        def normalize_datetime(dt):
-            if dt is None:
-                return datetime.min.replace(tzinfo=timezone.utc)
-            if dt.tzinfo is None:
-                return dt.replace(tzinfo=timezone.utc)
-            # Convert timezone-aware datetime to UTC
-            return dt.astimezone(timezone.utc)
-        
-        sessions_analyzed.sort(
-            key=lambda x: normalize_datetime(x["date"]),
-            reverse=True
-        )
-        
+
+        sessions_analyzed = [
+            {
+                "date": r.session_date,
+                "volume": r.volume_load,
+                "avg_rpe": r.average_rpe,
+            }
+            for r in rows
+        ]
+
         if len(sessions_analyzed) < 3:
             return {"is_plateau": False, "sessions_analyzed": len(sessions_analyzed)}
         

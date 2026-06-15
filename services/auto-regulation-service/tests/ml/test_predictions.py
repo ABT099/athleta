@@ -16,7 +16,7 @@ except ImportError:
 from app.modules.ml.workout_predictor import WorkoutPredictor, WorkoutPredictorService
 from app.modules.ml.model_selector import ModelSelector
 from app.modules.ml.bayesian_ensemble import BayesianEnsemble
-from app.models import Athlete, WorkoutSession, PerformanceTrend
+from app.models import PerformanceTrend
 
 
 @pytest.mark.skipif(not LIGHTGBM_AVAILABLE, reason="LightGBM not available")
@@ -32,12 +32,7 @@ class TestMLIntegration:
         # Mock session count queries
         def query_side_effect(model):
             mock_query = Mock()
-            if model == WorkoutSession:
-                mock_query.filter.return_value.count.return_value = 15
-            elif model == Athlete:
-                mock_athlete = Mock()
-                mock_athlete.id = 1
-                mock_query.filter.return_value.first.return_value = mock_athlete
+            mock_query.filter.return_value.count.return_value = 15
             return mock_query
         
         db.query.side_effect = query_side_effect
@@ -61,18 +56,7 @@ class TestMLIntegration:
         mock_session_query = Mock()
         mock_session_query.filter.return_value.count.return_value = 15
         
-        # Mock athlete query
-        mock_athlete_query = Mock()
-        mock_athlete_query.filter.return_value.first.return_value = mock_athlete
-        
-        def query_side_effect(model):
-            if model == WorkoutSession:
-                return mock_session_query
-            elif model == Athlete:
-                return mock_athlete_query
-            return Mock()
-        
-        db.query.side_effect = query_side_effect
+        db.query.return_value = mock_session_query
         
         # Mock feature engineering
         with patch('app.modules.ml.workout_predictor.FeatureEngineer') as mock_fe:
@@ -92,9 +76,10 @@ class TestMLIntegration:
             )
             
             service = WorkoutPredictorService(db)
-            
-            # Test training
-            success, metrics, error = service.train_athlete_model(athlete_id=1)
+
+            # Test training (TrainingHistory carries the api-owned inputs)
+            history = Mock(athlete_id=1)
+            success, metrics, error = service.train_athlete_model(history)
             
             # Should succeed with 15 sessions
             assert success or error is not None  # Either succeeds or gives error

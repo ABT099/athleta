@@ -1,12 +1,26 @@
 import { Injectable, NotFoundException, Inject, Logger } from '@nestjs/common';
 import { DRIZZLE, type DrizzleDB } from '../common/database/database.provider';
-import { workoutDayExercises, workoutDays, workoutPlans } from 'src/db/schema';
+import {
+  workoutDayExercises,
+  workoutDays,
+  workoutPlans,
+  athletes,
+  workoutSessions,
+  exerciseSets,
+  recoveryMetrics,
+  exercisePersonalRecords,
+} from 'src/db/schema';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { WorkoutExerciseDto } from '../plans/dto/create-plan.dto';
 import { ExerciseClientService } from '../exercise/exercise-client.service';
 import { MuscleImageIntegration } from 'src/integrations/muscle-image.integration';
 import { AutoRegulationServiceIntegration } from 'src/integrations/auto-regulation-service.integration';
-import { PrescriptionRequestDto } from 'src/integrations/integrations.types';
+import {
+  PrescriptionRequestDto,
+  PrUpdate,
+} from 'src/integrations/integrations.types';
+import { InternalService } from '../internal/internal.service';
+import { CompleteWorkoutDto } from './dto/complete-workout.dto';
 import { DayOfWeek, TrainingType } from 'src/constants';
 import { InferredExercise, MuscleTarget } from '../exercise/exercise.types';
 import {
@@ -23,8 +37,249 @@ export class WorkoutsService {
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly exerciseClient: ExerciseClientService,
     private readonly muscleImageIntegration: MuscleImageIntegration,
-    private readonly AutoRegulationServiceIntegration: AutoRegulationServiceIntegration,
+    private readonly autoReg: AutoRegulationServiceIntegration,
+    private readonly internalService: InternalService,
   ) {}
+
+  /**
+   * Complete a logged workout: persist the session/sets/recovery in api's DB,
+   * push the full context to auto-regulation for analysis, then persist the
+   * write-backs it returns (PRs + calibration factor). The log is committed
+   * first; analysis is best-effort, so a transient auto-reg failure still keeps
+   * the workout the athlete logged.
+   */
+  async completeWorkout(userId: number, dto: CompleteWorkoutDto) {
+    const athlete = await this.db.query.athletes.findFirst({
+      where: eq(athletes.userId, userId),
+    });
+    if (!athlete) {
+      throw new NotFoundException(`No athlete profile for user ${userId}`);
+    }
+
+    const sessionDate = dto.sessionDate ?? new Date().toISOString();
+    const totalVolume = dto.exerciseSets.reduce(
+      (sum, s) => sum + s.weight * s.reps,
+      0,
+    );
+
+    // 1. Persist the log (one transaction in api's DB).
+    const { session, sets, recovery } = await this.db.transaction(
+      async (tx) => {
+        const [session] = await tx
+          .insert(workoutSessions)
+          .values({
+            athleteId: athlete.id,
+            workoutDayId: dto.workoutDayId,
+            sessionDate,
+            durationMinutes: dto.durationMinutes ?? null,
+            overallRpe: dto.overallRpe ?? null,
+            overallFeeling: dto.overallFeeling ?? null,
+            notes: dto.notes ?? null,
+            totalVolume,
+          })
+          .returning();
+
+        const sets = await tx
+          .insert(exerciseSets)
+          .values(
+            dto.exerciseSets.map((s) => ({
+              workoutSessionId: session.id,
+              exerciseId: s.exerciseId,
+              setNumber: s.setNumber,
+              weight: s.weight,
+              reps: s.reps,
+              rpe: s.rpe ?? null,
+              rir: s.rir ?? null,
+              formQuality: s.formQuality ?? null,
+              setTypeUsed: (s.setTypeUsed ??
+                null) as (typeof exerciseSets.$inferInsert)['setTypeUsed'],
+              repStyleUsed: (s.repStyleUsed ??
+                null) as (typeof exerciseSets.$inferInsert)['repStyleUsed'],
+              techniqueDetails: s.techniqueDetails ?? null,
+              notes: s.notes ?? null,
+            })),
+          )
+          .returning();
+
+        let recovery: typeof recoveryMetrics.$inferSelect | null = null;
+        if (dto.recoveryMetrics) {
+          const r = dto.recoveryMetrics;
+          [recovery] = await tx
+            .insert(recoveryMetrics)
+            .values({
+              athleteId: athlete.id,
+              date: sessionDate,
+              sleepQuality: r.sleepQuality as (typeof recoveryMetrics.$inferInsert)['sleepQuality'],
+              sleepHours: r.sleepHours ?? null,
+              overallSoreness: r.overallSoreness ?? null,
+              muscleSoreness: r.muscleSoreness ?? null,
+              stressLevel: r.stressLevel ?? null,
+              energyLevel: r.energyLevel ?? null,
+              nutritionAdherence: r.nutritionAdherence ?? null,
+              hydrationLevel: r.hydrationLevel ?? null,
+              notes: r.notes ?? null,
+            })
+            .returning();
+        }
+
+        return { session, sets, recovery };
+      },
+    );
+
+    // 2. Assemble the analyze request api pushes (athlete-owned data + the log).
+    const [athleteDto, planDto, prDtos] = await Promise.all([
+      this.internalService.getAthlete(athlete.id),
+      this.internalService.getActivePlanOrNull(athlete.id),
+      this.internalService.listPersonalRecords(athlete.id),
+    ]);
+
+    const sessionDto = {
+      id: session.id,
+      athlete_id: session.athleteId,
+      workout_day_id: session.workoutDayId,
+      session_date: session.sessionDate,
+      duration_minutes: session.durationMinutes,
+      overall_rpe: session.overallRpe,
+      overall_feeling: session.overallFeeling,
+      total_volume: session.totalVolume,
+      estimated_fatigue: session.estimatedFatigue,
+      notes: session.notes,
+      sets: sets.map((s) => ({
+        id: s.id,
+        workout_session_id: s.workoutSessionId,
+        exercise_id: s.exerciseId,
+        set_number: s.setNumber,
+        weight: s.weight,
+        reps: s.reps,
+        rpe: s.rpe,
+        rir: s.rir,
+        form_quality: s.formQuality,
+        set_type_used: s.setTypeUsed,
+        rep_style_used: s.repStyleUsed,
+        technique_details: s.techniqueDetails,
+        notes: s.notes,
+      })),
+    };
+    const recoveryDto = recovery
+      ? this.internalService.toRecoveryDto(recovery)
+      : null;
+
+    // 3. Push to auto-regulation. Analysis is best-effort.
+    let analysis;
+    try {
+      analysis = await this.autoReg.analyzeSession({
+        athlete: athleteDto,
+        plan: planDto,
+        session: sessionDto,
+        recovery: recoveryDto,
+        personal_records: prDtos,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Session ${session.id} persisted but analysis failed: ${message}`,
+      );
+      return { session_id: session.id, analysis: null };
+    }
+
+    // 4. Persist the write-backs (PRs + calibration factor).
+    await this.persistPrUpdates(athlete.id, analysis.pr_updates?.updates ?? []);
+    if (typeof analysis.calibration_factor === 'number') {
+      await this.db
+        .update(athletes)
+        .set({ rpeCalibrationFactor: analysis.calibration_factor })
+        .where(eq(athletes.id, athlete.id));
+    }
+
+    return { session_id: session.id, analysis };
+  }
+
+  /**
+   * Apply PR write-backs from auto-regulation into exercise_personal_records,
+   * grouped per exercise and upserted on (athlete_id, exercise_id).
+   */
+  private async persistPrUpdates(athleteId: number, updates: PrUpdate[]) {
+    if (updates.length === 0) return;
+
+    const byExercise = new Map<number, PrUpdate[]>();
+    for (const u of updates) {
+      const list = byExercise.get(u.exercise_id) ?? [];
+      list.push(u);
+      byExercise.set(u.exercise_id, list);
+    }
+
+    const now = new Date().toISOString();
+    for (const [exerciseId, exerciseUpdates] of byExercise) {
+      const fields: Partial<typeof exercisePersonalRecords.$inferInsert> = {};
+      let prCount = 0;
+      let latestDate = now;
+      for (const u of exerciseUpdates) {
+        const date = typeof u.date === 'string' ? u.date : now;
+        switch (u.pr_type) {
+          case '1RM':
+            fields.oneRepMax = u.new_value;
+            fields.oneRmDate = date;
+            break;
+          case '3RM':
+            fields.threeRepMax = u.new_value;
+            fields.threeRmDate = date;
+            break;
+          case '5RM':
+            fields.fiveRepMax = u.new_value;
+            fields.fiveRmDate = date;
+            break;
+          case '8RM':
+            fields.eightRepMax = u.new_value;
+            fields.eightRmDate = date;
+            break;
+          case '10RM':
+            fields.tenRepMax = u.new_value;
+            fields.tenRmDate = date;
+            break;
+          case '12RM':
+            fields.twelveRepMax = u.new_value;
+            fields.twelveRmDate = date;
+            break;
+          case 'volume':
+            fields.maxVolumeSession = u.new_value;
+            fields.maxVolumeDate = date;
+            break;
+          case 'total_reps':
+            fields.maxTotalReps = Math.round(u.new_value);
+            fields.maxRepsDate = date;
+            break;
+          default:
+            continue;
+        }
+        prCount += 1;
+        latestDate = date;
+      }
+      if (prCount === 0) continue;
+
+      await this.db
+        .insert(exercisePersonalRecords)
+        .values({
+          athleteId,
+          exerciseId,
+          ...fields,
+          totalPrCount: prCount,
+          lastPrDate: latestDate,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [
+            exercisePersonalRecords.athleteId,
+            exercisePersonalRecords.exerciseId,
+          ],
+          set: {
+            ...fields,
+            totalPrCount: sql`${exercisePersonalRecords.totalPrCount} + ${prCount}`,
+            lastPrDate: latestDate,
+            updatedAt: now,
+          },
+        });
+    }
+  }
 
   async substituteExercise(
     workoutDayId: number,
@@ -192,7 +447,7 @@ export class WorkoutsService {
     // Generate all prescriptions in one batch request
     const prescriptions =
       exercisesToAdd.length > 0
-        ? await this.AutoRegulationServiceIntegration.generateBatchPrescriptions(
+        ? await this.autoReg.generateBatchPrescriptions(
             prescriptionRequests,
           )
         : [];
@@ -311,7 +566,7 @@ export class WorkoutsService {
     // Generate prescriptions
     const prescriptions =
       prescriptionRequests.length > 0
-        ? await this.AutoRegulationServiceIntegration.generateBatchPrescriptions(
+        ? await this.autoReg.generateBatchPrescriptions(
             prescriptionRequests,
           )
         : [];

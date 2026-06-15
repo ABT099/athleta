@@ -1,171 +1,85 @@
 """
-Recovery assessment and readiness scoring service.
+Recovery assessment and readiness scoring.
 
-Evaluates athlete readiness based on sleep, soreness, stress, and other wellness markers.
+Readiness is computed from the current session's recovery metrics (in the
+Analysis Context); cumulative fatigue is computed from auto-regulation's OWN
+denormalised performance_trends (per-session load + cns_load + readiness), so no
+api-owned sessions/sets are read.
 """
-import json
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
-from sqlalchemy.orm import Session
 
-from app.models import RecoveryMetrics, WorkoutSession, Athlete, ExerciseSet
-from app.clients.exercise_client import ExerciseClient
-from app.grpc_gen.exercise.v1 import exercise_pb2 as exercise_pb
-
-# proto Muscle.Size enum -> the size string callers expect
-_MUSCLE_SIZE_TO_STR = {
-    exercise_pb.Muscle.SIZE_SMALL: "small",
-    exercise_pb.Muscle.SIZE_MEDIUM: "medium",
-    exercise_pb.Muscle.SIZE_LARGE: "large",
-}
+from app.modules.analysis import AnalysisContext
 from app.utils.constants import (
     SleepQuality, SLEEP_QUALITY_MULTIPLIERS,
     Gender, AGE_PROGRESSION_MODIFIERS, GENDER_RECOVERY_MODIFIERS,
-    TrainingExperience, CNS_HEAVY_PATTERNS, CNS_MODERATE_PATTERNS,
-    CNS_FATIGUE_PER_HEAVY_COMPOUND, CNS_FATIGUE_PER_MODERATE_COMPOUND,
+    TrainingExperience,
     TRAINING_AGE_EXPERIENCED_THRESHOLD, TRAINING_AGE_VETERAN_THRESHOLD,
     TRAINING_AGE_BOOST_CAP, TRAINING_AGE_BOOST_RATE,
     AGE_PENALTY_OFFSET_EXPERIENCED, AGE_PENALTY_OFFSET_VETERAN,
     AGE_PENALTY_OFFSET_RATE_EXPERIENCED, AGE_PENALTY_OFFSET_RATE_VETERAN,
     RECOVERY_MODIFIER_MIN, RECOVERY_MODIFIER_MAX,
-    DURATION_SCORE_DEFAULT, ADVANCED_RECOVERY_MODIFIER
+    DURATION_SCORE_DEFAULT,
 )
 
-class RecoveryAnalyzer:
-    """
-    Analyzes recovery status and calculates readiness scores.
-    """
-    
-    def __init__(self, db: Session):
-        self.db = db
 
-    def _get_exercises_map(self, exercise_ids) -> Dict[int, "exercise_pb.Exercise"]:
-        """Return {id: Exercise} from exercise-service for the given ids."""
-        ids = list({eid for eid in exercise_ids if eid})
-        if not ids:
-            return {}
-        with ExerciseClient() as client:
-            return {ex.id: ex for ex in client.get_exercises(ids)}
+class RecoveryAnalyzer:
+    """Analyzes recovery status and calculates readiness scores."""
+
+    def __init__(self, db=None):
+        # db retained for interface symmetry; recovery reads come from the
+        # context and local trends, not direct queries.
+        self.db = db
 
     @staticmethod
     def calculate_gender_recovery_modifier(
-        gender: Gender, 
-        age: int, 
+        gender: Gender,
+        age: int,
         training_age_years: Optional[int] = None
     ) -> float:
         """
-        Calculate gender-specific recovery modifier with nuanced approach.
-        
-        Women show greater fatigue resistance in submaximal work, but recovery
-        rates are more nuanced and vary by exercise type, volume, and individual factors.
-        Individual variability within genders is often larger than between-gender differences.
-        
-        References:
-        - Kraemer et al. (2001): Gender differences in recovery from resistance training
-        - Hunter (2014): Sex differences in human fatigability
-        - Individual variability often exceeds gender differences
-        
-        Args:
-            gender: Athlete gender
-            age: Chronological age
-            training_age_years: Years of consistent training (optional, can be inferred)
-            
-        Returns:
-            Recovery multiplier (1.0 = baseline)
-            Note: Individual variability is typically larger than gender differences
+        Gender-specific recovery modifier (fatigue-resistance focused). Individual
+        variability typically exceeds gender differences.
         """
-        # Base modifier focuses on fatigue resistance rather than blanket "faster recovery"
-        # Women show ~10% greater fatigue resistance in submaximal work
         base_modifier = GENDER_RECOVERY_MODIFIERS[gender]
-        
-        # Age adjustments (softer than before, with wider ranges)
-        # Well-trained older athletes may progress similar to younger novices
         age_modifier = RecoveryAnalyzer.calculate_age_progression_modifier(age, training_age_years)
-        
-        # Training age consideration: experienced athletes adapt better regardless of age
         if training_age_years is not None and training_age_years >= TRAINING_AGE_EXPERIENCED_THRESHOLD:
-            # Experienced athletes have better recovery capacity
-            training_age_boost = min(TRAINING_AGE_BOOST_CAP, training_age_years * TRAINING_AGE_BOOST_RATE)  # Up to 5% boost
+            training_age_boost = min(TRAINING_AGE_BOOST_CAP, training_age_years * TRAINING_AGE_BOOST_RATE)
             age_modifier *= (1.0 + training_age_boost)
-        
-        # Combine gender and age modifiers
-        # Individual variability is emphasized - these are starting points
         combined_modifier = base_modifier * age_modifier
-        
-        # Clamp to reasonable range
         combined_modifier = max(RECOVERY_MODIFIER_MIN, min(RECOVERY_MODIFIER_MAX, combined_modifier))
-        
         return round(combined_modifier, 3)
-    
+
     @staticmethod
     def calculate_age_progression_modifier(
-        age: int, 
+        age: int,
         training_age_years: Optional[int] = None
     ) -> float:
-        """
-        Calculate age-based progression rate modifier with softer ranges.
-        
-        Distinguishes between chronological age and training age.
-        Masters athletes (40+) can still achieve significant gains with proper programming.
-        Well-trained older athletes may progress similar to younger novices.
-        
-        References:
-        - Schoenfeld et al. (2016): Effects of age on muscle hypertrophy
-        - Ahtiainen et al. (2016): Training adaptations across age groups
-        - Tanaka & Seals (2008): Aging athlete adaptations
-        
-        Args:
-            age: Chronological age
-            training_age_years: Years of consistent training (optional)
-            
-        Returns:
-            Progression multiplier (1.0 = baseline)
-        """
-        # Find base modifier from age brackets (softer ranges than before)
+        """Age-based progression modifier; training age can offset age-related decline."""
         base_modifier = 1.0
         for (min_age, max_age), modifier in AGE_PROGRESSION_MODIFIERS.items():
             if min_age <= age <= max_age:
                 base_modifier = modifier
                 break
-        
-        # If training age is provided, adjust based on training experience
-        # Well-trained older athletes can offset age-related decline
         if training_age_years is not None and base_modifier < 1.0:
             if training_age_years >= TRAINING_AGE_VETERAN_THRESHOLD:
-                # Very experienced: offset 10-20% of age penalty
-                # At 10 years: 10% offset, increases by 2% per additional year, capped at 20%
                 offset = min(AGE_PENALTY_OFFSET_VETERAN, AGE_PENALTY_OFFSET_EXPERIENCED + (training_age_years - TRAINING_AGE_VETERAN_THRESHOLD) * AGE_PENALTY_OFFSET_RATE_VETERAN)
                 base_modifier = base_modifier + (1.0 - base_modifier) * offset
             elif training_age_years >= TRAINING_AGE_EXPERIENCED_THRESHOLD:
-                # Moderately experienced: offset 5-10% of age penalty
-                # At 5 years: 5% offset, increases by 1% per additional year, capped at 10%
                 offset = min(AGE_PENALTY_OFFSET_EXPERIENCED, 0.05 + (training_age_years - TRAINING_AGE_EXPERIENCED_THRESHOLD) * AGE_PENALTY_OFFSET_RATE_EXPERIENCED)
                 base_modifier = base_modifier + (1.0 - base_modifier) * offset
-        
         return round(base_modifier, 3)
-    
+
     @staticmethod
     def estimate_training_age_from_experience(training_experience: TrainingExperience) -> int:
-        """
-        Estimate training age in years from experience level.
-        
-        This is a rough estimate - actual training age should be provided when available.
-        
-        Args:
-            training_experience: Training experience enum
-            
-        Returns:
-            Estimated years of training
-        """
-        from app.utils.constants import TrainingExperience
-        
+        """Rough estimate of training age in years from experience level."""
         estimates = {
-            TrainingExperience.BEGINNER: 0,  # 0-1 years
-            TrainingExperience.INTERMEDIATE: 2,  # 2-4 years
-            TrainingExperience.ADVANCED: 5,  # 5+ years
+            TrainingExperience.BEGINNER: 0,
+            TrainingExperience.INTERMEDIATE: 2,
+            TrainingExperience.ADVANCED: 5,
         }
         return estimates.get(training_experience, 0)
-    
+
     def calculate_readiness_score(
         self,
         sleep_quality: SleepQuality,
@@ -176,85 +90,42 @@ class RecoveryAnalyzer:
         muscle_soreness: Optional[Dict[str, int]] = None
     ) -> float:
         """
-        Calculate overall readiness score (0.0 - 1.0).
-        
-        Weighted formula:
-        - Sleep: 40%
-        - Soreness: 30%
-        - Stress: 15%
-        - Energy: 15%
-        
-        Args:
-            sleep_quality: Sleep quality enum
-            sleep_hours: Hours of sleep
-            overall_soreness: 1-10 scale (1=none, 10=extreme)
-            stress_level: 1-10 scale
-            energy_level: 1-10 scale (1=exhausted, 10=energized)
-            muscle_soreness: Dict of muscle-specific soreness
-            
-        Returns:
-            Readiness score (0.0 - 1.0)
+        Overall readiness (0.0-1.0). Weighted: sleep 40%, soreness 30%, stress 15%,
+        energy 15%.
         """
         scores = []
         weights = []
-        
-        # Sleep score (40% weight - increased from 35%)
+
         sleep_score = self._calculate_sleep_score(sleep_quality, sleep_hours)
         scores.append(sleep_score)
         weights.append(0.40)
-        
-        # Soreness score (30% weight - increased from 25%)
+
         if overall_soreness is not None:
-            # Invert soreness: 10 = very sore = low score
-            soreness_score = (10 - overall_soreness) / 10
-            scores.append(soreness_score)
+            scores.append((10 - overall_soreness) / 10)
             weights.append(0.30)
-        
-        # Stress score (15% weight - unchanged)
+
         if stress_level is not None:
-            # Lower stress = better readiness
-            stress_score = (10 - stress_level) / 10
-            scores.append(stress_score)
+            scores.append((10 - stress_level) / 10)
             weights.append(0.15)
-        
-        # Energy score (15% weight - unchanged)
+
         if energy_level is not None:
-            energy_score = energy_level / 10
-            scores.append(energy_score)
+            scores.append(energy_level / 10)
             weights.append(0.15)
-        
-        # Normalize weights
+
         total_weight = sum(weights)
         normalized_weights = [w / total_weight for w in weights]
-        
-        # Calculate weighted average
         readiness = sum(score * weight for score, weight in zip(scores, normalized_weights))
-        
         return round(readiness, 3)
-    
+
     def _calculate_sleep_score(
         self,
         sleep_quality: SleepQuality,
         sleep_hours: Optional[float]
     ) -> float:
-        """
-        Calculate sleep score component.
-        
-        Args:
-            sleep_quality: Sleep quality enum
-            sleep_hours: Hours of sleep
-            
-        Returns:
-            Sleep score (0.0 - 1.0)
-        """
-        # Base score from quality
+        """Sleep score component (quality + duration)."""
         quality_multiplier = SLEEP_QUALITY_MULTIPLIERS[sleep_quality]
-        
         if sleep_hours is None:
             return quality_multiplier
-        
-        # Optimal sleep: 7-9 hours
-        # Penalize if too little or too much
         if 7 <= sleep_hours <= 9:
             duration_score = 1.0
         elif 6 <= sleep_hours < 7 or 9 < sleep_hours <= 10:
@@ -263,507 +134,107 @@ class RecoveryAnalyzer:
             duration_score = DURATION_SCORE_DEFAULT
         else:
             duration_score = 0.6
-        
-        # Combine quality and duration
         return (quality_multiplier + duration_score) / 2
-    
-    def assess_muscle_recovery(
-        self,
-        athlete_id: int,
-        muscle_name: str,
-        days_lookback: int = 7,
-        athlete: Optional[Athlete] = None
-    ) -> Dict:
-        """
-        Assess recovery status for a specific muscle group.
-        
-        Args:
-            athlete_id: Athlete ID
-            muscle_name: Muscle group name (e.g., "mid_chest", "lats")
-            days_lookback: Days to look back for workouts
-            
-        Returns:
-            Dict with recovery status and metrics
-        """
-        # Get the muscle model from database
-        muscle = self.get_muscle_by_name(muscle_name)
-        if not muscle:
-            return {
-                "error": f"Muscle '{muscle_name}' not found in database",
-                "is_recovered": True,
-                "recovery_percentage": 1.0
-            }
-        
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
-        
-        # Get the athlete's sets in the window, then resolve their exercises over
-        # gRPC to find which sessions trained this muscle (prime_mover/synergist).
-        recent_set_rows = (
-            self.db.query(ExerciseSet, WorkoutSession)
-            .join(WorkoutSession, ExerciseSet.workout_session_id == WorkoutSession.id)
-            .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= cutoff_date,
-            )
-            .all()
-        )
-        exercises_map = self._get_exercises_map(
-            {ex_set.exercise_id for ex_set, _ in recent_set_rows}
-        )
 
-        def _targets_muscle(exercise_id: int) -> bool:
-            exercise = exercises_map.get(exercise_id)
-            return exercise is not None and any(
-                target.name == muscle_name
-                and target.role in ("prime_mover", "synergist")
-                for target in exercise.muscles
-            )
-
-        sessions_by_id = {}
-        muscle_session_ids = set()
-        for ex_set, session in recent_set_rows:
-            sessions_by_id[session.id] = session
-            if _targets_muscle(ex_set.exercise_id):
-                muscle_session_ids.add(session.id)
-        recent_sessions = sorted(
-            (sessions_by_id[sid] for sid in muscle_session_ids),
-            key=lambda s: s.session_date,
-            reverse=True,
-        )
-        
-        # Calculate days since last workout for this muscle
-        if recent_sessions:
-            last_workout = recent_sessions[0]
-            current_time = datetime.now(timezone.utc)
-            session_time = last_workout.session_date
-            if session_time.tzinfo is None:
-                session_time = session_time.replace(tzinfo=timezone.utc)
-            
-            # Calculate time elapsed in hours (preserves fractional hours, minutes, seconds)
-            time_elapsed = current_time - session_time
-            hours_since_workout = time_elapsed.total_seconds() / 3600
-            days_since_workout = time_elapsed.days  # Keep for display/logging purposes
-            
-            # Get athlete for dynamic recovery calculation (query only if not provided)
-            if athlete is None:
-                athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-            
-            if not athlete:
-                # If athlete not found, return error response
-                return {
-                    "error": f"Athlete {athlete_id} not found",
-                    "is_recovered": True,
-                    "recovery_percentage": 1.0
-                }
-            
-            # Get recent recovery metrics for sleep quality
-            recent_recovery = (
-                self.db.query(RecoveryMetrics)
-                .filter(
-                    RecoveryMetrics.athlete_id == athlete_id,
-                    RecoveryMetrics.date >= cutoff_date
-                )
-                .order_by(RecoveryMetrics.date.desc())
-                .first()
-            )
-            
-            sleep_quality = recent_recovery.sleep_quality if recent_recovery else SleepQuality.GOOD
-            
-            # Calculate dynamic recovery time based on last workout intensity
-            avg_rpe = last_workout.overall_rpe or 7.0
-            workout_intensity = avg_rpe / 10.0  # Convert RPE to 0-1 scale
-            
-            # Determine if the last workout had compound exercises targeting this
-            # muscle, using the exercises already fetched for the window.
-            last_workout_exercise_ids = {
-                ex_set.exercise_id
-                for ex_set, session in recent_set_rows
-                if session.id == last_workout.id
-            }
-            has_compound = any(
-                _targets_muscle(ex_id)
-                and exercises_map[ex_id].exercise_type
-                and exercises_map[ex_id].exercise_type.lower() == "compound"
-                for ex_id in last_workout_exercise_ids
-                if ex_id in exercises_map
-            )
-            exercise_type = "compound" if has_compound else "isolation"
-            
-            # Calculate required recovery hours dynamically
-            required_recovery_hours = self.calculate_muscle_recovery_hours(
-                muscle=muscle,
-                workout_intensity=workout_intensity,
-                exercise_type=exercise_type,
-                athlete=athlete,
-                sleep_quality=sleep_quality
-            )
-        else:
-            # No recent workout - use default values
-            hours_since_workout = 7 * 24  # 7 days in hours
-            days_since_workout = 7
-            required_recovery_hours = muscle.recovery_hours
-        
-        required_recovery_days = required_recovery_hours / 24
-        
-        # Get recent soreness data
-        recent_recovery = (
-            self.db.query(RecoveryMetrics)
-            .filter(
-                RecoveryMetrics.athlete_id == athlete_id,
-                RecoveryMetrics.date >= cutoff_date
-            )
-            .order_by(RecoveryMetrics.date.desc())
-            .first()
-        )
-        
-        muscle_soreness_level = 1  # Default: no soreness
-        if recent_recovery and recent_recovery.muscle_soreness:
-            try:
-                soreness_dict = json.loads(recent_recovery.muscle_soreness)
-                muscle_soreness_level = soreness_dict.get(muscle_name, 1)
-            except (json.JSONDecodeError, TypeError, KeyError, AttributeError):
-                pass
-        
-        # Use fractional hours for accurate recovery percentage calculation
-        recovery_percentage = min(hours_since_workout / required_recovery_hours, 1.0)
-        
-        # Adjust for soreness
-        soreness_penalty = (muscle_soreness_level - 1) / 9  # Scale to 0-1
-        recovery_percentage = max(recovery_percentage - soreness_penalty, 0.0)
-        
-        is_recovered = recovery_percentage >= 0.9 and muscle_soreness_level <= 3
-        
-        return {
-            "muscle_group": muscle_name,
-            "muscle_display_name": muscle.display_name,
-            "is_recovered": is_recovered,
-            "recovery_percentage": round(recovery_percentage, 2),
-            "days_since_workout": days_since_workout,
-            "soreness_level": muscle_soreness_level,
-            "required_recovery_days": round(required_recovery_days, 1),
-            "required_recovery_hours": required_recovery_hours,
-            "muscle_size": _MUSCLE_SIZE_TO_STR.get(muscle.size, "medium"),
-            "recommendation": self._get_recovery_recommendation(recovery_percentage, muscle_soreness_level)
-        }
-    
-    def _get_recovery_recommendation(
-        self,
-        recovery_percentage: float,
-        soreness_level: int
-    ) -> str:
-        """
-        Get recovery recommendation based on status.
-        
-        Args:
-            recovery_percentage: Recovery percentage (0.0 - 1.0)
-            soreness_level: Soreness level (1-10)
-            
-        Returns:
-            Recommendation string
-        """
-        if recovery_percentage >= 0.9 and soreness_level <= 2:
-            return "Fully recovered - ready for intense training"
-        elif recovery_percentage >= 0.7 and soreness_level <= 4:
-            return "Mostly recovered - can train with moderate intensity"
-        elif recovery_percentage >= 0.5 and soreness_level <= 6:
-            return "Partially recovered - light training recommended"
-        else:
-            return "Not recovered - rest or very light work only"
-    
     def calculate_cumulative_fatigue(
         self,
-        athlete_id: int,
+        ctx: AnalysisContext,
         days_lookback: int = 14
     ) -> Dict:
         """
-        Calculate cumulative fatigue over a period.
-        
-        Uses simplified fitness-fatigue model approach.
-        
-        Args:
-            athlete_id: Athlete ID
-            days_lookback: Days to analyze
-            
-        Returns:
-            Dict with fatigue metrics
+        Cumulative fatigue (simplified fitness-fatigue model) over recent local
+        performance trends. Each trend carries the per-session load signal
+        (volume, RPE, CNS load, readiness), so no api-owned data is read.
         """
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_lookback)
-        
-        # Get recent workouts
-        sessions = (
-            self.db.query(WorkoutSession)
-            .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= cutoff_date
-            )
-            .order_by(WorkoutSession.session_date.desc())
-            .all()
-        )
-        
-        # Get recent recovery metrics
-        recovery_metrics = (
-            self.db.query(RecoveryMetrics)
-            .filter(
-                RecoveryMetrics.athlete_id == athlete_id,
-                RecoveryMetrics.date >= cutoff_date
-            )
-            .order_by(RecoveryMetrics.date.desc())
-            .all()
-        )
-        
-        if not sessions:
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=days_lookback)
+
+        trends = []
+        for t in ctx.recent_performance_trends:
+            session_date = t.session_date
+            if session_date.tzinfo is None:
+                session_date = session_date.replace(tzinfo=timezone.utc)
+            if session_date >= cutoff:
+                trends.append((t, session_date))
+
+        if not trends:
             return {
                 "fatigue_level": "low",
                 "fatigue_score": 0.0,
                 "recommendation": "Ready to train",
                 "needs_deload": False
             }
-        
-        # Calculate training load (volume * average RPE)
+
         training_loads = []
         days_ago = []
-        
-        for session in sessions:
-            current_time = datetime.now(timezone.utc)
-            session_time = session.session_date
-            if session_time.tzinfo is None:
-                session_time = session_time.replace(tzinfo=timezone.utc)
-            
-            # Calculate time elapsed in days (preserves fractional days for accurate decay)
-            time_elapsed = current_time - session_time
-            days_since = time_elapsed.total_seconds() / 86400  # Convert to fractional days
-            load = 0
-            
-            if session.total_volume and session.overall_rpe:
-                # Normalize load: volume/1000 * RPE
-                load = (session.total_volume / 1000) * session.overall_rpe
-            elif session.overall_rpe:
-                # Use RPE only if volume not available
-                load = session.overall_rpe
-            
-            # Add CNS fatigue factor (systemic fatigue from heavy compounds)
-            # CNS fatigue is additive, not multiplicative, so it's always included
-            # even if base load is 0 (missing RPE/volume data)
-            cns_load = self._calculate_cns_load(session)
-            # Weight CNS load more heavily (1.5x multiplier) as it affects systemic recovery
-            load = load + (cns_load * 1.5)
-            
+        for t, session_date in trends:
+            days_since = (now - session_date).total_seconds() / 86400
+            load = 0.0
+            if t.total_volume and t.average_rpe:
+                load = (t.total_volume / 1000) * t.average_rpe
+            elif t.average_rpe:
+                load = t.average_rpe
+            # CNS (systemic) fatigue, weighted more heavily
+            load = load + ((t.cns_load or 0.0) * 1.5)
             training_loads.append(load)
             days_ago.append(days_since)
-        
-        # Calculate average recovery score
-        avg_recovery_score = 0.7  # Default
-        if recovery_metrics:
-            recovery_scores = [rm.readiness_score for rm in recovery_metrics if rm.readiness_score]
-            if recovery_scores:
-                avg_recovery_score = sum(recovery_scores) / len(recovery_scores)
-        
-        # Simple fatigue calculation
-        # Recent loads have more impact (exponential decay)
+
+        readiness_scores = [t.readiness_score for t, _ in trends if t.readiness_score]
+        avg_recovery_score = sum(readiness_scores) / len(readiness_scores) if readiness_scores else 0.7
+
         weighted_fatigue = 0.0
         for load, day in zip(training_loads, days_ago):
-            # Fatigue decays with ~7 day half-life
-            decay_factor = 2 ** (-day / 7)
-            weighted_fatigue += load * decay_factor
-        
-        # Normalize fatigue score (0-1)
-        # High training load with low recovery = high fatigue
+            weighted_fatigue += load * (2 ** (-day / 7))
+
         fatigue_score = min(weighted_fatigue / 10, 1.0)
-        fatigue_score = fatigue_score * (1.5 - avg_recovery_score)  # Amplify if poor recovery
+        fatigue_score = fatigue_score * (1.5 - avg_recovery_score)
         fatigue_score = min(fatigue_score, 1.0)
-        
-        # Determine fatigue level
+
         if fatigue_score < 0.3:
-            fatigue_level = "low"
-            recommendation = "Ready for high-intensity training"
-            needs_deload = False
+            fatigue_level, recommendation, needs_deload = "low", "Ready for high-intensity training", False
         elif fatigue_score < 0.6:
-            fatigue_level = "moderate"
-            recommendation = "Continue training with awareness"
-            needs_deload = False
+            fatigue_level, recommendation, needs_deload = "moderate", "Continue training with awareness", False
         elif fatigue_score < 0.8:
-            fatigue_level = "high"
-            recommendation = "Consider reducing volume or intensity"
-            needs_deload = False
+            fatigue_level, recommendation, needs_deload = "high", "Consider reducing volume or intensity", False
         else:
-            fatigue_level = "very_high"
-            recommendation = "Deload week strongly recommended"
-            needs_deload = True
-        
+            fatigue_level, recommendation, needs_deload = "very_high", "Deload week strongly recommended", True
+
         return {
             "fatigue_level": fatigue_level,
             "fatigue_score": round(fatigue_score, 3),
             "recommendation": recommendation,
             "needs_deload": needs_deload,
             "average_recovery_score": round(avg_recovery_score, 3),
-            "workouts_analyzed": len(sessions),
-            "note": "Fatigue calculation includes CNS (systemic) fatigue from heavy compound exercises"
+            "workouts_analyzed": len(trends),
+            "note": "Fatigue includes CNS (systemic) load denormalised onto performance trends"
         }
-    
-    def _calculate_cns_load(self, session: WorkoutSession) -> float:
-        """
-        Calculate CNS (systemic) fatigue load from a workout session.
-        
-        CNS fatigue is caused by heavy compound movements (squats, deadlifts, heavy rows)
-        and affects systemic recovery, not just local muscle recovery.
-        
-        Args:
-            session: WorkoutSession to analyze
-            
-        Returns:
-            CNS load factor (0.0 to ~1.0+)
-        """
-        # Get all exercise sets performed in this session
-        sets = (
-            self.db.query(ExerciseSet)
-            .filter(ExerciseSet.workout_session_id == session.id)
-            .all()
-        )
-        
-        if not sets:
-            return 0.0
-        
-        # Group sets by exercise to count volume per exercise type
-        exercise_sets_map = {}
-        for set_record in sets:
-            ex_id = set_record.exercise_id
-            if ex_id not in exercise_sets_map:
-                exercise_sets_map[ex_id] = []
-            exercise_sets_map[ex_id].append(set_record)
-        
-        # Get exercise details for all unique exercises from exercise-service
-        exercise_ids = list(exercise_sets_map.keys())
-        exercise_map = self._get_exercises_map(exercise_ids)
-        
-        cns_load = 0.0
-        
-        # Calculate CNS load based on number of sets per exercise type
-        for ex_id, sets_list in exercise_sets_map.items():
-            exercise = exercise_map.get(ex_id)
-            if not exercise:
-                continue
-            
-            movement_pattern = (exercise.movement_pattern or "").lower()
-            num_sets = len(sets_list)
-            
-            # Accumulate CNS fatigue based on number of sets
-            # More sets = proportionally more CNS fatigue
-            if movement_pattern in CNS_HEAVY_PATTERNS:
-                cns_load += CNS_FATIGUE_PER_HEAVY_COMPOUND * num_sets
-            elif movement_pattern in CNS_MODERATE_PATTERNS:
-                cns_load += CNS_FATIGUE_PER_MODERATE_COMPOUND * num_sets
-        
-        return cns_load
-    
+
     def get_recovery_recommendations(
         self,
         readiness_score: float,
         fatigue_level: str,
-        sleep_quality: SleepQuality
+        sleep_quality: Optional[SleepQuality]
     ) -> List[str]:
-        """
-        Generate actionable recovery recommendations.
-        
-        Args:
-            readiness_score: Overall readiness (0-1)
-            fatigue_level: Fatigue level string
-            sleep_quality: Sleep quality
-            
-        Returns:
-            List of recommendations
-        """
+        """Generate actionable recovery recommendations."""
         recommendations = []
-        
-        # Readiness-based recommendations
         if readiness_score < 0.5:
             recommendations.append("Consider skipping or significantly reducing today's training")
             recommendations.append("Focus on recovery: sleep, nutrition, stress management")
         elif readiness_score < 0.7:
             recommendations.append("Reduce training volume by 20-30%")
             recommendations.append("Focus on technique and lighter loads")
-        
-        # Sleep-based recommendations
+
         if sleep_quality in [SleepQuality.POOR, SleepQuality.NOT_BAD]:
             recommendations.append("Prioritize sleep quality and duration (aim for 7-9 hours)")
             recommendations.append("Consider sleep hygiene improvements: dark room, cool temperature, no screens before bed")
-        
-        # Fatigue-based recommendations
+
         if fatigue_level in ["high", "very_high"]:
             recommendations.append("Consider implementing a deload week (50% volume, 90% intensity)")
             recommendations.append("Increase rest days or active recovery sessions")
             recommendations.append("Ensure adequate protein intake (1.6-2.2g/kg bodyweight)")
-        
-        # General wellness
+
         if not recommendations:
             recommendations.append("Recovery status is good - maintain current practices")
             recommendations.append("Continue monitoring sleep, nutrition, and stress")
-        
+
         return recommendations
-
-    def calculate_muscle_recovery_hours(
-        self,
-        muscle: "exercise_pb.Muscle",
-        workout_intensity: float,
-        exercise_type: str,
-        athlete: Athlete,
-        sleep_quality: SleepQuality
-    ) -> int:
-        """
-        Calculate dynamic recovery hours for a muscle based on multiple factors.
-        
-        Formula: base_hours * intensity_mod * exercise_mod * fitness_mod * sleep_mod
-        
-        Args:
-            muscle: MuscleGroupModel with base_recovery_hours
-            workout_intensity: Workout intensity (0.0-1.0, RPE-based)
-            exercise_type: "compound" or "isolation"
-            athlete: Athlete model with training_experience
-            sleep_quality: Recent sleep quality
-            
-        Returns:
-            Calculated recovery hours (int)
-        """
-        base_hours = muscle.recovery_hours
-
-        # Intensity modifier: Higher RPE = longer recovery
-        # RPE 6 (0.6) = 0.85x, RPE 10 (1.0) = 1.3x
-        intensity_mod = 0.7 + (workout_intensity * 0.6)
-        
-        # Exercise type modifier: Compound exercises cause more systemic fatigue
-        exercise_mod = 1.15 if exercise_type == "compound" else 1.0
-        
-        # Experience/fitness modifier: Advanced athletes recover faster
-        fitness_mods = {
-            TrainingExperience.BEGINNER: 1.2,      # Longer recovery needed
-            TrainingExperience.INTERMEDIATE: 1.0,  # Baseline
-            TrainingExperience.ADVANCED: ADVANCED_RECOVERY_MODIFIER,     # Faster recovery
-        }
-        fitness_mod = fitness_mods.get(athlete.training_experience, 1.0)
-        
-        # Sleep quality modifier: Poor sleep slows recovery
-        sleep_mods = {
-            SleepQuality.POOR: 1.3,
-            SleepQuality.NOT_BAD: 1.1,
-            SleepQuality.GOOD: 1.0,
-            SleepQuality.EXCELLENT: 0.9,
-        }
-        sleep_mod = sleep_mods.get(sleep_quality, 1.0)
-        
-        # Calculate final recovery time
-        recovery_hours = base_hours * intensity_mod * exercise_mod * fitness_mod * sleep_mod
-        
-        return int(recovery_hours)
-    
-    def get_muscle_by_name(self, muscle_name: str) -> Optional["exercise_pb.Muscle"]:
-        """
-        Get muscle metadata by name from exercise-service.
-
-        Args:
-            muscle_name: Name of the muscle (e.g., "mid_chest", "lats")
-
-        Returns:
-            proto Muscle or None if not found
-        """
-        with ExerciseClient() as client:
-            muscles = client.get_muscles([muscle_name])
-        return muscles[0] if muscles else None

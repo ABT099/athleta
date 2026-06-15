@@ -1,7 +1,6 @@
 import {
   pgTable,
   index,
-  check,
   integer,
   varchar,
   timestamp,
@@ -14,7 +13,6 @@ import {
   jsonb,
   pgEnum,
 } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
 
 export const periodizationModelEnum = pgEnum('periodization_model_enum', [
   'linear',
@@ -54,53 +52,6 @@ export const trainingTypeEnum = pgEnum('training_type_enum', [
   'hybrid',
 ]);
 
-export const flywaySchemaHistory = pgTable(
-  'flyway_schema_history',
-  {
-    installedRank: integer('installed_rank').primaryKey().notNull(),
-    version: varchar({ length: 50 }),
-    description: varchar({ length: 200 }).notNull(),
-    type: varchar({ length: 20 }).notNull(),
-    script: varchar({ length: 1000 }).notNull(),
-    checksum: integer(),
-    installedBy: varchar('installed_by', { length: 100 }).notNull(),
-    installedOn: timestamp('installed_on', { mode: 'string' })
-      .defaultNow()
-      .notNull(),
-    executionTime: integer('execution_time').notNull(),
-    success: boolean().notNull(),
-  },
-  (table) => [
-    index('flyway_schema_history_s_idx').using(
-      'btree',
-      table.success.asc().nullsLast().op('bool_ops'),
-    ),
-    check(
-      'flyway_schema_history_installed_rank_not_null',
-      sql`NOT NULL installed_rank`,
-    ),
-    check(
-      'flyway_schema_history_description_not_null',
-      sql`NOT NULL description`,
-    ),
-    check('flyway_schema_history_type_not_null', sql`NOT NULL type`),
-    check('flyway_schema_history_script_not_null', sql`NOT NULL script`),
-    check(
-      'flyway_schema_history_installed_by_not_null',
-      sql`NOT NULL installed_by`,
-    ),
-    check(
-      'flyway_schema_history_installed_on_not_null',
-      sql`NOT NULL installed_on`,
-    ),
-    check(
-      'flyway_schema_history_execution_time_not_null',
-      sql`NOT NULL execution_time`,
-    ),
-    check('flyway_schema_history_success_not_null', sql`NOT NULL success`),
-  ],
-);
-
 export const users = pgTable(
   'users',
   {
@@ -121,13 +72,6 @@ export const users = pgTable(
     unique('users_email_unique').on(table.email),
     unique('users_google_id_unique').on(table.googleId),
     unique('users_apple_id_unique').on(table.appleId),
-    check('users_id_not_null', sql`NOT NULL id`),
-    check('users_email_not_null', sql`NOT NULL email`),
-    check('users_first_name_not_null', sql`NOT NULL first_name`),
-    check('users_last_name_not_null', sql`NOT NULL last_name`),
-    check('users_role_not_null', sql`NOT NULL role`),
-    check('users_created_at_not_null', sql`NOT NULL created_at`),
-    check('users_has_initial_plan_not_null', sql`NOT NULL has_initial_plan`),
   ],
 );
 
@@ -150,18 +94,6 @@ export const athletes = pgTable(
       foreignColumns: [users.id],
       name: 'athletes_user_id_users_id_fk',
     }),
-    check('athletes_id_not_null', sql`NOT NULL id`),
-    check('athletes_user_id_not_null', sql`NOT NULL user_id`),
-    check('athletes_age_not_null', sql`NOT NULL age`),
-    check('athletes_gender_not_null', sql`NOT NULL gender`),
-    check(
-      'athletes_training_experience_not_null',
-      sql`NOT NULL training_experience`,
-    ),
-    check(
-      'athletes_rpe_calibration_factor_not_null',
-      sql`NOT NULL rpe_calibration_factor`,
-    ),
   ],
 );
 
@@ -196,21 +128,6 @@ export const workoutPlans = pgTable(
       foreignColumns: [athletes.id],
       name: 'workout_plans_athlete_id_athletes_id_fk',
     }),
-    check('workout_plans_id_not_null', sql`NOT NULL id`),
-    check('workout_plans_athlete_id_not_null', sql`NOT NULL athlete_id`),
-    check('workout_plans_name_not_null', sql`NOT NULL name`),
-    check('workout_plans_training_type_not_null', sql`NOT NULL training_type`),
-    check(
-      'workout_plans_periodization_model_not_null',
-      sql`NOT NULL periodization_model`,
-    ),
-    check('workout_plans_frequency_not_null', sql`NOT NULL frequency`),
-    check(
-      'workout_plans_duration_weeks_not_null',
-      sql`NOT NULL duration_weeks`,
-    ),
-    check('workout_plans_created_at_not_null', sql`NOT NULL created_at`),
-    check('workout_plans_is_active_not_null', sql`NOT NULL is_active`),
   ],
 );
 
@@ -230,13 +147,6 @@ export const workoutDays = pgTable(
       foreignColumns: [workoutPlans.id],
       name: 'workout_days_workout_plan_id_workout_plans_id_fk',
     }),
-    check('workout_days_id_not_null', sql`NOT NULL id`),
-    check(
-      'workout_days_workout_plan_id_not_null',
-      sql`NOT NULL workout_plan_id`,
-    ),
-    check('workout_days_name_not_null', sql`NOT NULL name`),
-    check('workout_days_order_in_week_not_null', sql`NOT NULL order_in_week`),
   ],
 );
 
@@ -271,45 +181,6 @@ export const workoutDayExercises = pgTable(
     }),
     // exercise_id is a soft reference to an exercise owned by the
     // exercise-service (Neo4j); there is no local exercises table.
-    check('workout_day_exercises_id_not_null', sql`NOT NULL id`),
-    check(
-      'workout_day_exercises_workout_day_id_not_null',
-      sql`NOT NULL workout_day_id`,
-    ),
-    check(
-      'workout_day_exercises_exercise_id_not_null',
-      sql`NOT NULL exercise_id`,
-    ),
-    check(
-      'workout_day_exercises_order_in_workout_not_null',
-      sql`NOT NULL order_in_workout`,
-    ),
-    check(
-      'workout_day_exercises_target_sets_min_not_null',
-      sql`NOT NULL target_sets_min`,
-    ),
-    check(
-      'workout_day_exercises_target_sets_max_not_null',
-      sql`NOT NULL target_sets_max`,
-    ),
-    check(
-      'workout_day_exercises_target_reps_min_not_null',
-      sql`NOT NULL target_reps_min`,
-    ),
-    check(
-      'workout_day_exercises_target_reps_max_not_null',
-      sql`NOT NULL target_reps_max`,
-    ),
-    check(
-      'workout_day_exercises_is_primary_not_null',
-      sql`NOT NULL is_primary`,
-    ),
-    check(
-      'workout_day_exercises_warm_up_sets_not_null',
-      sql`NOT NULL warm_up_sets`,
-    ),
-    check('workout_day_exercises_set_type_not_null', sql`NOT NULL set_type`),
-    check('workout_day_exercises_rep_style_not_null', sql`NOT NULL rep_style`),
   ],
 );
 
@@ -340,11 +211,6 @@ export const refreshTokens = pgTable(
       name: 'refresh_tokens_user_id_users_id_fk',
     }),
     unique('refresh_tokens_token_unique').on(table.token),
-    check('refresh_tokens_id_not_null', sql`NOT NULL id`),
-    check('refresh_tokens_user_id_not_null', sql`NOT NULL user_id`),
-    check('refresh_tokens_token_not_null', sql`NOT NULL token`),
-    check('refresh_tokens_expires_at_not_null', sql`NOT NULL expires_at`),
-    check('refresh_tokens_created_at_not_null', sql`NOT NULL created_at`),
   ],
 );
 
@@ -372,17 +238,156 @@ export const passwordResetTokens = pgTable(
     }),
     unique('password_reset_tokens_userId_unique').on(table.userId),
     unique('password_reset_tokens_code_unique').on(table.code),
-    check('password_reset_tokens_id_not_null', sql`NOT NULL id`),
-    check('password_reset_tokens_user_id_not_null', sql`NOT NULL user_id`),
-    check('password_reset_tokens_code_not_null', sql`NOT NULL code`),
-    check('password_reset_tokens_verified_not_null', sql`NOT NULL verified`),
-    check(
-      'password_reset_tokens_expires_at_not_null',
-      sql`NOT NULL expires_at`,
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Workout execution + PRs — api-owned (moved here from the shared ai_analysis
+// schema). auto-regulation pushes/reads these over the wire; exercise_id is a
+// soft reference to exercise-service (no local exercises table).
+// ---------------------------------------------------------------------------
+
+export const workoutSessions = pgTable(
+  'workout_sessions',
+  {
+    id: serial().primaryKey().notNull(),
+    athleteId: integer('athlete_id').notNull(),
+    workoutDayId: integer('workout_day_id').notNull(),
+    sessionDate: timestamp('session_date', { mode: 'string' }).notNull(),
+    durationMinutes: integer('duration_minutes'),
+    overallRpe: real('overall_rpe'),
+    overallFeeling: varchar('overall_feeling', { length: 50 }),
+    notes: text(),
+    totalVolume: real('total_volume'),
+    estimatedFatigue: real('estimated_fatigue'),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.athleteId],
+      foreignColumns: [athletes.id],
+      name: 'workout_sessions_athlete_id_athletes_id_fk',
+    }),
+    foreignKey({
+      columns: [table.workoutDayId],
+      foreignColumns: [workoutDays.id],
+      name: 'workout_sessions_workout_day_id_workout_days_id_fk',
+    }),
+    index('workout_sessions_athlete_id_idx').using(
+      'btree',
+      table.athleteId.asc().nullsLast().op('int4_ops'),
     ),
-    check(
-      'password_reset_tokens_created_at_not_null',
-      sql`NOT NULL created_at`,
+  ],
+);
+
+export const exerciseSets = pgTable(
+  'exercise_sets',
+  {
+    id: serial().primaryKey().notNull(),
+    workoutSessionId: integer('workout_session_id').notNull(),
+    exerciseId: integer('exercise_id').notNull(),
+    setNumber: integer('set_number').notNull(),
+    weight: real().notNull(),
+    reps: integer().notNull(),
+    rpe: real(),
+    rir: integer(),
+    formQuality: varchar('form_quality', { length: 50 }),
+    notes: text(),
+    createdAt: timestamp('created_at', { mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    setTypeUsed: setTypeEnum('set_type_used'),
+    repStyleUsed: repStyleEnum('rep_style_used'),
+    techniqueDetails: jsonb('technique_details'),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.workoutSessionId],
+      foreignColumns: [workoutSessions.id],
+      name: 'exercise_sets_workout_session_id_workout_sessions_id_fk',
+    }),
+    // exercise_id softly references an exercise-service (Neo4j) exercise.
+    index('exercise_sets_workout_session_id_idx').using(
+      'btree',
+      table.workoutSessionId.asc().nullsLast().op('int4_ops'),
+    ),
+  ],
+);
+
+export const recoveryMetrics = pgTable(
+  'recovery_metrics',
+  {
+    id: serial().primaryKey().notNull(),
+    athleteId: integer('athlete_id').notNull(),
+    date: timestamp({ mode: 'string' }).notNull(),
+    sleepQuality: sleepQualityEnum('sleep_quality').notNull(),
+    sleepHours: real('sleep_hours'),
+    overallSoreness: integer('overall_soreness'),
+    muscleSoreness: text('muscle_soreness'),
+    stressLevel: integer('stress_level'),
+    energyLevel: integer('energy_level'),
+    readinessScore: real('readiness_score'),
+    nutritionAdherence: varchar('nutrition_adherence', { length: 50 }),
+    hydrationLevel: varchar('hydration_level', { length: 50 }),
+    notes: text(),
+    createdAt: timestamp('created_at', { mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.athleteId],
+      foreignColumns: [athletes.id],
+      name: 'recovery_metrics_athlete_id_athletes_id_fk',
+    }),
+    index('recovery_metrics_athlete_id_idx').using(
+      'btree',
+      table.athleteId.asc().nullsLast().op('int4_ops'),
+    ),
+  ],
+);
+
+export const exercisePersonalRecords = pgTable(
+  'exercise_personal_records',
+  {
+    id: serial().primaryKey().notNull(),
+    athleteId: integer('athlete_id').notNull(),
+    exerciseId: integer('exercise_id').notNull(),
+    oneRepMax: real('one_rep_max'),
+    oneRmDate: timestamp('one_rm_date', { mode: 'string' }),
+    threeRepMax: real('three_rep_max'),
+    threeRmDate: timestamp('three_rm_date', { mode: 'string' }),
+    fiveRepMax: real('five_rep_max'),
+    fiveRmDate: timestamp('five_rm_date', { mode: 'string' }),
+    eightRepMax: real('eight_rep_max'),
+    eightRmDate: timestamp('eight_rm_date', { mode: 'string' }),
+    tenRepMax: real('ten_rep_max'),
+    tenRmDate: timestamp('ten_rm_date', { mode: 'string' }),
+    twelveRepMax: real('twelve_rep_max'),
+    twelveRmDate: timestamp('twelve_rm_date', { mode: 'string' }),
+    maxVolumeSession: real('max_volume_session'),
+    maxVolumeDate: timestamp('max_volume_date', { mode: 'string' }),
+    maxTotalReps: integer('max_total_reps'),
+    maxRepsDate: timestamp('max_reps_date', { mode: 'string' }),
+    totalPrCount: integer('total_pr_count').default(0).notNull(),
+    lastPrDate: timestamp('last_pr_date', { mode: 'string' }),
+    createdAt: timestamp('created_at', { mode: 'string' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'string' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.athleteId],
+      foreignColumns: [athletes.id],
+      name: 'exercise_personal_records_athlete_id_athletes_id_fk',
+    }),
+    // exercise_id softly references an exercise-service (Neo4j) exercise.
+    unique('uq_athlete_exercise_pr').on(table.athleteId, table.exerciseId),
+    index('exercise_personal_records_athlete_id_idx').using(
+      'btree',
+      table.athleteId.asc().nullsLast().op('int4_ops'),
     ),
   ],
 );

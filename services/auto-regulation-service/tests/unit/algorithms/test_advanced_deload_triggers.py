@@ -21,36 +21,11 @@ class TestACWRDeloadTrigger:
         db = Mock()
         engine = ProgressiveOverloadEngine(db)
         
-        # Mock SQL aggregation results for ACWR calculation
-        # Acute: sum=100, count=5 -> mean=20
-        # Chronic: sum=200, count=20 -> mean=10
-        # ACWR = 20/10 = 2.0 (above threshold)
-        mock_acute_result = Mock()
-        mock_acute_result.acute_sum = 100.0
-        mock_acute_result.acute_count = 5
-        
-        mock_chronic_result = Mock()
-        mock_chronic_result.chronic_sum = 200.0
-        mock_chronic_result.chronic_count = 20
-        
-        # Mock the query chain: query().filter().first()
-        # Need separate query chains for acute and chronic
-        mock_acute_query = Mock()
-        mock_acute_query.filter.return_value.first.return_value = mock_acute_result
-        
-        mock_chronic_query = Mock()
-        mock_chronic_query.filter.return_value.first.return_value = mock_chronic_result
-        
-        # Return different query mocks for each call
-        query_call_count = [0]
-        def mock_query_side_effect(*args, **kwargs):
-            query_call_count[0] += 1
-            if query_call_count[0] == 1:
-                return mock_acute_query
-            else:
-                return mock_chronic_query
-        
-        db.query.side_effect = mock_query_side_effect
+        # ACWR is denormalised onto the latest performance trend.
+        from app.models import PerformanceTrend
+        trend = Mock(spec=PerformanceTrend)
+        trend.acwr = 2.0  # above the 1.5 high-risk threshold
+        db.query.return_value.filter.return_value.order_by.return_value.first.return_value = trend
         
         result = engine._check_acwr(athlete_id=1)
         assert result[0] is True
@@ -65,36 +40,10 @@ class TestACWRDeloadTrigger:
         db = Mock()
         engine = ProgressiveOverloadEngine(db)
         
-        # Mock SQL aggregation results for ACWR calculation
-        # Acute: sum=110, count=10 -> mean=11
-        # Chronic: sum=100, count=10 -> mean=10
-        # ACWR = 11/10 = 1.1 (in safe zone)
-        mock_acute_result = Mock()
-        mock_acute_result.acute_sum = 110.0
-        mock_acute_result.acute_count = 10
-        
-        mock_chronic_result = Mock()
-        mock_chronic_result.chronic_sum = 100.0
-        mock_chronic_result.chronic_count = 10
-        
-        # Mock the query chain: query().filter().first()
-        # Need separate query chains for acute and chronic
-        mock_acute_query = Mock()
-        mock_acute_query.filter.return_value.first.return_value = mock_acute_result
-        
-        mock_chronic_query = Mock()
-        mock_chronic_query.filter.return_value.first.return_value = mock_chronic_result
-        
-        # Return different query mocks for each call
-        query_call_count = [0]
-        def mock_query_side_effect(*args, **kwargs):
-            query_call_count[0] += 1
-            if query_call_count[0] == 1:
-                return mock_acute_query
-            else:
-                return mock_chronic_query
-        
-        db.query.side_effect = mock_query_side_effect
+        from app.models import PerformanceTrend
+        trend = Mock(spec=PerformanceTrend)
+        trend.acwr = 1.1  # in the safe zone
+        db.query.return_value.filter.return_value.order_by.return_value.first.return_value = trend
         
         result = engine._check_acwr(athlete_id=1)
         assert result[0] is False
@@ -106,7 +55,7 @@ class TestSessionRPEDeloadTrigger:
     def test_srpe_spike_detection(self):
         """Test that sRPE spike (>20% increase) triggers deload."""
         from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
-        from app.models import WorkoutSession
+        from app.models import PerformanceTrend
         from unittest.mock import Mock
         
         db = Mock()
@@ -114,17 +63,17 @@ class TestSessionRPEDeloadTrigger:
         
         # Create mock sessions - MOST RECENT FIRST (due to order_by desc)
         # Recent sessions: RPE 8.5 × 60 min = 510
-        recent_session_1 = Mock(spec=WorkoutSession)
-        recent_session_1.overall_rpe = 8.5
+        recent_session_1 = Mock(spec=PerformanceTrend)
+        recent_session_1.average_rpe = 8.5
         recent_session_1.duration_minutes = 60
         
-        recent_session_2 = Mock(spec=WorkoutSession)
-        recent_session_2.overall_rpe = 8.5
+        recent_session_2 = Mock(spec=PerformanceTrend)
+        recent_session_2.average_rpe = 8.5
         recent_session_2.duration_minutes = 60
         
         # Previous session: RPE 7 × 60 min = 420 (21% decrease from recent)
-        prev_session = Mock(spec=WorkoutSession)
-        prev_session.overall_rpe = 7.0
+        prev_session = Mock(spec=PerformanceTrend)
+        prev_session.average_rpe = 7.0
         prev_session.duration_minutes = 60
         
         # Order: most recent first
@@ -139,7 +88,7 @@ class TestSessionRPEDeloadTrigger:
     def test_no_srpe_spike(self):
         """Test that normal sRPE doesn't trigger deload."""
         from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
-        from app.models import WorkoutSession
+        from app.models import PerformanceTrend
         from unittest.mock import Mock
         
         db = Mock()
@@ -148,8 +97,8 @@ class TestSessionRPEDeloadTrigger:
         # Create mock sessions with stable sRPE
         mock_sessions = []
         for rpe in [7.0, 7.0, 7.2]:  # Small variation
-            session = Mock(spec=WorkoutSession)
-            session.overall_rpe = rpe
+            session = Mock(spec=PerformanceTrend)
+            session.average_rpe = rpe
             session.duration_minutes = 60
             mock_sessions.append(session)
         

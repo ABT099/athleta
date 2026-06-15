@@ -7,7 +7,6 @@ Uses constraint-based approach: injury prevention as hard constraints, strength/
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
-from app.models import Athlete
 from app.utils.constants import TrainingType, TrainingExperience
 
 
@@ -53,16 +52,9 @@ class ConstrainedOptimizer:
         Returns:
             Dict with optimized parameters and constraint status
         """
-        # Get athlete
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            return {
-                "volume_multiplier": proposed_volume_mult,
-                "intensity_multiplier": proposed_intensity_mult,
-                "constraints_satisfied": False,
-                "reason": "Athlete not found"
-            }
-        
+        # Athlete is supplied via the Analysis Context (already validated upstream);
+        # no local athlete read is needed.
+
         # Check hard constraints
         constraints = self._check_constraints(
             athlete_id, proposed_volume_mult, proposed_intensity_mult,

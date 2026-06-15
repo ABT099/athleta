@@ -1,546 +1,324 @@
 """
 Feature engineering for ML models.
 
-Extracts and transforms workout data into features suitable for ML training.
+Features come from auto-regulation's OWN performance_trends (denormalised
+per-session signal, queried locally) plus api-owned inputs (athlete demographics,
+recovery history, current PRs, plan focus areas) supplied by the caller from the
+Analysis Context (sync prediction) or a TrainingHistory (async retraining).
+Targets (the multipliers that were used) come from local performance_trends +
+workout_prescription_history. No api-owned sessions/sets are read.
 """
 from typing import Dict, List, Tuple, Optional
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import numpy as np
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.models import (
-    Athlete, WorkoutSession, ExerciseSet, RecoveryMetrics,
-    PerformanceTrend, ExerciseProgressionTracking, ExercisePersonalRecord
+    PerformanceTrend,
+    WorkoutPrescriptionHistory,
 )
-from app.models.workout import PlanEntry, WorkoutPlan
-from app.utils.constants import Gender, TrainingExperience, TrainingType, FocusArea
+from app.clients.api_client import (
+    AthleteDTO,
+    ExercisePersonalRecordDTO,
+    RecoveryMetricsDTO,
+)
+from app.modules.analysis import TrainingHistory
+from app.utils.constants import Gender, TrainingExperience, FocusArea
 
 
 class FeatureEngineer:
-    """
-    Handles feature extraction and engineering from workout data.
-    """
-    
+    """Feature extraction from local trend history + api-owned context inputs."""
+
     def __init__(self, db: Session):
         self.db = db
-    
+
     def extract_workout_features(
         self,
-        athlete_id: int,
+        athlete: AthleteDTO,
+        recovery_history: List[RecoveryMetricsDTO],
+        personal_records: Dict[int, ExercisePersonalRecordDTO],
+        focus_areas: Optional[List[str]],
         lookback_sessions: int = 10,
-        cutoff_date: Optional[datetime] = None
+        cutoff_date: Optional[datetime] = None,
     ) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
         """
-        Extract features from recent workout history.
-        
-        Features include:
-        - Athlete demographics (age, gender, experience)
-        - Recent performance metrics
-        - Recovery metrics
-        - Volume trends
-        - Intensity trends
-        - RPE trends
-        
-        Args:
-            athlete_id: Athlete ID
-            lookback_sessions: Number of recent sessions to include
-            cutoff_date: Only include sessions before this date (prevents data leakage)
-            
-        Returns:
-            Tuple of (feature_array, feature_names) or (None, None) if insufficient data
+        Extract features from recent local performance trends + athlete/recovery/PR
+        inputs. ``cutoff_date`` excludes data at/after a date (prevents leakage).
+        Returns (feature_array, feature_names) or (None, None) on insufficient data.
         """
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            return None, None
-        
-        # Get recent performance trends before cutoff_date
+        if cutoff_date is not None and cutoff_date.tzinfo is None:
+            cutoff_date = cutoff_date.replace(tzinfo=timezone.utc)
+
+        # Recent local performance trends before the cutoff
         query = self.db.query(PerformanceTrend).filter(
-            PerformanceTrend.athlete_id == athlete_id
+            PerformanceTrend.athlete_id == athlete.id
         )
-        
         if cutoff_date is not None:
-            # Ensure cutoff_date is timezone-aware
-            if cutoff_date.tzinfo is None:
-                cutoff_date = cutoff_date.replace(tzinfo=timezone.utc)
             query = query.filter(PerformanceTrend.session_date < cutoff_date)
-        
         recent_trends = query.order_by(desc(PerformanceTrend.session_date)).limit(lookback_sessions).all()
-        
+
         if len(recent_trends) < 5:
-            # Insufficient data for feature extraction
             return None, None
-        
-        # Get recent recovery metrics before cutoff_date
-        recovery_query = self.db.query(RecoveryMetrics).filter(
-            RecoveryMetrics.athlete_id == athlete_id
-        )
-        
-        if cutoff_date is not None:
-            # Ensure cutoff_date is timezone-aware
-            if cutoff_date.tzinfo is None:
-                cutoff_date = cutoff_date.replace(tzinfo=timezone.utc)
-            recovery_query = recovery_query.filter(RecoveryMetrics.date < cutoff_date)
-        
-        recent_recovery = recovery_query.order_by(desc(RecoveryMetrics.date)).limit(lookback_sessions).all()
-        
-        features = []
-        feature_names = []
-        
+
+        # Recent recovery (api-owned, supplied), before the cutoff
+        def _before_cutoff(d):
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            return cutoff_date is None or d < cutoff_date
+
+        recent_recovery = sorted(
+            [r for r in (recovery_history or []) if _before_cutoff(r.date)],
+            key=lambda r: r.date,
+            reverse=True,
+        )[:lookback_sessions]
+
+        features: List[float] = []
+        feature_names: List[str] = []
+
         # 1. Athlete demographics
         features.append(athlete.age)
         feature_names.append("age")
-        
         features.append(1.0 if athlete.gender == Gender.MALE else 0.0)
         feature_names.append("gender_male")
-        
-        # Experience level (ordinal encoding)
         exp_encoding = {
             TrainingExperience.BEGINNER: 0.0,
             TrainingExperience.INTERMEDIATE: 0.5,
-            TrainingExperience.ADVANCED: 1.0
+            TrainingExperience.ADVANCED: 1.0,
         }
         features.append(exp_encoding[athlete.training_experience])
         feature_names.append("experience_level")
-        
         features.append(athlete.rpe_calibration_factor)
         feature_names.append("rpe_calibration_factor")
 
-        # Body weight (used for relative strength + volume normalization)
         body_weight = float(athlete.body_weight_kg) if athlete.body_weight_kg else 0.0
         features.append(body_weight)
         feature_names.append("body_weight_kg")
 
-        relative_strength = self._calculate_relative_strength_score(athlete_id, body_weight)
+        relative_strength = self._calculate_relative_strength_score(personal_records, body_weight)
         features.append(relative_strength if relative_strength is not None else 0.0)
         feature_names.append("relative_strength_score")
 
-        # Focus area preferences (one-hot encoding) - from active workout plan
-        focus_areas = self._get_active_plan_focus_areas(athlete_id)
+        # Focus areas (one-hot)
         focus_area_set = {area.lower() for area in (focus_areas or [])}
         for area in FocusArea:
             features.append(1.0 if area.value in focus_area_set else 0.0)
             feature_names.append(f"focus_{area.value}")
-        
+
         # 2. Recent performance metrics (last 5 sessions)
         for i, trend in enumerate(recent_trends[:5]):
             features.extend([
-                trend.total_volume,
-                trend.average_intensity,
-                trend.average_rpe,
-                trend.readiness_score,
-                trend.performance_score,
-                trend.fatigue_index
+                trend.total_volume, trend.average_intensity, trend.average_rpe,
+                trend.readiness_score, trend.performance_score, trend.fatigue_index,
             ])
             feature_names.extend([
-                f"volume_session_{i+1}",
-                f"intensity_session_{i+1}",
-                f"rpe_session_{i+1}",
-                f"readiness_session_{i+1}",
-                f"performance_session_{i+1}",
-                f"fatigue_session_{i+1}"
+                f"volume_session_{i+1}", f"intensity_session_{i+1}", f"rpe_session_{i+1}",
+                f"readiness_session_{i+1}", f"performance_session_{i+1}", f"fatigue_session_{i+1}",
             ])
-        
-        # Pad with zeros if fewer than 5 sessions
         for i in range(len(recent_trends), 5):
             features.extend([0.0] * 6)
             feature_names.extend([
-                f"volume_session_{i+1}",
-                f"intensity_session_{i+1}",
-                f"rpe_session_{i+1}",
-                f"readiness_session_{i+1}",
-                f"performance_session_{i+1}",
-                f"fatigue_session_{i+1}"
+                f"volume_session_{i+1}", f"intensity_session_{i+1}", f"rpe_session_{i+1}",
+                f"readiness_session_{i+1}", f"performance_session_{i+1}", f"fatigue_session_{i+1}",
             ])
-        
-        # 3. Performance trends (derived features)
+
+        # 3. Derived trend features
         if len(recent_trends) >= 3:
             volumes = [t.total_volume for t in recent_trends[:3]]
             rpes = [t.average_rpe for t in recent_trends[:3]]
             readiness = [t.readiness_score for t in recent_trends[:3]]
-            
             features.extend([
-                np.mean(volumes),
-                np.std(volumes) if len(volumes) > 1 else 0.0,
-                np.mean(rpes),
-                np.std(rpes) if len(rpes) > 1 else 0.0,
-                np.mean(readiness),
-                volumes[0] - volumes[-1]  # Volume trend
-            ])
-            feature_names.extend([
-                "avg_volume_3_sessions",
-                "std_volume_3_sessions",
-                "avg_rpe_3_sessions",
-                "std_rpe_3_sessions",
-                "avg_readiness_3_sessions",
-                "volume_change_trend"
+                np.mean(volumes), np.std(volumes) if len(volumes) > 1 else 0.0,
+                np.mean(rpes), np.std(rpes) if len(rpes) > 1 else 0.0,
+                np.mean(readiness), volumes[0] - volumes[-1],
             ])
         else:
             features.extend([0.0] * 6)
-            feature_names.extend([
-                "avg_volume_3_sessions",
-                "std_volume_3_sessions",
-                "avg_rpe_3_sessions",
-                "std_rpe_3_sessions",
-                "avg_readiness_3_sessions",
-                "volume_change_trend"
-            ])
-        
-        # 4. Recent recovery metrics (last 3 days)
+        feature_names.extend([
+            "avg_volume_3_sessions", "std_volume_3_sessions", "avg_rpe_3_sessions",
+            "std_rpe_3_sessions", "avg_readiness_3_sessions", "volume_change_trend",
+        ])
+
+        # 4. Recent recovery metrics (last 3)
         if recent_recovery:
-            avg_sleep_hours = np.mean([r.sleep_hours for r in recent_recovery[:3] if r.sleep_hours])
+            avg_sleep = np.mean([r.sleep_hours for r in recent_recovery[:3] if r.sleep_hours])
             avg_soreness = np.mean([r.overall_soreness for r in recent_recovery[:3] if r.overall_soreness])
             avg_stress = np.mean([r.stress_level for r in recent_recovery[:3] if r.stress_level])
             avg_energy = np.mean([r.energy_level for r in recent_recovery[:3] if r.energy_level])
-            
             features.extend([
-                avg_sleep_hours if not np.isnan(avg_sleep_hours) else 7.0,
+                avg_sleep if not np.isnan(avg_sleep) else 7.0,
                 avg_soreness if not np.isnan(avg_soreness) else 5.0,
                 avg_stress if not np.isnan(avg_stress) else 5.0,
-                avg_energy if not np.isnan(avg_energy) else 5.0
+                avg_energy if not np.isnan(avg_energy) else 5.0,
             ])
         else:
             features.extend([7.0, 5.0, 5.0, 5.0])
-        
-        feature_names.extend([
-            "avg_sleep_hours",
-            "avg_soreness",
-            "avg_stress",
-            "avg_energy"
-        ])
-        
-        # 5. Training load metrics
-        if len(recent_trends) >= 1 and recent_trends[0].acute_load is not None:
+        feature_names.extend(["avg_sleep_hours", "avg_soreness", "avg_stress", "avg_energy"])
+
+        # 5. Training load metrics (from the latest local trend)
+        if recent_trends and recent_trends[0].acute_load is not None:
             features.extend([
                 recent_trends[0].acute_load or 0.0,
                 recent_trends[0].chronic_load or 0.0,
                 recent_trends[0].acwr or 1.0,
-                recent_trends[0].training_monotony or 1.0
+                recent_trends[0].training_monotony or 1.0,
             ])
         else:
             features.extend([0.0, 0.0, 1.0, 1.0])
-        
-        feature_names.extend([
-            "acute_load",
-            "chronic_load",
-            "acwr",
-            "training_monotony"
-        ])
-        
+        feature_names.extend(["acute_load", "chronic_load", "acwr", "training_monotony"])
+
         return np.array(features, dtype=np.float32), feature_names
-    
+
     def extract_target_variables_shifted(
         self,
         athlete_id: int,
-        target_session_id: int
+        target_trend: PerformanceTrend,
     ) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
         """
-        Extract target variables using the SHIFTED TARGET approach.
-        
-        This method extracts targets from a FUTURE session (the session that will
-        use the predicted multipliers). The target is the multipliers that were
-        actually used in that session, weighted by how well that session went.
-        
-        This avoids temporal data leakage because:
-        - Features are extracted from sessions BEFORE the current session
-        - Targets are the multipliers used in the NEXT session
-        - Outcome weighting uses only the NEXT session's own metrics
-        
-        Args:
-            athlete_id: Athlete ID
-            target_session_id: Session ID to extract targets from (the "next" session)
-            
-        Returns:
-            Tuple of (target_array, target_names) or (None, None)
+        Targets = the multipliers prescribed around the target session (from local
+        workout_prescription_history), outcome-weighted by the target session's own
+        local performance_trend.
         """
-        # Get the target session (this is the session that will use our predicted multipliers)
-        target_session = self.db.query(WorkoutSession).filter(
-            WorkoutSession.id == target_session_id
-        ).first()
-        
-        if not target_session:
-            return None, None
-        
-        # Get performance trend for the target session
-        target_trend = self.db.query(PerformanceTrend).filter(
-            PerformanceTrend.workout_session_id == target_session_id
-        ).first()
-        
         if not target_trend:
             return None, None
-        
-        # Get actual multipliers that were used in the target session
+
         volume_mult = 1.0
         intensity_mult = 1.0
-        
-        # Try to get from plan entry
-        plan_entry = self.db.query(PlanEntry).filter(
-            PlanEntry.workout_plan_id.in_(
-                self.db.query(WorkoutPlan.id).filter(
-                    WorkoutPlan.athlete_id == athlete_id
-                )
-            ),
-            PlanEntry.start_date <= target_trend.session_date,
-            PlanEntry.end_date >= target_trend.session_date
-        ).first()
-        
-        if plan_entry:
-            if plan_entry.ai_adjustments:
-                volume_mult = plan_entry.ai_adjustments.get("volume_multiplier", 1.0)
-                intensity_mult = plan_entry.ai_adjustments.get("intensity_multiplier", 1.0)
-            else:
-                volume_mult = plan_entry.target_volume_multiplier
-                intensity_mult = plan_entry.target_intensity_multiplier
-        
-        # Calculate outcome score based on the TARGET session's metrics
-        # This is NOT data leakage because we're using the target session's own outcome
-        # to weight its own multipliers (not future sessions)
+        prescription = (
+            self.db.query(WorkoutPrescriptionHistory)
+            .filter(
+                WorkoutPrescriptionHistory.athlete_id == athlete_id,
+                WorkoutPrescriptionHistory.prescribed_date <= target_trend.session_date,
+            )
+            .order_by(desc(WorkoutPrescriptionHistory.prescribed_date))
+            .first()
+        )
+        if prescription:
+            volume_mult = prescription.volume_multiplier
+            intensity_mult = prescription.intensity_multiplier
+
         outcome_score = self._calculate_session_outcome_score(target_trend)
-        
-        # Scale multipliers by outcome: high outcome keeps multipliers, low outcome adjusts
+
         if outcome_score >= 0.7:
-            # Good outcome - these multipliers worked well, learn to predict them
             target_volume = volume_mult
             target_intensity = intensity_mult
         elif outcome_score >= 0.5:
-            # Medium outcome - slight adjustment toward what might have been better
             target_volume = volume_mult * (1.0 + (outcome_score - 0.5) * 0.1)
             target_intensity = intensity_mult * (1.0 + (outcome_score - 0.5) * 0.05)
         else:
-            # Poor outcome - these multipliers didn't work well
-            # Learn to predict different values (opposite direction)
-            if volume_mult > 1.0:
-                target_volume = 0.95  # Should have reduced instead
-            elif volume_mult < 1.0:
-                target_volume = 1.05  # Should have increased instead
-            else:
-                target_volume = 1.0
-            
-            if intensity_mult > 1.0:
-                target_intensity = 0.98  # Should have reduced instead
-            elif intensity_mult < 1.0:
-                target_intensity = 1.02  # Should have increased instead
-            else:
-                target_intensity = 1.0
-        
-        # Clamp to reasonable ranges
+            target_volume = 0.95 if volume_mult > 1.0 else (1.05 if volume_mult < 1.0 else 1.0)
+            target_intensity = 0.98 if intensity_mult > 1.0 else (1.02 if intensity_mult < 1.0 else 1.0)
+
         target_volume = np.clip(target_volume, 0.7, 1.3)
         target_intensity = np.clip(target_intensity, 0.8, 1.15)
-        
-        targets = [target_volume, target_intensity]
-        target_names = ["volume_multiplier", "intensity_multiplier"]
-        
-        return np.array(targets, dtype=np.float32), target_names
-    
-    def _calculate_session_outcome_score(
-        self,
-        perf_trend: PerformanceTrend
-    ) -> float:
-        """
-        Calculate outcome score based on CURRENT session metrics only.
-        
-        This avoids temporal data leakage by not looking at future sessions.
-        Uses only information available at the time of the session.
-        
-        Score is based on:
-        - RPE in optimal range (7-9 is ideal)
-        - Performance score from the session
-        - Readiness score (was athlete well-recovered?)
-        - Fatigue index (not overly fatigued)
-        
-        Args:
-            perf_trend: Performance trend for the current session
-            
-        Returns:
-            Outcome score (0.0 - 1.0)
-        """
+
+        return (
+            np.array([target_volume, target_intensity], dtype=np.float32),
+            ["volume_multiplier", "intensity_multiplier"],
+        )
+
+    def _calculate_session_outcome_score(self, perf_trend: PerformanceTrend) -> float:
+        """Outcome score (0-1) from a session's own local performance trend."""
         scores = []
-        
-        # 1. RPE quality (40% weight) - was RPE in optimal training range?
         if perf_trend.average_rpe:
             rpe = perf_trend.average_rpe
             if 7.0 <= rpe <= 9.0:
-                # Optimal range for productive training
                 rpe_score = 1.0
             elif 6.0 <= rpe < 7.0 or 9.0 < rpe <= 10.0:
-                # Acceptable range
                 rpe_score = 0.7
             elif rpe < 6.0:
-                # Too easy - not challenging enough
                 rpe_score = 0.4
-            else:  # rpe > 10.0
-                # Too hard - overreaching risk
+            else:
                 rpe_score = 0.2
-            scores.append(('rpe', rpe_score, 0.40))
-        
-        # 2. Performance score (30% weight) - direct measure of session quality
+            scores.append((rpe_score, 0.40))
         if perf_trend.performance_score is not None:
-            # Performance score is typically 0.0-1.0
-            perf_score = float(np.clip(perf_trend.performance_score, 0.0, 1.0))
-            scores.append(('performance', perf_score, 0.30))
-        
-        # 3. Readiness score (15% weight) - was the athlete ready for this workout?
+            scores.append((float(np.clip(perf_trend.performance_score, 0.0, 1.0)), 0.30))
         if perf_trend.readiness_score is not None:
-            readiness = float(np.clip(perf_trend.readiness_score, 0.0, 1.0))
-            scores.append(('readiness', readiness, 0.15))
-        
-        # 4. Fatigue management (15% weight) - fatigue index not too high
+            scores.append((float(np.clip(perf_trend.readiness_score, 0.0, 1.0)), 0.15))
         if perf_trend.fatigue_index is not None:
-            fatigue = perf_trend.fatigue_index
-            # Lower fatigue is better (score inversely proportional)
-            # fatigue_index typically 0-1, where higher = more fatigued
-            fatigue_score = 1.0 - float(np.clip(fatigue, 0.0, 1.0))
-            scores.append(('fatigue', fatigue_score, 0.15))
-        
+            scores.append((1.0 - float(np.clip(perf_trend.fatigue_index, 0.0, 1.0)), 0.15))
         if not scores:
-            # No metrics available - return neutral
             return 0.5
-        
-        # Calculate weighted average
-        total_weight = sum(weight for _, _, weight in scores)
-        weighted_sum = sum(score * weight for _, score, weight in scores)
-        
-        outcome_score = weighted_sum / total_weight if total_weight > 0 else 0.5
-        
-        return float(np.clip(outcome_score, 0.0, 1.0))
+        total_weight = sum(w for _, w in scores)
+        weighted = sum(s * w for s, w in scores)
+        return float(np.clip(weighted / total_weight if total_weight > 0 else 0.5, 0.0, 1.0))
 
     def _calculate_relative_strength_score(
         self,
-        athlete_id: int,
-        body_weight_kg: float
+        personal_records: Dict[int, ExercisePersonalRecordDTO],
+        body_weight_kg: float,
     ) -> Optional[float]:
-        """
-        Estimate relative strength using the best available rep-max PR divided by body weight.
-
-        Uses Epley-style conversion: 1RM ≈ weight × (1 + reps / 30).
-        """
-        if body_weight_kg <= 0:
+        """Best estimated 1RM / body weight, from the context's PR DTOs (Epley)."""
+        if body_weight_kg <= 0 or not personal_records:
             return None
-
         rep_fields = [
-            ("one_rep_max", 1),
-            ("three_rep_max", 3),
-            ("five_rep_max", 5),
-            ("eight_rep_max", 8),
-            ("ten_rep_max", 10),
-            ("twelve_rep_max", 12),
+            ("one_rep_max", 1), ("three_rep_max", 3), ("five_rep_max", 5),
+            ("eight_rep_max", 8), ("ten_rep_max", 10), ("twelve_rep_max", 12),
         ]
-
-        pr_records = (
-            self.db.query(ExercisePersonalRecord)
-            .filter(ExercisePersonalRecord.athlete_id == athlete_id)
-            .all()
-        )
-
-        if not pr_records:
-            return None
-
-        best_estimated_1rm = 0.0
-        for record in pr_records:
+        best = 0.0
+        for record in personal_records.values():
             for field_name, reps in rep_fields:
                 value = getattr(record, field_name, None)
                 if value:
-                    if reps == 1:
-                        estimated_1rm = value
-                    else:
-                        estimated_1rm = value * (1.0 + reps / 30.0)
-                    if estimated_1rm > best_estimated_1rm:
-                        best_estimated_1rm = estimated_1rm
-
-        if best_estimated_1rm <= 0:
+                    estimated = value if reps == 1 else value * (1.0 + reps / 30.0)
+                    best = max(best, estimated)
+        if best <= 0:
             return None
+        return round(best / body_weight_kg, 3)
 
-        return round(best_estimated_1rm / body_weight_kg, 3)
-    
-    def _get_active_plan_focus_areas(self, athlete_id: int) -> Optional[List[str]]:
-        """Get focus areas from the athlete's active workout plan."""
-        plan = self.db.query(WorkoutPlan).filter(
-            WorkoutPlan.athlete_id == athlete_id,
-            WorkoutPlan.is_active == 1
-        ).first()
-        return plan.focus_areas if plan else None
-    
     def prepare_training_dataset(
         self,
-        athlete_id: int,
-        min_sessions: int = 20
+        history: TrainingHistory,
+        min_sessions: int = 20,
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[List[str]], Optional[List[str]]]:
         """
-        Prepare complete training dataset for an athlete using SHIFTED TARGETS.
-        
-        Uses the shifted target approach where:
-        - Features are extracted from sessions BEFORE session i
-        - Targets are extracted from session i+1 (the NEXT session)
-        
-        This properly aligns the prediction task: "Given current state, 
-        what multipliers should be used for the NEXT workout?"
-        
-        Args:
-            athlete_id: Athlete ID
-            min_sessions: Minimum sessions required
-            
-        Returns:
-            Tuple of (X, y, feature_names, target_names) or (None, None, None, None)
+        Prepare the shifted-target training dataset from a TrainingHistory: features
+        from before each trend, targets from the next trend. Iterates the local
+        performance_trends (one per session).
         """
-        # Get all workout sessions
-        sessions = self.db.query(WorkoutSession).filter(
-            WorkoutSession.athlete_id == athlete_id
-        ).order_by(WorkoutSession.session_date).all()
-        
-        if len(sessions) < min_sessions:
+        trends = sorted(history.performance_trends, key=lambda t: t.session_date)
+        if len(trends) < min_sessions:
             return None, None, None, None
-        
-        X_list = []
-        y_list = []
-        feature_names = None
-        target_names = None
-        
-        # Use shifted targets: features from before session i, targets from session i+1
-        # We need at least 5 sessions for history, and 1 more for the target
-        # So we iterate sessions[5:-1] and use sessions[i+1] as target
-        for i in range(5, len(sessions) - 1):  # Stop 1 before end (need next session for target)
-            current_session = sessions[i]
-            next_session = sessions[i + 1]
-            
-            # Extract features from sessions before the current one (prevent data leakage)
-            # Use current session date as cutoff to ensure we only use past data
-            session_date = current_session.session_date
-            if session_date.tzinfo is None:
-                session_date = session_date.replace(tzinfo=timezone.utc)
-            
+
+        X_list, y_list = [], []
+        feature_names = target_names = None
+
+        for i in range(5, len(trends) - 1):
+            current = trends[i]
+            next_trend = trends[i + 1]
+
+            cutoff = current.session_date
+            if cutoff.tzinfo is None:
+                cutoff = cutoff.replace(tzinfo=timezone.utc)
+
             features, feat_names = self.extract_workout_features(
-                athlete_id, lookback_sessions=10, cutoff_date=session_date
+                athlete=history.athlete,
+                recovery_history=history.recovery_history,
+                personal_records=history.personal_records,
+                focus_areas=history.focus_areas,
+                lookback_sessions=10,
+                cutoff_date=cutoff,
             )
-            
             if features is None:
                 continue
-            
-            # Extract targets from the NEXT session (shifted target approach)
-            # This is what we're trying to predict: what multipliers to use next
+
             targets, targ_names = self.extract_target_variables_shifted(
-                athlete_id, next_session.id
+                history.athlete_id, next_trend
             )
-            
             if targets is None:
                 continue
-            
+
             X_list.append(features)
             y_list.append(targets)
-            
             if feature_names is None:
-                feature_names = feat_names
-                target_names = targ_names
-        
-        # Require minimum 5 samples for meaningful ML training
-        # Note: min_sessions from config is for model selection, not sample count validation
-        # With N sessions, we produce N-6 samples (5 history + 1 target = 6 overhead)
-        # Using a fixed floor of 5 ensures consistent behavior regardless of config
-        min_samples_required = 5
-        if len(X_list) < min_samples_required:
-            return None, None, None, None
-        
-        X = np.array(X_list, dtype=np.float32)
-        y = np.array(y_list, dtype=np.float32)
-        
-        return X, y, feature_names, target_names
+                feature_names, target_names = feat_names, targ_names
 
+        if len(X_list) < 5:
+            return None, None, None, None
+
+        return (
+            np.array(X_list, dtype=np.float32),
+            np.array(y_list, dtype=np.float32),
+            feature_names,
+            target_names,
+        )

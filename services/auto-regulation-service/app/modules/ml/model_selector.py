@@ -6,7 +6,7 @@ Selects appropriate model based on athlete's session count and data availability
 from typing import Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 
-from app.models import WorkoutSession
+from app.models import PerformanceTrend
 
 
 class ModelSelector:
@@ -38,8 +38,8 @@ class ModelSelector:
         Returns:
             Number of completed sessions
         """
-        count = self.db.query(WorkoutSession).filter(
-            WorkoutSession.athlete_id == athlete_id
+        count = self.db.query(PerformanceTrend).filter(
+            PerformanceTrend.athlete_id == athlete_id
         ).count()
         
         return count

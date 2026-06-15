@@ -13,9 +13,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
-from app.models import (
-    WorkoutSession, ExerciseSet, FormQualityTrend, Athlete
-)
+from app.models import FormQualityTrend  # algo-owned, local
+from app.modules.analysis import AnalysisContext
 from app.clients.exercise_client import ExerciseClient
 from app.utils.constants import (
     FORM_SCORE_EXCELLENT, FORM_SCORE_GOOD, FORM_SCORE_FAIR, FORM_SCORE_POOR,
@@ -74,144 +73,56 @@ class FormQualityService:
             FORM_SCORE_GOOD  # Default to "good" for invalid values
         )
     
-    def track_form_degradation_in_session(
-        self,
-        workout_session_id: int,
-        exercise_id: int
-    ) -> Optional[float]:
+    def _degradation_rate(self, sets) -> Optional[float]:
         """
-        Analyze form degradation within a single workout session.
-        
-        Compares form quality from first sets to last sets to detect
-        fatigue-related form breakdown.
-        
-        Args:
-            workout_session_id: Workout session ID
-            exercise_id: Exercise ID
-            
-        Returns:
-            Degradation rate (positive = degraded, negative = improved, 0.0 = no change)
-            Returns None if insufficient data
+        Form degradation within a session for one exercise: average form score of
+        the first half of sets minus the second half (positive = degraded). ``sets``
+        are the session's ExerciseSetDTOs for one exercise.
         """
-        # Get all sets for this exercise in this session, ordered by set number
-        sets = (
-            self.db.query(ExerciseSet)
-            .filter(
-                ExerciseSet.workout_session_id == workout_session_id,
-                ExerciseSet.exercise_id == exercise_id,
-                ExerciseSet.form_quality.isnot(None)
-            )
-            .order_by(ExerciseSet.set_number)
-            .all()
-        )
-        
-        if len(sets) < 2:
-            return None  # Need at least 2 sets to compare
-        
-        # Calculate average form score for first half vs second half
-        midpoint = len(sets) // 2
-        first_half = sets[:midpoint]
-        second_half = sets[midpoint:]
-        
-        first_half_scores = [
-            self.calculate_form_score(s.form_quality) for s in first_half
-        ]
-        second_half_scores = [
-            self.calculate_form_score(s.form_quality) for s in second_half
-        ]
-        
-        if not first_half_scores or not second_half_scores:
+        scored = [s for s in sorted(sets, key=lambda s: s.set_number) if s.form_quality is not None]
+        if len(scored) < 2:
             return None
-        
-        avg_first = sum(first_half_scores) / len(first_half_scores)
-        avg_second = sum(second_half_scores) / len(second_half_scores)
-        
-        # Degradation rate: positive = degraded, negative = improved
-        degradation_rate = avg_first - avg_second
-        
-        return round(degradation_rate, 3)
-    
-    def track_session_form_quality(
-        self,
-        workout_session_id: int
-    ) -> Dict[int, Dict]:
+        midpoint = len(scored) // 2
+        first = [self.calculate_form_score(s.form_quality) for s in scored[:midpoint]]
+        second = [self.calculate_form_score(s.form_quality) for s in scored[midpoint:]]
+        if not first or not second:
+            return None
+        return round(sum(first) / len(first) - sum(second) / len(second), 3)
+
+    def track_session_form_quality(self, ctx: AnalysisContext) -> Dict[int, Dict]:
         """
-        Track form quality for all exercises in a workout session.
-        
-        Args:
-            workout_session_id: Workout session ID
-            
-        Returns:
-            Dict mapping exercise_id to form quality metrics
+        Track form quality for all exercises in the completed session (from the
+        context). Returns a dict mapping exercise_id to form-quality metrics.
         """
-        # Get all sets with form quality data
-        sets = (
-            self.db.query(ExerciseSet)
-            .filter(
-                ExerciseSet.workout_session_id == workout_session_id,
-                ExerciseSet.form_quality.isnot(None)
-            )
-            .order_by(ExerciseSet.exercise_id, ExerciseSet.set_number)
-            .all()
-        )
-        
+        sets = [s for s in ctx.sets if s.form_quality is not None]
         if not sets:
             return {}
-        
-        # Group by exercise
-        exercise_metrics = {}
-        current_exercise = None
-        exercise_sets = []
-        
-        for ex_set in sets:
-            if current_exercise != ex_set.exercise_id:
-                # Process previous exercise
-                if current_exercise is not None and exercise_sets:
-                    exercise_metrics[current_exercise] = self._calculate_exercise_metrics(
-                        current_exercise, exercise_sets, workout_session_id
-                    )
-                
-                # Start new exercise
-                current_exercise = ex_set.exercise_id
-                exercise_sets = [ex_set]
-            else:
-                exercise_sets.append(ex_set)
-        
-        # Process last exercise
-        if current_exercise is not None and exercise_sets:
-            exercise_metrics[current_exercise] = self._calculate_exercise_metrics(
-                current_exercise, exercise_sets, workout_session_id
-            )
-        
-        return exercise_metrics
-    
-    def _calculate_exercise_metrics(
-        self,
-        exercise_id: int,
-        sets: List[ExerciseSet],
-        workout_session_id: int
-    ) -> Dict:
-        """Calculate form quality metrics for an exercise in a session."""
+
+        by_exercise: Dict[int, list] = {}
+        for s in sets:
+            by_exercise.setdefault(s.exercise_id, []).append(s)
+
+        return {
+            ex_id: self._calculate_exercise_metrics(ex_id, ex_sets)
+            for ex_id, ex_sets in by_exercise.items()
+        }
+
+    def _calculate_exercise_metrics(self, exercise_id: int, sets) -> Dict:
+        """Calculate form quality metrics for an exercise in a session (DTO sets)."""
         form_scores = [self.calculate_form_score(s.form_quality) for s in sets]
         average_score = sum(form_scores) / len(form_scores)
-        
-        # Count high RPE + poor form combinations
+
         from app.utils.constants import HIGH_RPE_THRESHOLD
         high_rpe_poor_form = sum(
             1 for s in sets
             if s.rpe and s.rpe >= HIGH_RPE_THRESHOLD
             and s.form_quality in ["poor", "fair"]
         )
-        
-        # Calculate degradation rate
-        degradation_rate = self.track_form_degradation_in_session(
-            workout_session_id, exercise_id
-        )
-        
+
         return {
             "average_form_score": round(average_score, 3),
             "sets_analyzed": len(sets),
-            "degradation_rate": degradation_rate,
+            "degradation_rate": self._degradation_rate(sets),
             "high_rpe_poor_form_count": high_rpe_poor_form
         }
     

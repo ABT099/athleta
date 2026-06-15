@@ -12,8 +12,12 @@ class Settings(BaseSettings):
     
     model_config = ConfigDict(env_file=".env", case_sensitive=True)
     
-    # Database - required from environment
+    # Database - required from environment.
+    # DATABASE_URL is the shared api database (transitional: read while reads are
+    # migrated to ApiClient). AUTOREG_DATABASE_URL is auto-regulation's OWN database
+    # holding only algo state; defaults to DATABASE_URL until the data is split out.
     DATABASE_URL: str
+    AUTOREG_DATABASE_URL: str = ""
     
     # API
     API_HOST: str = "0.0.0.0"
@@ -34,6 +38,13 @@ class Settings(BaseSettings):
                 UserWarning
             )
         return v
+
+    # api service (NestJS) — auto-regulation fetches api-owned data (athletes,
+    # plans, workout sessions, sets, recovery) over HTTP instead of the shared DB.
+    API_BASE_URL: str = "http://localhost:8080"
+    # Shared service-to-service token for internal api endpoints. The synchronous
+    # completion path and the async Celery retraining job both authenticate with it.
+    SERVICE_TOKEN: str = ""
 
     # Redis & Celery
     REDIS_URL: str = "redis://localhost:6379/0"

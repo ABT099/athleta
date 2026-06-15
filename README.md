@@ -10,10 +10,9 @@ An all in one intelligent platform to enhance fitness progression with AI
 
 ```
 athleta/
-├── migrator/ # Database migration (Flyway)
 ├── services/
-│ ├── api/ # NestJS API service
-│ ├── auto-regulation-service/ # Python AI/ML service
+│ ├── api/ # NestJS API service (owns its Postgres; migrations via drizzle-kit)
+│ ├── auto-regulation-service/ # Python AI/ML service (owns its Postgres; migrations via Alembic)
 │ ├── exercise-service/ # Go service for exercise inference and logic
 │ └── muscle-image/ # PHP service for muscle images
 ├── docker-compose.yml
@@ -29,22 +28,31 @@ We have packaged everything to Docker containers so if you want to start the app
 docker compose up -d
 ```
 
-### Database
+### Databases
 
-The project uses **Flyway** running in a Docker container to manage database changes.
+Each service owns its own database and its own migrations — there is no shared
+migrator. Migrations are applied **manually** (not on container boot):
 
-#### Applying Changes
+- **api** owns the `athleta` Postgres. The schema lives in
+  [services/api/src/db/schema.ts](services/api/src/db/schema.ts); migrations are
+  generated and applied with drizzle-kit:
 
-Whenever you add a new SQL file to the `migrator/sql` folder, run this command to rebuild the image and apply the changes:
+  ```bash
+  cd services/api
+  npm run db:generate   # after editing schema.ts — writes drizzle/<n>_*.sql
+  npm run db:migrate    # applies pending migrations to $DATABASE_URL
+  ```
 
-```bash
-docker compose up --build migrator
-```
+- **auto-regulation-service** owns its own `autoreg` Postgres (the `ai_analysis`
+  schema). Models map onto `AutoregBase`; migrations use Alembic:
 
-### Syncing with Drizzle
+  ```bash
+  cd services/auto-regulation-service
+  alembic revision --autogenerate -m "describe change"   # after editing models
+  alembic upgrade head                                    # applies to $AUTOREG_DATABASE_URL
+  ```
 
-When you make changes and want to reflect those changes to the drizzle schema to use it in the api, you should run:
+- **exercise-service** seeds Neo4j independently (`make seed`).
 
-```bash
-npm run db:introspect
-```
+Run the relevant `migrate` / `upgrade head` step before starting the services
+against a fresh database.

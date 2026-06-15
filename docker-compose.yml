@@ -33,24 +33,6 @@ services:
       - "traefik.http.routers.dashboard.tls=true"
       - "traefik.http.routers.dashboard.middlewares=auth"
       - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
-  migrator:
-    container_name: athleta_migrator
-    image: ghcr.io/${GITHUB_REPOSITORY}/migrator:latest
-    environment:
-      DATABASE_URL: jdbc:postgresql://db:5432/athleta
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    networks:
-      - backend
-    depends_on:
-      db:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 256M
-
   db:
     container_name: athleta_db
     image: postgres:18-alpine
@@ -75,6 +57,31 @@ services:
       resources:
         limits:
           cpus: "1.0"
+          memory: 512M
+
+  autoreg-db:
+    container_name: athleta_autoreg_db
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: autoreg
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.utf8"
+    volumes:
+      - autoreg_postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
           memory: 512M
 
   neo4j:
@@ -200,8 +207,11 @@ services:
     image: ghcr.io/${GITHUB_REPOSITORY}/auto-regulation-service:latest
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/athleta
+      AUTOREG_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@autoreg-db:5432/autoreg
       REDIS_URL: redis://redis:6379/0
       EXERCISE_SERVICE_ADDR: exercise-service:50051
+      API_BASE_URL: http://api:8080
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     networks:
       - public
@@ -209,10 +219,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      autoreg-db:
+        condition: service_healthy
       redis:
         condition: service_healthy
-      migrator:
-        condition: service_completed_successfully
       exercise-service:
         condition: service_healthy
     healthcheck:
@@ -252,18 +262,21 @@ services:
     command: celery -A app.celery_app worker --loglevel=info --concurrency=2
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/athleta
+      AUTOREG_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@autoreg-db:5432/autoreg
       REDIS_URL: redis://redis:6379/0
       EXERCISE_SERVICE_ADDR: exercise-service:50051
+      API_BASE_URL: http://api:8080
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     networks:
       - backend
     depends_on:
       db:
         condition: service_healthy
+      autoreg-db:
+        condition: service_healthy
       redis:
         condition: service_healthy
-      migrator:
-        condition: service_completed_successfully
     restart: always
     deploy:
       resources:
@@ -283,6 +296,7 @@ services:
       AUTO_REGULATION_SERVICE_URL: http://auto-regulation-service:8000
       EXERCISE_SERVICE_URL: exercise-service:50051
       MUSCLE_IMAGE_URL: http://muscle-image-api:80
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       JWT_SECRET: ${JWT_SECRET}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
@@ -293,8 +307,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      migrator:
-        condition: service_completed_successfully
       auto-regulation-service:
         condition: service_healthy
       exercise-service:
@@ -391,6 +403,8 @@ networks:
 
 volumes:
   postgres_data:
+    driver: local
+  autoreg_postgres_data:
     driver: local
   neo4j_data:
     driver: local

@@ -28,6 +28,7 @@ from app.modules.ml.model_manager import ModelManager
 from app.modules.ml.bayesian_ensemble import BayesianEnsemble
 from app.modules.ml.model_selector import ModelSelector
 from app.modules.ml.sequential_features import SequentialFeatureEngineer
+from app.modules.analysis import AnalysisContext, TrainingHistory
 
 
 class WorkoutPredictor(BaseMLModel):
@@ -314,22 +315,18 @@ class WorkoutPredictorService:
     
     def train_athlete_model(
         self,
-        athlete_id: int,
+        history: TrainingHistory,
         min_sessions: Optional[int] = None
     ) -> Tuple[bool, Optional[Dict], Optional[str]]:
         """
-        Train ML model for specific athlete using tiered selection.
-        
-        Args:
-            athlete_id: Athlete ID
-            min_sessions: Minimum sessions required (auto-determined if None)
-            
-        Returns:
-            Tuple of (success, metrics, error_message)
+        Train the ML model for an athlete from a TrainingHistory (api-owned inputs
+        + local trend/progression history), using tiered model selection.
         """
         if not LIGHTGBM_AVAILABLE:
             return False, None, "lightgbm not available"
-        
+
+        athlete_id = history.athlete_id
+
         # Get model configuration based on session count
         config = self.model_selector.get_model_config(athlete_id)
         model_type = config["model_type"]
@@ -349,7 +346,7 @@ class WorkoutPredictorService:
                 
                 # Prepare sequential training data
                 X, y, feature_names, target_names = self.sequential_feature_engineer.prepare_sequential_dataset(
-                    athlete_id, min_sessions, sequence_length=config.get("sequence_length", 15)
+                    history, min_sessions, sequence_length=config.get("sequence_length", 15)
                 )
                 
                 if X is None:
@@ -357,7 +354,7 @@ class WorkoutPredictorService:
                     # Preserve n_ensemble_models from model_selector config
                     model_type = "lightgbm"
                     X, y, feature_names, target_names = self.feature_engineer.prepare_training_dataset(
-                        athlete_id, min_sessions
+                        history, min_sessions
                     )
                 else:
                     # Train sequential model
@@ -386,7 +383,7 @@ class WorkoutPredictorService:
         if model_type == "lightgbm":
             # Prepare training data
             X, y, feature_names, target_names = self.feature_engineer.prepare_training_dataset(
-                athlete_id, min_sessions
+                history, min_sessions
             )
             
             if X is None:
@@ -416,24 +413,19 @@ class WorkoutPredictorService:
     
     def predict_workout_parameters(
         self,
-        athlete_id: int,
+        ctx: "AnalysisContext",
         fallback_to_rules: bool = True
     ) -> Tuple[Optional[Dict], str]:
         """
-        Predict optimal workout parameters using ML model with tiered selection.
-        
-        Args:
-            athlete_id: Athlete ID
-            fallback_to_rules: If True, returns None on ML failure (caller should use rules)
-            
-        Returns:
-            Tuple of (predictions_dict, source)
-            - predictions_dict: {"volume_multiplier": float, "intensity_multiplier": float, "confidence": float, "uncertainty": float}
-            - source: "ml", "insufficient_data", "model_not_trained"
+        Predict optimal workout parameters for the athlete in the Analysis Context.
+        Features come from local performance_trends + the context's athlete/recovery/
+        PRs/plan-focus. Returns (predictions_dict, source).
         """
         if not LIGHTGBM_AVAILABLE:
             return None, "lightgbm_unavailable"
-        
+
+        athlete_id = ctx.athlete_id
+
         # Check if athlete has enough sessions
         config = self.model_selector.get_model_config(athlete_id)
         if config["model_type"] == "rules_only":
@@ -457,20 +449,25 @@ class WorkoutPredictorService:
             
             # Extract sequential features
             sequence, feature_names = self.sequential_feature_engineer.extract_sequence_features(
-                athlete_id, sequence_length=config.get("sequence_length", 15)
+                ctx, sequence_length=config.get("sequence_length", 15)
             )
-            
+
             if sequence is None:
                 return None, "insufficient_data"
-            
+
             X = sequence.reshape(1, sequence.shape[0], sequence.shape[1])
         else:
-            # Extract standard features
-            features, feature_names = self.feature_engineer.extract_workout_features(athlete_id)
-            
+            # Extract standard features from the context (athlete/recovery/PRs/focus)
+            features, feature_names = self.feature_engineer.extract_workout_features(
+                athlete=ctx.athlete,
+                recovery_history=[ctx.recovery] if ctx.recovery else [],
+                personal_records=ctx.personal_records,
+                focus_areas=ctx.plan.focus_areas if ctx.plan else [],
+            )
+
             if features is None:
                 return None, "insufficient_data"
-            
+
             X = features.reshape(1, -1)
         
         # Predict
@@ -532,10 +529,10 @@ class WorkoutPredictorService:
         training_date = datetime.fromisoformat(training_date_str)
         
         # Get session count since training date
-        from app.models import WorkoutSession
-        new_sessions = self.db.query(WorkoutSession).filter(
-            WorkoutSession.athlete_id == athlete_id,
-            WorkoutSession.session_date > training_date
+        from app.models import PerformanceTrend
+        new_sessions = self.db.query(PerformanceTrend).filter(
+            PerformanceTrend.athlete_id == athlete_id,
+            PerformanceTrend.session_date > training_date
         ).count()
         
         if new_sessions >= new_sessions_threshold:

@@ -8,6 +8,7 @@ import { PlansModule } from './modules/plans/plans.module';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { EmailModule } from './modules/common/email/email.module';
+import { InternalModule } from './modules/internal/internal.module';
 import { AppController } from './app.controller';
 import { ClsModule } from 'nestjs-cls';
 
@@ -26,6 +27,7 @@ import { ClsModule } from 'nestjs-cls';
     AuthModule,
     EmailModule,
     PlansModule,
+    InternalModule,
   ],
   controllers: [AppController],
   providers: [

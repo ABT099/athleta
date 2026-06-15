@@ -35,6 +35,8 @@ dependencies = [
     # gRPC client for exercise-service
     "grpcio>=1.62",
     "protobuf>=4.25",
+    # HTTP client for the api service (fetches api-owned data over the wire)
+    "httpx==0.28.1",
 ]
 
 [project.optional-dependencies]

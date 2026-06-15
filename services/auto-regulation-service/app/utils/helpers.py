@@ -1,30 +1,21 @@
 """
-Helper utilities for common database operations.
+Helper utilities.
 """
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
-from app.models import Athlete
+
+from app.clients.api_client import ApiClient, AthleteDTO
 
 
-def get_athlete_or_404(db: Session, athlete_id: int) -> Athlete:
+def get_athlete_or_404(athlete_id: int) -> AthleteDTO:
     """
-    Get athlete by ID or raise 404 HTTPException.
-    
-    Args:
-        db: Database session
-        athlete_id: Athlete ID
-        
-    Returns:
-        Athlete model
-        
-    Raises:
-        HTTPException: 404 if athlete not found
+    Fetch an athlete from the api service or raise 404. The athlete is api-owned,
+    so it is fetched over the wire rather than read from a local table.
     """
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-    if not athlete:
+    with ApiClient() as api:
+        athlete = api.get_athlete(athlete_id)
+    if athlete is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Athlete {athlete_id} not found"
+            detail=f"Athlete {athlete_id} not found",
         )
     return athlete
-

@@ -35,6 +35,47 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+# --- Auto-regulation's OWN database (algo-only state) ------------------------
+# Auto-regulation owns only algorithm state (plan entries, performance/form/
+# progression trends, RPE calibration, prescription history, ML jobs). It lives
+# in a separate database; api-owned data is fetched via ApiClient, not joined.
+# Defaults to DATABASE_URL so single-DB setups and tests keep working until the
+# data is physically split.
+AUTOREG_DATABASE_URL = settings.AUTOREG_DATABASE_URL or settings.DATABASE_URL
+AUTOREG_IS_SQLITE = AUTOREG_DATABASE_URL.startswith("sqlite")
+
+autoreg_engine = create_engine(
+    AUTOREG_DATABASE_URL,
+    pool_pre_ping=not AUTOREG_IS_SQLITE,
+    echo=settings.API_DEBUG,
+)
+
+if not AUTOREG_IS_SQLITE:
+    @event.listens_for(autoreg_engine, "connect")
+    def set_autoreg_search_path(dbapi_conn, connection_record):
+        """Algo tables live in the ai_analysis schema of auto-regulation's DB."""
+        cursor = dbapi_conn.cursor()
+        cursor.execute("SET search_path TO ai_analysis, public")
+        cursor.close()
+
+AutoregSessionLocal = sessionmaker(
+    autocommit=False, autoflush=False, bind=autoreg_engine
+)
+
+# Separate declarative registry: auto-reg-owned models map here, never alongside
+# api-owned tables (which auto-regulation no longer maps).
+AutoregBase = declarative_base()
+
+
+def get_autoreg_db() -> Generator[Session, None, None]:
+    """Dependency function for a session against auto-regulation's own database."""
+    db = AutoregSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 def get_schema_table_args(schema: str = "ai_analysis") -> Dict[str, Any]:
     """
     Get table args with schema for PostgreSQL, empty for SQLite.

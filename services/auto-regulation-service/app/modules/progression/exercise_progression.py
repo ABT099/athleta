@@ -9,9 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.models import (
-    Athlete, ExerciseProgressionTracking, WorkoutSession
-)
+from app.models import ExerciseProgressionTracking  # algo-owned, local reads/writes
 from app.clients.exercise_client import ExerciseClient
 from app.utils.constants import (
     TrainingExperience, TrainingType, ExerciseType,

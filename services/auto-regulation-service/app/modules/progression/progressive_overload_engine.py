@@ -11,10 +11,9 @@ from sqlalchemy import desc, case
 import json
 import numpy as np
 
-from app.models import (
-    Athlete, WorkoutPlan, PlanEntry, WorkoutDay, WorkoutDayExercise,
-    WorkoutSession, ExerciseSet, RecoveryMetrics, PerformanceTrend,
-)
+from app.models import PlanEntry, PerformanceTrend  # algo-owned, local
+from app.clients.api_client import PlanDTO, WorkoutSessionDTO
+from app.modules.analysis import AnalysisContext
 from app.clients.exercise_client import ExerciseClient
 from app.shared.calculations import TrainingCalculations
 from app.modules.volume import RecoveryAnalyzer
@@ -71,67 +70,50 @@ class ProgressiveOverloadEngine:
         else:
             self.ml_predictor = None
     
-    def process_workout_completion(
-        self,
-        athlete_id: int,
-        workout_day_id: int,
-        session_data: Dict,
-        recovery_data: Dict
-    ) -> Dict:
+    def analyze(self, ctx: AnalysisContext) -> Dict:
         """
-        Main entry point: process completed workout and generate next workout adjustments.
-        
-        Args:
-            athlete_id: Athlete ID
-            workout_day_id: Workout day that was completed
-            session_data: Completed workout data
-            recovery_data: Recovery metrics
-            
-        Returns:
-            Dict with analysis, adjustments, and recommendations
+        Main entry point: analyse a completed workout (from the Analysis Context)
+        and generate next-workout adjustments.
+
+        Reads api-owned data from the context (zero fetches); reads history from
+        auto-regulation's own performance_trends; writes only its own algo tables.
         """
-        # Get athlete and current plan
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            raise ValueError(f"Athlete {athlete_id} not found")
-        
+        athlete = ctx.athlete
+        athlete_id = ctx.athlete_id
+        workout_day_id = ctx.session.workout_day_id
+
         # Step 1: Analyze plan context
-        plan_context = self.analyze_plan_context(athlete_id)
-        
+        plan_context = self.analyze_plan_context(ctx)
+
         # Step 2: Analyze workout performance
-        performance_analysis = self.analyze_workout_performance(
-            athlete, workout_day_id, session_data, plan_context
-        )
-        
+        performance_analysis = self.analyze_workout_performance(ctx, plan_context)
+
         # Step 3: Assess recovery
-        recovery_status = self.assess_recovery_status(
-            athlete_id, recovery_data, plan_context
-        )
-        
+        recovery_status = self.assess_recovery_status(ctx, plan_context)
+
+        # Step 3.5: Denormalise this session's signals into local algo tables so the
+        # injury / ML / plateau / volume history below (and future analyses) include
+        # the just-completed session.
+        self._record_session(ctx, recovery_status, performance_analysis)
+
         # Step 4: Run injury prevention checks
         proposed_volume = performance_analysis.get("total_volume", 0) * VOLUME_ESTIMATION_MULTIPLIER
-        proposed_exercises = [s["exercise_id"] for s in session_data.get("exercise_sets", [])]
-        
-        injury_risk = self.injury_prevention.check_all_injury_risks(
-            athlete_id, proposed_volume, proposed_exercises
-        )
-        
+        injury_risk = self.injury_prevention.check_all_injury_risks(ctx, proposed_volume)
+
         # Step 4.5: Detect and intervene on plateaus (AUTOMATIC)
         from app.modules.progression.plateau_intervention import PlateauInterventionService
         plateau_service = PlateauInterventionService(self.db)
-        plateau_interventions = plateau_service.detect_and_intervene(
-            athlete_id, workout_day_id, session_data, performance_analysis
-        )
-        
+        plateau_interventions = plateau_service.detect_and_intervene(ctx, performance_analysis)
+
         # Step 5: Try ML prediction first, fallback to rules
         adjustments, prediction_source = self.calculate_next_workout_parameters_hybrid(
-            athlete,
+            ctx,
             plan_context,
             performance_analysis,
             recovery_status,
             injury_risk
         )
-        
+
         # Step 5.5: Apply constraint-based optimization
         training_type = plan_context.get("training_type", TrainingType.HYPERTROPHY)
         from app.modules.ml.constrained_optimizer import ConstrainedOptimizer
@@ -143,7 +125,7 @@ class ProgressiveOverloadEngine:
             injury_risk,
             recovery_status,
             training_type,
-            athlete.training_experience
+            ctx.athlete.training_experience
         )
         
         # Update adjustments with optimized parameters
@@ -183,28 +165,16 @@ class ProgressiveOverloadEngine:
             "ai_insights": ai_insights
         }
     
-    def analyze_plan_context(self, athlete_id: int) -> Dict:
+    def analyze_plan_context(self, ctx: AnalysisContext) -> Dict:
         """
         Analyze current training plan context.
-        
-        Critical for respecting periodization and plan structure.
-        
-        Args:
-            athlete_id: Athlete ID
-            
-        Returns:
-            Dict with plan context information
+
+        Critical for respecting periodization and plan structure. The plan
+        (api-owned) and the current plan entry (algo-owned) both come from the
+        Analysis Context.
         """
-        # Get active workout plan
-        plan = (
-            self.db.query(WorkoutPlan)
-            .filter(
-                WorkoutPlan.athlete_id == athlete_id,
-                WorkoutPlan.is_active == 1
-            )
-            .first()
-        )
-        
+        plan = ctx.plan
+
         if not plan:
             return {
                 "has_plan": False,
@@ -213,18 +183,10 @@ class ProgressiveOverloadEngine:
                 "week_number": 1,
                 "is_deload_week": False,
             }
-        
-        # Get current plan entry (this week)
-        current_entry = (
-            self.db.query(PlanEntry)
-            .filter(
-                PlanEntry.workout_plan_id == plan.id,
-                PlanEntry.start_date <= datetime.now(timezone.utc),
-                PlanEntry.end_date >= datetime.now(timezone.utc)
-            )
-            .first()
-        )
-        
+
+        # Current plan entry for this week (loaded locally into the context)
+        current_entry = ctx.current_plan_entry
+
         if not current_entry:
             # Create default entry if none exists
             week_number = self._calculate_current_week(plan)
@@ -263,93 +225,72 @@ class ProgressiveOverloadEngine:
     
     def analyze_workout_performance(
         self,
-        athlete: Athlete,
-        workout_day_id: int,
-        session_data: Dict,
+        ctx: AnalysisContext,
         plan_context: Dict
     ) -> Dict:
         """
-        Analyze workout performance vs prescribed parameters.
-        
-        Args:
-            athlete: Athlete model
-            workout_day_id: Workout day ID
-            session_data: Session data with sets
-            plan_context: Current plan context
-            
-        Returns:
-            Dict with performance analysis
+        Analyze workout performance vs prescribed parameters. The completed session
+        + sets and the prescribing plan day come from the Analysis Context.
         """
-        workout_day = self.db.query(WorkoutDay).filter(
-            WorkoutDay.id == workout_day_id
-        ).first()
-        
-        if not workout_day:
+        workout_day_id = ctx.session.workout_day_id
+        day = None
+        if ctx.plan:
+            day = next((d for d in ctx.plan.days if d.id == workout_day_id), None)
+
+        if day is None:
             return {}
-        
+        prescribed_by_ex = {ex.exercise_id: ex for ex in day.exercises}
+
         # Analyze each exercise
         exercise_analyses = []
         total_volume = 0
         rpe_values = []
-        
+        pr_tracker = PRTrackerService()
+
         # Group sets by exercise
         exercise_sets = {}
-        for set_data in session_data.get("exercise_sets", []):
-            ex_id = set_data["exercise_id"]
-            if ex_id not in exercise_sets:
-                exercise_sets[ex_id] = []
-            exercise_sets[ex_id].append(set_data)
-        
+        for set_data in ctx.sets:
+            exercise_sets.setdefault(set_data.exercise_id, []).append(set_data)
+
         # Analyze each exercise
         for ex_id, sets in exercise_sets.items():
-            # Get prescribed parameters
-            prescribed = (
-                self.db.query(WorkoutDayExercise)
-                .filter(
-                    WorkoutDayExercise.workout_day_id == workout_day_id,
-                    WorkoutDayExercise.exercise_id == ex_id
-                )
-                .first()
-            )
-            
+            # Get prescribed parameters (from the plan day in the context)
+            prescribed = prescribed_by_ex.get(ex_id)
+
             if not prescribed:
                 continue
-            
+
             # Calculate volume for this exercise
-            ex_volume = sum(s["weight"] * s["reps"] for s in sets)
+            ex_volume = sum(s.weight * s.reps for s in sets)
             total_volume += ex_volume
-            
+
             # Average RPE
-            ex_rpe_values = [s["rpe"] for s in sets if s.get("rpe")]
+            ex_rpe_values = [s.rpe for s in sets if s.rpe is not None]
             avg_rpe = sum(ex_rpe_values) / len(ex_rpe_values) if ex_rpe_values else None
             if avg_rpe:
                 rpe_values.append(avg_rpe)
-            
+
             # Estimate 1RM from best set
-            best_set = max(sets, key=lambda s: s["weight"] * s["reps"])
-            estimated_1rm = self.calc.estimate_1rm_average(
-                best_set["weight"], best_set["reps"]
-            )
-            
+            best = max(sets, key=lambda s: s.weight * s.reps)
+            best_set = {"weight": best.weight, "reps": best.reps}
+            estimated_1rm = self.calc.estimate_1rm_average(best.weight, best.reps)
+
             # Compare to prescribed
             actual_sets = len(sets)
-            avg_reps = sum(s["reps"] for s in sets) / len(sets)
-            
+            avg_reps = sum(s.reps for s in sets) / len(sets)
+
             # Calculate expected sets (use midpoint of range for comparison)
             expected_sets = (prescribed.target_sets_min + prescribed.target_sets_max) / 2
             sets_diff = actual_sets - expected_sets
             reps_in_range = prescribed.target_reps_min <= avg_reps <= prescribed.target_reps_max
-            
+
             # RPE comparison
             rpe_diff = None
             if avg_rpe and prescribed.target_rpe:
                 rpe_diff = avg_rpe - prescribed.target_rpe
-            
-            # PR comparison
-            pr_tracker = PRTrackerService(self.db)
-            pr_comparison = pr_tracker.compare_to_pr(
-                ex_id, athlete.id, best_set
-            )
+
+            # PR comparison (current PRs are in the context)
+            pr_comparison = pr_tracker.compare_to_pr(ctx.pr_for(ex_id), best_set)
             
             exercise_analyses.append({
                 "exercise_id": ex_id,
@@ -388,43 +329,44 @@ class ProgressiveOverloadEngine:
     
     def assess_recovery_status(
         self,
-        athlete_id: int,
-        recovery_data: Dict,
+        ctx: AnalysisContext,
         plan_context: Dict
     ) -> Dict:
         """
-        Assess recovery status using recovery analyzer.
-        
-        Args:
-            athlete_id: Athlete ID
-            recovery_data: Recovery metrics data
-            plan_context: Plan context
-            
-        Returns:
-            Dict with recovery assessment
+        Assess recovery status. Current recovery metrics come from the context;
+        cumulative fatigue is computed from local performance_trends.
         """
-        # Calculate readiness score
-        readiness_score = self.recovery_analyzer.calculate_readiness_score(
-            sleep_quality=recovery_data["sleep_quality"],
-            sleep_hours=recovery_data.get("sleep_hours"),
-            overall_soreness=recovery_data.get("overall_soreness"),
-            stress_level=recovery_data.get("stress_level"),
-            energy_level=recovery_data.get("energy_level"),
-            muscle_soreness=recovery_data.get("muscle_soreness")
-        )
-        
-        # Calculate cumulative fatigue
-        fatigue_status = self.recovery_analyzer.calculate_cumulative_fatigue(
-            athlete_id, days_lookback=14
-        )
-        
+        recovery = ctx.recovery
+        if recovery is None:
+            readiness_score = DEFAULT_READINESS_SCORE
+            sleep_quality = None
+        else:
+            muscle_soreness = None
+            if recovery.muscle_soreness:
+                try:
+                    muscle_soreness = json.loads(recovery.muscle_soreness)
+                except (json.JSONDecodeError, TypeError):
+                    muscle_soreness = None
+            readiness_score = self.recovery_analyzer.calculate_readiness_score(
+                sleep_quality=recovery.sleep_quality,
+                sleep_hours=recovery.sleep_hours,
+                overall_soreness=recovery.overall_soreness,
+                stress_level=recovery.stress_level,
+                energy_level=recovery.energy_level,
+                muscle_soreness=muscle_soreness,
+            )
+            sleep_quality = recovery.sleep_quality
+
+        # Calculate cumulative fatigue from local trend history
+        fatigue_status = self.recovery_analyzer.calculate_cumulative_fatigue(ctx)
+
         # Get recommendations
         recommendations = self.recovery_analyzer.get_recovery_recommendations(
             readiness_score,
             fatigue_status["fatigue_level"],
-            recovery_data["sleep_quality"]
+            sleep_quality,
         )
-        
+
         return {
             "readiness_score": readiness_score,
             "fatigue_status": fatigue_status,
@@ -525,86 +467,24 @@ class ProgressiveOverloadEngine:
     def _check_acwr(self, athlete_id: int) -> Tuple[bool, Optional[str]]:
         """
         Check Acute:Chronic Workload Ratio (ACWR).
-        
-        Safe zone: 0.8 - 1.3
-        Elevated risk: < 0.8 (undertraining) or > 1.5 (overtraining)
-        
+
+        Safe zone: 0.8 - 1.3. The ACWR is denormalised onto each performance_trend
+        at creation time (over the proper acute/chronic windows), so the latest
+        trend carries the current ratio — no api-owned session reads needed.
+
         Reference: Gabbett (2016): The training-injury prevention paradox
-        
-        Args:
-            athlete_id: Athlete ID
-            
-        Returns:
-            Tuple of (should_deload, reason)
         """
-        from datetime import datetime, timedelta, timezone
-        from app.models import WorkoutSession
-        from sqlalchemy import func, case
-        
-        # Get recent sessions (last 7 days = acute)
-        acute_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-        # Get chronic sessions (last 28 days)
-        chronic_cutoff = datetime.now(timezone.utc) - timedelta(days=28)
-        
-        # Optimized: Use SQL aggregation to calculate mean loads per session
-        # ACWR = mean(acute_loads) / mean(chronic_loads)
-        # Only include sessions with both total_volume and overall_rpe to avoid underestimating loads
-        # Filter incomplete sessions at the query level, not just in the case statement
-        acute_result = (
-            self.db.query(
-                func.sum(
-                    (WorkoutSession.total_volume / 1000.0) * WorkoutSession.overall_rpe
-                ).label('acute_sum'),
-                func.count(WorkoutSession.id).label('acute_count')
-            )
-            .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= acute_cutoff,
-                WorkoutSession.total_volume.isnot(None),
-                WorkoutSession.overall_rpe.isnot(None)
-            )
+        latest = (
+            self.db.query(PerformanceTrend)
+            .filter(PerformanceTrend.athlete_id == athlete_id)
+            .order_by(desc(PerformanceTrend.session_date))
             .first()
         )
-        
-        chronic_result = (
-            self.db.query(
-                func.sum(
-                    (WorkoutSession.total_volume / 1000.0) * WorkoutSession.overall_rpe
-                ).label('chronic_sum'),
-                func.count(WorkoutSession.id).label('chronic_count')
-            )
-            .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= chronic_cutoff,
-                WorkoutSession.total_volume.isnot(None),
-                WorkoutSession.overall_rpe.isnot(None)
-            )
-            .first()
-        )
-        
-        if (acute_result is None or chronic_result is None or 
-            acute_result.acute_sum is None or chronic_result.chronic_sum is None or 
-            chronic_result.chronic_sum == 0 or acute_result.acute_count == 0 or chronic_result.chronic_count == 0):
+        if not latest or latest.acwr is None:
             return False, None
-        
-        # Calculate ACWR: mean(acute_loads) / mean(chronic_loads)
-        # = (sum(acute) / count(acute)) / (sum(chronic) / count(chronic))
-        # = sum(acute) * count(chronic) / (sum(chronic) * count(acute))
-        acute_mean = acute_result.acute_sum / acute_result.acute_count if acute_result.acute_count > 0 else 0.0
-        chronic_mean = chronic_result.chronic_sum / chronic_result.chronic_count if chronic_result.chronic_count > 0 else 0.0
-        
-        if chronic_mean == 0:
-            return False, None
-        
-        acwr = acute_mean / chronic_mean
-        
-        # Check if outside safe zone
-        if acwr > ACWR_HIGH_RISK_THRESHOLD:
-            return True, f"ACWR {acwr:.2f} exceeds safe zone (>{ACWR_HIGH_RISK_THRESHOLD}) - high injury risk, deload recommended"
-        elif acwr < ACWR_UNDERTRAINING_THRESHOLD:
-            # Undertraining, not a deload trigger but worth noting
-            return False, None
-        
+
+        if latest.acwr > ACWR_HIGH_RISK_THRESHOLD:
+            return True, f"ACWR {latest.acwr:.2f} exceeds safe zone (>{ACWR_HIGH_RISK_THRESHOLD}) - high injury risk, deload recommended"
         return False, None
     
     def _check_session_rpe_spike(self, athlete_id: int, lookback_sessions: int) -> Tuple[bool, Optional[str]]:
@@ -621,26 +501,24 @@ class ProgressiveOverloadEngine:
         Returns:
             Tuple of (should_deload, reason)
         """
-        from app.models import WorkoutSession
-        
-        recent_sessions = (
-            self.db.query(WorkoutSession)
-            .filter(WorkoutSession.athlete_id == athlete_id)
-            .order_by(desc(WorkoutSession.session_date))
+        recent_trends = (
+            self.db.query(PerformanceTrend)
+            .filter(PerformanceTrend.athlete_id == athlete_id)
+            .order_by(desc(PerformanceTrend.session_date))
             .limit(lookback_sessions)
             .all()
         )
-        
-        if len(recent_sessions) < 3:
+
+        if len(recent_trends) < 3:
             return False, None
-        
-        # Calculate sRPE for each session
-        srpe_values = []
-        for session in recent_sessions:
-            if session.overall_rpe and session.duration_minutes:
-                srpe = session.overall_rpe * session.duration_minutes
-                srpe_values.append(srpe)
-        
+
+        # sRPE = RPE x duration, from the denormalised per-session trend rows
+        srpe_values = [
+            t.average_rpe * t.duration_minutes
+            for t in recent_trends
+            if t.average_rpe and t.duration_minutes
+        ]
+
         if len(srpe_values) < 3:
             return False, None
         
@@ -668,22 +546,21 @@ class ProgressiveOverloadEngine:
             Tuple of (days_since_last_workout, volume_multiplier, intensity_multiplier)
             Returns (None, None, None) if no break detected or no previous workouts
         """
-        from app.models import WorkoutSession
-        
-        # Get last workout session
-        last_session = (
-            self.db.query(WorkoutSession)
-            .filter(WorkoutSession.athlete_id == athlete_id)
-            .order_by(desc(WorkoutSession.session_date))
+        # Most recent local performance trend (one per session) gives the last
+        # training date without reading api-owned sessions.
+        last_trend = (
+            self.db.query(PerformanceTrend)
+            .filter(PerformanceTrend.athlete_id == athlete_id)
+            .order_by(desc(PerformanceTrend.session_date))
             .first()
         )
-        
+
         # If no previous workouts, return None (first workout ever)
-        if not last_session:
+        if not last_trend:
             return None, None, None
-        
+
         # Handle timezone-naive dates from database
-        session_date = last_session.session_date
+        session_date = last_trend.session_date
         if session_date.tzinfo is None:
             session_date = session_date.replace(tzinfo=timezone.utc)
         
@@ -715,7 +592,7 @@ class ProgressiveOverloadEngine:
     
     def calculate_next_workout_parameters_hybrid(
         self,
-        athlete: Athlete,
+        ctx: AnalysisContext,
         plan_context: Dict,
         performance: Dict,
         recovery: Dict,
@@ -747,7 +624,7 @@ class ProgressiveOverloadEngine:
         if self.ml_predictor and ML_AVAILABLE:
             try:
                 ml_result, ml_source = self.ml_predictor.predict_workout_parameters(
-                    athlete.id, fallback_to_rules=True
+                    ctx, fallback_to_rules=True
                 )
                 
                 if ml_result and ml_source == "ml":
@@ -759,7 +636,7 @@ class ProgressiveOverloadEngine:
         
         # Get rule-based prediction
         rule_adjustments = self.calculate_next_workout_parameters(
-            athlete, plan_context, performance, recovery, injury_risk
+            ctx, plan_context, performance, recovery, injury_risk
         )
         
         # Get uncertainty if available
@@ -820,7 +697,7 @@ class ProgressiveOverloadEngine:
     
     def calculate_next_workout_parameters(
         self,
-        athlete: Athlete,
+        ctx: AnalysisContext,
         plan_context: Dict,
         performance: Dict,
         recovery: Dict,
@@ -873,7 +750,7 @@ class ProgressiveOverloadEngine:
         
         # === Priority 2.5: Extended break detection ===
         # Check for extended break and apply detraining adjustments
-        days_since_break, break_volume_mult, break_intensity_mult = self._detect_extended_break(athlete.id)
+        days_since_break, break_volume_mult, break_intensity_mult = self._detect_extended_break(ctx.athlete_id)
         break_info = None
         if days_since_break is not None:
             # Apply break adjustments (these are multipliers, so multiply)
@@ -917,7 +794,7 @@ class ProgressiveOverloadEngine:
             ex_id = analysis.get("exercise_id")
             if ex_id:
                 should_block, reason = self.form_service.should_block_progression(
-                    athlete.id, ex_id
+                    ctx.athlete_id, ex_id
                 )
                 
                 if should_block:
@@ -939,7 +816,7 @@ class ProgressiveOverloadEngine:
         performance_level = performance.get("performance_level", "on_target")
         
         # Get progression rates for athlete's experience
-        progression_data = PROGRESSION_RATES[athlete.training_experience]
+        progression_data = PROGRESSION_RATES[ctx.athlete.training_experience]
         
         # Adjust based on performance and training type
         if performance_level == "exceeding":
@@ -1005,9 +882,9 @@ class ProgressiveOverloadEngine:
             for muscle_name in key_muscle_names:
                 try:
                     volume_rec = self.volume_manager.get_volume_adjustment_recommendation(
-                        athlete.id,
+                        ctx.athlete_id,
                         muscle_name,
-                        athlete.training_experience,
+                        ctx.athlete.training_experience,
                         volume_adjustment
                     )
                     if volume_rec["priority"] == "high":
@@ -1031,11 +908,11 @@ class ProgressiveOverloadEngine:
         
         # Calculate exercise-specific adjustments
         exercise_adjustments = self._calculate_exercise_specific_adjustments(
-            athlete.id,
+            ctx.athlete_id,
             performance.get("exercise_analyses", []),
             intensity_adjustment,
             volume_adjustment,
-            athlete.training_experience,
+            ctx.athlete.training_experience,
             training_type,
             form_quality_gates,
             plan_context,
@@ -1392,7 +1269,7 @@ class ProgressiveOverloadEngine:
         
         return insights
     
-    def _calculate_current_week(self, plan: WorkoutPlan) -> int:
+    def _calculate_current_week(self, plan: PlanDTO) -> int:
         """Calculate current week number in plan."""
         # Handle timezone-naive dates from database
         start_date = plan.start_date
@@ -1414,75 +1291,56 @@ class ProgressiveOverloadEngine:
     
     def create_performance_trend_for_session(
         self,
-        workout_session: WorkoutSession,
+        ctx: AnalysisContext,
         recovery_status: Dict,
         performance_analysis: Dict,
-        athlete_id: int
     ) -> PerformanceTrend:
         """
-        Create PerformanceTrend record for a completed workout session.
-        
-        This must be called before ML prediction so the new session is included
-        in feature extraction.
-        
-        Args:
-            workout_session: Completed WorkoutSession
-            recovery_status: Recovery status dict with readiness_score and fatigue_status
-            performance_analysis: Performance analysis dict with total_volume, average_rpe
-            athlete_id: Athlete ID
-            
-        Returns:
-            Created PerformanceTrend instance (not yet committed)
+        Create a PerformanceTrend for the completed session (from the context).
+
+        Denormalises ``cns_load`` and ``duration_minutes`` so future history reads
+        (cumulative fatigue, sRPE) stay local. Must be called before ML prediction
+        so the new session is included in feature extraction.
         """
-        # Calculate average intensity from exercise sets
-        average_intensity = self._calculate_average_intensity(
-            workout_session.id, performance_analysis
-        )
-        
-        # Calculate performance score
+        athlete_id = ctx.athlete_id
+        session = ctx.session
+
+        # Calculate average intensity from the session's sets
+        average_intensity = self._calculate_average_intensity(ctx, performance_analysis)
+
         performance_score = self._calculate_performance_score(
             total_volume=performance_analysis.get("total_volume", 0),
             average_intensity=average_intensity,
             readiness_score=recovery_status.get("readiness_score", DEFAULT_READINESS_SCORE),
             fatigue_index=recovery_status.get("fatigue_status", {}).get("fatigue_score", 0.0)
         )
-        
-        # Calculate volume load
+
         total_volume = performance_analysis.get("total_volume", 0)
         volume_load = total_volume * average_intensity
-        
-        # Calculate training load metrics
+
         acute_load, chronic_load, acwr = self._calculate_training_load_metrics(
-            athlete_id, workout_session.session_date, volume_load
+            athlete_id, session.session_date, volume_load
         )
-        
-        # Calculate training monotony and strain (optional, can be simplified)
+
         training_monotony = None
         training_strain = None
         if acute_load is not None:
-            # Simplified monotony calculation
-            # Get recent loads including the current one we're creating
             recent_loads = self._get_recent_volume_loads(athlete_id, days=7, include_current=volume_load)
             if len(recent_loads) > 1:
                 mean_load = np.mean(recent_loads)
                 std_load = np.std(recent_loads) if len(recent_loads) > 1 else 1.0
-                training_monotony = mean_load / (std_load + 0.1)  # Add small epsilon to avoid division by zero
+                training_monotony = mean_load / (std_load + 0.1)
                 training_strain = volume_load * recovery_status.get("fatigue_status", {}).get("fatigue_score", 0.0)
-        
-        # Get average RPE
-        average_rpe = performance_analysis.get("average_rpe") or workout_session.overall_rpe or 7.0
-        
-        # Get readiness score
+
+        average_rpe = performance_analysis.get("average_rpe") or session.overall_rpe or 7.0
         readiness_score = recovery_status.get("readiness_score", DEFAULT_READINESS_SCORE)
-        
-        # Get fatigue index
         fatigue_index = recovery_status.get("fatigue_status", {}).get("fatigue_score", 0.0)
-        
-        # Create PerformanceTrend
+        cns_load = self._compute_cns_load(ctx.sets)
+
         performance_trend = PerformanceTrend(
             athlete_id=athlete_id,
-            workout_session_id=workout_session.id,
-            session_date=workout_session.session_date,
+            workout_session_id=session.id,
+            session_date=session.session_date,
             total_volume=total_volume,
             average_intensity=average_intensity,
             average_rpe=average_rpe,
@@ -1495,91 +1353,135 @@ class ProgressiveOverloadEngine:
             acute_load=acute_load,
             chronic_load=chronic_load,
             acwr=acwr,
+            cns_load=cns_load,
+            duration_minutes=session.duration_minutes,
             deload_triggered=False,
             deload_reason=None
         )
-        
+
         self.db.add(performance_trend)
         return performance_trend
-    
+
+    def _compute_cns_load(self, sets) -> float:
+        """
+        CNS (systemic) fatigue load from a session's sets, by movement pattern.
+        Exercises are resolved over gRPC from exercise-service.
+        """
+        if not sets:
+            return 0.0
+        from app.utils.constants import (
+            CNS_HEAVY_PATTERNS, CNS_MODERATE_PATTERNS,
+            CNS_FATIGUE_PER_HEAVY_COMPOUND, CNS_FATIGUE_PER_MODERATE_COMPOUND,
+        )
+        sets_by_exercise: Dict[int, int] = {}
+        for s in sets:
+            sets_by_exercise[s.exercise_id] = sets_by_exercise.get(s.exercise_id, 0) + 1
+        with ExerciseClient() as client:
+            exercises = {ex.id: ex for ex in client.get_exercises(list(sets_by_exercise.keys()))}
+        cns_load = 0.0
+        for ex_id, num_sets in sets_by_exercise.items():
+            exercise = exercises.get(ex_id)
+            if not exercise:
+                continue
+            pattern = (exercise.movement_pattern or "").lower()
+            if pattern in CNS_HEAVY_PATTERNS:
+                cns_load += CNS_FATIGUE_PER_HEAVY_COMPOUND * num_sets
+            elif pattern in CNS_MODERATE_PATTERNS:
+                cns_load += CNS_FATIGUE_PER_MODERATE_COMPOUND * num_sets
+        return cns_load
+
+    def _record_session(self, ctx: AnalysisContext, recovery_status: Dict, performance_analysis: Dict) -> None:
+        """
+        Denormalise the completed session's signals into auto-regulation's own algo
+        tables (performance_trends, muscle_volume_log, joint_stress_log,
+        exercise_progression_tracking, form_quality_trends), then flush so the
+        downstream history reads (injury / ML / plateau / volume) include it.
+        """
+        self.create_performance_trend_for_session(ctx, recovery_status, performance_analysis)
+        self.volume_manager.log_session_volume(ctx)
+        self.injury_prevention.log_session_joint_stress(ctx)
+        self._record_exercise_progression(ctx)
+        self._record_form_trends(ctx)
+        self.db.flush()
+
+    def _record_exercise_progression(self, ctx: AnalysisContext) -> None:
+        """Record per-exercise progression for the session (local history)."""
+        from app.models import ExerciseProgressionTracking
+        sets_by_exercise: Dict[int, list] = {}
+        for s in ctx.sets:
+            sets_by_exercise.setdefault(s.exercise_id, []).append(s)
+
+        for exercise_id, sets in sets_by_exercise.items():
+            total_reps = sum(s.reps for s in sets)
+            total_sets = len(sets)
+            best = max(sets, key=lambda s: s.weight)
+            rpes = [s.rpe for s in sets if s.rpe is not None]
+            avg_rpe = sum(rpes) / len(rpes) if rpes else 7.0
+            self.db.add(ExerciseProgressionTracking(
+                athlete_id=ctx.athlete_id,
+                exercise_id=exercise_id,
+                workout_session_id=ctx.session.id,
+                session_date=ctx.session.session_date,
+                weight_used=best.weight,
+                total_reps=total_reps,
+                total_sets=total_sets,
+                average_rpe=avg_rpe,
+                estimated_1rm=self.calc.estimate_1rm_average(best.weight, best.reps),
+                volume_load=sum(s.weight * s.reps for s in sets),
+                progression_state="maintaining",
+                weeks_at_weight=1,
+                sessions_at_weight=1,
+                weight_progression_ready=False,
+                familiarity_score=0.0,
+            ))
+
+    def _record_form_trends(self, ctx: AnalysisContext) -> None:
+        """Record per-exercise form quality for the session (local history)."""
+        session_metrics = self.form_service.track_session_form_quality(ctx)
+        for exercise_id, metrics in session_metrics.items():
+            self.form_service.save_form_quality_trend(
+                athlete_id=ctx.athlete_id,
+                exercise_id=exercise_id,
+                date=ctx.session.session_date,
+                average_form_score=metrics["average_form_score"],
+                sets_analyzed=metrics["sets_analyzed"],
+                degradation_rate=metrics["degradation_rate"],
+                high_rpe_poor_form_count=metrics["high_rpe_poor_form_count"],
+            )
+
     def _calculate_average_intensity(
         self,
-        workout_session_id: int,
+        ctx: AnalysisContext,
         performance_analysis: Dict
     ) -> float:
         """
-        Calculate average intensity from exercise sets.
-        
-        Intensity is calculated as weighted average of (weight / estimated_1RM) for each set.
-        
-        Args:
-            workout_session_id: WorkoutSession ID
-            performance_analysis: Performance analysis dict with exercise_analyses
-            
-        Returns:
-            Average intensity (0.0 - 1.0)
+        Average intensity = mean(weight / estimated_1RM) over the session's sets
+        (from the context). Falls back to an RPE→intensity estimate per exercise.
         """
-        exercise_analyses = performance_analysis.get("exercise_analyses", [])
-        
-        if not exercise_analyses:
-            # Fallback: query exercise sets directly
-            exercise_sets = self.db.query(ExerciseSet).filter(
-                ExerciseSet.workout_session_id == workout_session_id
-            ).all()
-            
-            if not exercise_sets:
-                return 0.7  # Default intensity
-            
+        sets = ctx.sets
+        if sets:
             intensities = []
-            for set_data in exercise_sets:
-                if set_data.weight and set_data.reps:
-                    # Estimate 1RM
-                    estimated_1rm = self.calc.estimate_1rm_average(set_data.weight, set_data.reps)
+            for s in sets:
+                if s.weight and s.reps:
+                    estimated_1rm = self.calc.estimate_1rm_average(s.weight, s.reps)
                     if estimated_1rm > 0:
-                        intensity = set_data.weight / estimated_1rm
-                        intensities.append(intensity)
-            
+                        intensities.append(s.weight / estimated_1rm)
             if intensities:
                 return sum(intensities) / len(intensities)
-            return 0.7
-        
-        # Query actual exercise sets for accurate intensity calculation
-        exercise_sets = self.db.query(ExerciseSet).filter(
-            ExerciseSet.workout_session_id == workout_session_id
-        ).all()
-        
-        if exercise_sets:
-            intensities = []
-            for set_data in exercise_sets:
-                if set_data.weight and set_data.reps:
-                    # Estimate 1RM
-                    estimated_1rm = self.calc.estimate_1rm_average(set_data.weight, set_data.reps)
-                    if estimated_1rm > 0:
-                        intensity = set_data.weight / estimated_1rm
-                        intensities.append(intensity)
-            
-            if intensities:
-                return sum(intensities) / len(intensities)
-        
-        # Fallback: use exercise analyses if available
+
+        # Fallback: use exercise analyses (RPE→intensity, Zourdos et al. 2016)
         intensities = []
-        for ex_analysis in exercise_analyses:
+        for ex_analysis in performance_analysis.get("exercise_analyses", []):
             estimated_1rm = ex_analysis.get("estimated_1rm")
             if estimated_1rm and estimated_1rm > 0:
-                # Use established RPE-to-intensity mapping (Zourdos et al., 2016)
-                avg_rpe = ex_analysis.get("average_rpe", 7.0)
-                # Round to nearest 0.5 for lookup
-                rpe_rounded = round(avg_rpe * 2) / 2
-                # Clamp to valid range
-                rpe_rounded = max(5.0, min(10.0, rpe_rounded))
-                # Lookup intensity
+                avg_rpe = ex_analysis.get("average_rpe") or 7.0
+                rpe_rounded = max(5.0, min(10.0, round(avg_rpe * 2) / 2))
                 from app.utils.constants import RPE_TO_INTENSITY
-                estimated_intensity = RPE_TO_INTENSITY.get(rpe_rounded, 0.86)  # Default to 7 RPE
-                intensities.append(estimated_intensity)
-        
+                intensities.append(RPE_TO_INTENSITY.get(rpe_rounded, 0.86))
+
         if intensities:
             return sum(intensities) / len(intensities)
-        
+
         return 0.7  # Default intensity
     
     def _calculate_performance_score(

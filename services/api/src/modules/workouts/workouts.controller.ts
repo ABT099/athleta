@@ -13,6 +13,7 @@ import { UpdateWorkoutDayExerciseDto } from './dto/update-workout-day-exercises.
 import { jsDayToDayOfWeek } from 'src/constants';
 import { CurrentUser } from 'src/decorators/user.decorator';
 import { CreateWorkoutDayDto } from './dto/create-workout-day.dto';
+import { CompleteWorkoutDto } from './dto/complete-workout.dto';
 import type { CurrentAuthUser } from '../auth/auth.types';
 
 @Controller('workouts')
@@ -61,5 +62,13 @@ export class WorkoutsController {
       user.id,
       currentDayOfWeek,
     );
+  }
+
+  @Post('complete')
+  async completeWorkout(
+    @CurrentUser() user: CurrentAuthUser,
+    @Body() dto: CompleteWorkoutDto,
+  ) {
+    return await this.workoutsService.completeWorkout(user.id, dto);
   }
 }

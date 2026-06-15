@@ -191,53 +191,33 @@ class IntensityTechniqueService:
     
     def _check_plateau(self, athlete_id: int, exercise_id: int) -> Dict:
         """
-        Check if performance on an exercise has plateaued.
-        
-        Plateau = no weight or rep increase for 2-3 consecutive sessions.
+        Plateau = no volume improvement over recent sessions, read from the local
+        per-exercise progression history (ExerciseProgressionTracking).
         """
-        from app.models import ExerciseSet, WorkoutSession
-        
-        # Get last 4 sessions for this exercise
-        recent_sets = (
-            self.db.query(ExerciseSet)
-            .join(WorkoutSession)
+        from app.models import ExerciseProgressionTracking
+
+        rows = (
+            self.db.query(ExerciseProgressionTracking)
             .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                ExerciseSet.exercise_id == exercise_id
+                ExerciseProgressionTracking.athlete_id == athlete_id,
+                ExerciseProgressionTracking.exercise_id == exercise_id,
             )
-            .order_by(desc(WorkoutSession.session_date))
-            .limit(20)  # Get enough sets to cover 3-4 sessions
+            .order_by(desc(ExerciseProgressionTracking.session_date))
+            .limit(4)
             .all()
         )
-        
-        if len(recent_sets) < 6:  # Need at least 2 sessions worth of data
-            return {"is_plateau": False, "sessions_analyzed": 0}
-        
-        # Group by session and get best set per session
-        session_bests = {}
-        for set_record in recent_sets:
-            session_id = set_record.workout_session_id
-            volume = set_record.weight * set_record.reps
-            if session_id not in session_bests or volume > session_bests[session_id]["volume"]:
-                session_bests[session_id] = {
-                    "weight": set_record.weight,
-                    "reps": set_record.reps,
-                    "volume": volume
-                }
-        
-        # Check if stalled (no improvement in last 2-3 sessions)
-        sessions_sorted = list(session_bests.values())
+
+        sessions_sorted = [{"volume": r.volume_load} for r in rows]
         if len(sessions_sorted) < 3:
             return {"is_plateau": False, "sessions_analyzed": len(sessions_sorted)}
-        
-        # Compare recent sessions to previous
+
         recent_avg = sum(s["volume"] for s in sessions_sorted[:2]) / 2
-        previous_avg = sum(s["volume"] for s in sessions_sorted[2:4]) / max(1, len(sessions_sorted[2:4]))
-        
-        # Plateau if no improvement (< 2% increase)
+        previous = sessions_sorted[2:4]
+        previous_avg = sum(s["volume"] for s in previous) / max(1, len(previous))
+
         improvement = (recent_avg - previous_avg) / previous_avg if previous_avg > 0 else 0
         is_plateau = improvement < PLATEAU_IMPROVEMENT_THRESHOLD
-        
+
         return {
             "is_plateau": is_plateau,
             "sessions_analyzed": len(sessions_sorted),
@@ -245,104 +225,70 @@ class IntensityTechniqueService:
             "previous_avg_volume": round(previous_avg, 1),
             "improvement_percent": round(improvement * 100, 1)
         }
-    
+
     def _check_struggling(self, athlete_id: int, exercise_id: int) -> Dict:
-        """
-        Check if athlete is struggling: high RPE with no progression.
-        """
-        from app.models import ExerciseSet, WorkoutSession
-        
-        # Get recent sets
-        recent_sets = (
-            self.db.query(ExerciseSet)
-            .join(WorkoutSession)
+        """High RPE over recent sessions, from the local progression history."""
+        from app.models import ExerciseProgressionTracking
+
+        rows = (
+            self.db.query(ExerciseProgressionTracking)
             .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                ExerciseSet.exercise_id == exercise_id,
-                ExerciseSet.rpe.isnot(None)
+                ExerciseProgressionTracking.athlete_id == athlete_id,
+                ExerciseProgressionTracking.exercise_id == exercise_id,
+                ExerciseProgressionTracking.average_rpe.isnot(None),
             )
-            .order_by(desc(WorkoutSession.session_date))
-            .limit(10)
+            .order_by(desc(ExerciseProgressionTracking.session_date))
+            .limit(5)
             .all()
         )
-        
-        if len(recent_sets) < 3:
+
+        if len(rows) < 3:
             return {"is_struggling": False}
-        
-        # Check average RPE of recent sets
-        recent_rpes = [s.rpe for s in recent_sets[:5] if s.rpe]
+
+        recent_rpes = [r.average_rpe for r in rows if r.average_rpe]
         avg_rpe = sum(recent_rpes) / len(recent_rpes) if recent_rpes else 0
-        
-        # Struggling = high RPE (8+) with no volume increase
         is_struggling = avg_rpe >= STRUGGLING_DETECTION_RPE_THRESHOLD
-        
+
         return {
             "is_struggling": is_struggling,
             "avg_rpe": round(avg_rpe, 1),
-            "sets_analyzed": len(recent_sets)
+            "sets_analyzed": len(rows)
         }
-    
+
     def _check_volume_ceiling(
         self,
         athlete_id: int,
         experience: TrainingExperience,
         muscle_name: str
     ) -> Dict:
-        """
-        Check if athlete is at MRV (Maximum Recoverable Volume) for a muscle group.
-        """
-        from app.models import ExerciseSet, WorkoutSession
+        """At MRV ceiling for a muscle group, from the local muscle_volume_log."""
+        from app.models import MuscleVolumeLog
 
-        # Get MRV for this experience level
         mrv = MRV_SETS_PER_WEEK.get(experience, 20)
-
-        # Calculate weekly sets for this muscle group
         week_ago = datetime.now(timezone.utc) - timedelta(days=7)
 
-        # Pull the athlete's sets from the last week, then keep only those whose
-        # exercise has this muscle as a prime mover. Forward lookup via
-        # exercise-service replaces the old muscle -> exercises reverse query.
-        sets = (
-            self.db.query(ExerciseSet)
-            .join(WorkoutSession)
+        rows = (
+            self.db.query(MuscleVolumeLog)
             .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= week_ago,
+                MuscleVolumeLog.athlete_id == athlete_id,
+                MuscleVolumeLog.muscle_name == muscle_name,
+                MuscleVolumeLog.session_date >= week_ago,
             )
             .all()
         )
 
-        if not sets:
+        if not rows:
             return {"at_ceiling": False}
 
-        exercise_ids = {s.exercise_id for s in sets if s.exercise_id}
-        with ExerciseClient() as client:
-            exercises = client.get_exercises(exercise_ids)
-        prime_mover_exercise_ids = {
-            ex.id
-            for ex in exercises
-            if any(
-                target.name == muscle_name and target.role == "prime_mover"
-                for target in ex.muscles
-            )
-        }
-
-        relevant_sets = [s for s in sets if s.exercise_id in prime_mover_exercise_ids]
-        if not relevant_sets:
-            return {"at_ceiling": False}
-
-        # Calculate effective sets (only RIR 0-4 count toward MRV)
-        weekly_sets = self._calculate_effective_sets_from_sets(relevant_sets)
-        
-        # At ceiling if >= 90% of MRV
+        weekly_sets = sum(r.effective_sets for r in rows)
         at_ceiling = weekly_sets >= (mrv * MRV_CEILING_THRESHOLD)
-        
+
         return {
             "at_ceiling": at_ceiling,
             "weekly_sets": round(weekly_sets, 1),
             "mrv": mrv,
             "percentage_of_mrv": round((weekly_sets / mrv) * 100, 1) if mrv > 0 else 0,
-            "note": "Volume calculated using effective sets (RIR 0-4 count fully, RIR 5-6 count 50%, RIR 7+ count 0%)"
+            "note": "Weekly effective sets from the local muscle_volume_log"
         }
     
     def _select_set_type_for_triggers(

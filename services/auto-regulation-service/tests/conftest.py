@@ -14,7 +14,7 @@ from testcontainers.redis import RedisContainer
 # This ensures database.py uses PostgreSQL mode, not SQLite
 os.environ["DATABASE_URL"] = "postgresql://test:test@localhost:5432/test"  # Placeholder, will be overridden by container
 
-from app.database import Base
+from app.database import AutoregBase
 from app.utils.constants import (
     Gender, TrainingExperience, TrainingType, PeriodizationModel, TrainingPhase
 )
@@ -48,6 +48,46 @@ def fake_exercise_service(monkeypatch):
         ExerciseClient, "find_substitutions",
         lambda self, exercise_id, exclude_joints=None, exclude_ids=None, limit=5:
             FAKE.find_substitutions(exercise_id, exclude_joints, exclude_ids, limit),
+    )
+    return FAKE
+
+
+@pytest.fixture
+def fake_api_service(monkeypatch):
+    """
+    Reset the in-memory api service and route every ApiClient call to it (no
+    real HTTP). Opt-in for now (no production code calls ApiClient yet); becomes
+    autouse at cutover when auto-regulation's reads go through ApiClient. Tests
+    seed data via the returned fake's add_* helpers.
+    """
+    from app.clients.api_client import ApiClient
+    from tests.fake_api_service import FAKE
+
+    FAKE.reset()
+
+    monkeypatch.setattr(ApiClient, "__init__", lambda self, *a, **k: None)
+    monkeypatch.setattr(ApiClient, "__enter__", lambda self: self)
+    monkeypatch.setattr(ApiClient, "__exit__", lambda self, *a: False)
+    monkeypatch.setattr(
+        ApiClient, "get_athlete", lambda self, athlete_id: FAKE.get_athlete(athlete_id)
+    )
+    monkeypatch.setattr(
+        ApiClient, "get_active_plan",
+        lambda self, athlete_id: FAKE.get_active_plan(athlete_id),
+    )
+    monkeypatch.setattr(
+        ApiClient, "get_workout_session",
+        lambda self, session_id: FAKE.get_workout_session(session_id),
+    )
+    monkeypatch.setattr(
+        ApiClient, "list_recent_sessions",
+        lambda self, athlete_id, since=None, limit=None:
+            FAKE.list_recent_sessions(athlete_id, since, limit),
+    )
+    monkeypatch.setattr(
+        ApiClient, "list_recovery_metrics",
+        lambda self, athlete_id, since=None, limit=None:
+            FAKE.list_recovery_metrics(athlete_id, since, limit),
     )
     return FAKE
 
@@ -91,57 +131,61 @@ def db_session(postgres_container):
     Each test gets a fresh database schema that is automatically cleaned up.
     """
     from sqlalchemy import event, text
-    
-    # Import all models - app.models.__init__.py imports everything
-    # This ensures all tables are registered with Base.metadata before create_all
-    import app.models  # noqa: F401
-    
-    # Force evaluation of all model relationships by accessing __tablename__
-    # This ensures foreign key references are fully resolved
-    for table in Base.metadata.tables.values():
-        _ = table.name  # Access to force lazy evaluation
-    
-    # Create engine from the container's connection URL
+
+    # This is auto-regulation's OWN database now: only algo tables (AutoregBase),
+    # in the ai_analysis schema. api-owned data is faked via fake_api_service.
+    import app.models  # noqa: F401  (registers all algo models on AutoregBase)
+
     engine = create_engine(postgres_container.get_connection_url(), echo=False)
-    
-    # Set search_path on each connection (matches production database.py)
+
     @event.listens_for(engine, "connect")
     def set_search_path(dbapi_conn, connection_record):
-        """Set search_path on each connection to include both schemas."""
         cursor = dbapi_conn.cursor()
-        cursor.execute("SET search_path TO public, ai_analysis")
+        cursor.execute("SET search_path TO ai_analysis, public")
         cursor.close()
-    
-    # Create ai_analysis schema if it doesn't exist
+
     with engine.connect() as conn:
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS ai_analysis"))
         conn.commit()
-    
-    # Create all tables in dependency order
-    # SQLAlchemy will automatically sort by foreign key dependencies
-    Base.metadata.create_all(engine)
-    
-    # Create session
+
+    AutoregBase.metadata.create_all(engine)
+
     TestingSessionLocal = sessionmaker(bind=engine)
     session = TestingSessionLocal()
-    
-    # Muscles and exercises now live in exercise-service and are fetched over
-    # gRPC, so there is nothing to seed locally. Tests that exercise the
-    # gRPC-backed services should mock app.clients.exercise_client.ExerciseClient.
-    
+
     try:
         yield session
-        # Commit any pending changes before cleanup
         session.commit()
     except Exception:
-        # Rollback on error
         session.rollback()
         raise
     finally:
-        # Clean up: drop all tables and dispose engine
         session.close()
-        Base.metadata.drop_all(engine)
+        AutoregBase.metadata.drop_all(engine)
         engine.dispose()
+
+
+@pytest.fixture(scope="function")
+def client(db_session):
+    """
+    FastAPI TestClient with the autoreg DB dependency overridden to the test
+    session. api-owned data is supplied in request bodies / faked via
+    fake_api_service; the analyze endpoint reads only this local session.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.database import get_autoreg_db
+
+    def _override_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_autoreg_db] = _override_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture(scope="function")

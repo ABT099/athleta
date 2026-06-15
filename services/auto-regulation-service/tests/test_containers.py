@@ -37,14 +37,14 @@ def test_redis_container_connection(redis_container):
 @pytest.mark.integration
 def test_database_persistence_within_test(db_session):
     """Test that database changes persist within a single test."""
-    from app.models import Athlete
-    from tests.factories import AthleteFactory
+    from app.models import PerformanceTrend
+    from tests.factories import PerformanceTrendFactory
 
-    # Write a row, then read it back within the same session
-    athlete = AthleteFactory.create(db_session)
-    assert athlete.id is not None
+    # Write an algo row, then read it back within the same session
+    trend = PerformanceTrendFactory.create(db_session, athlete_id=1)
+    assert trend.id is not None
 
-    fetched = db_session.query(Athlete).all()
+    fetched = db_session.query(PerformanceTrend).all()
     assert len(fetched) >= 1
-    assert athlete.id in {a.id for a in fetched}
+    assert trend.id in {t.id for t in fetched}
 

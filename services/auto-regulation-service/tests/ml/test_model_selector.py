@@ -6,7 +6,7 @@ from unittest.mock import Mock, MagicMock
 from sqlalchemy.orm import Session
 
 from app.modules.ml.model_selector import ModelSelector
-from app.models import WorkoutSession
+from app.models import PerformanceTrend
 
 
 @pytest.mark.unit
@@ -26,7 +26,7 @@ class TestModelSelector:
         count = selector.get_session_count(athlete_id=1)
         
         assert count == 15
-        db.query.assert_called_with(WorkoutSession)
+        db.query.assert_called_with(PerformanceTrend)
     
     def test_select_model_rules_only(self):
         """Test selection for <10 sessions."""

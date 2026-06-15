@@ -24,9 +24,15 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
     LGBMRegressor = None
 
-from app.models import Athlete, AthleteRPECalibration, ExerciseSet, WorkoutSession
+from app.models import AthleteRPECalibration  # algo-owned, local reads/writes
 from app.utils.constants import TrainingExperience, RPE_TO_RIR
 from app.shared.calculations import TrainingCalculations
+
+# NOTE on ownership: the athlete's rpe_calibration_factor lives on the api-owned
+# athlete. Auto-regulation never writes api data, so the current factor is passed
+# in (from ctx.athlete.rpe_calibration_factor) and the recomputed factor is
+# RETURNED for api to persist. The per-session athlete_rpe_calibration records are
+# auto-regulation-owned and read/written locally.
 
 
 class RPECalibrationService:
@@ -62,14 +68,11 @@ class RPECalibrationService:
         """
         # Get standard RIR from RPE
         standard_rir = self._get_standard_rir(reported_rpe)
-        
-        # Get athlete's calibration factor
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            return float(standard_rir)
-        
-        calibration_factor = athlete.rpe_calibration_factor
-        
+
+        # RPE calibration is auto-regulation-owned: the per-athlete factor is
+        # computed from local calibration records (defaults to 1.0 with little data).
+        calibration_factor = self.compute_calibration_factor(athlete_id)
+
         # Get exercise-specific calibration if available
         if exercise_id:
             exercise_calibration = self.get_exercise_specific_calibration(
@@ -157,83 +160,46 @@ class RPECalibrationService:
         )
         
         self.db.add(calibration)
-        self.db.flush()  # Use flush to get ID without committing
-        
-        # Update athlete's overall calibration factor if enough data
-        # Pass commit=False to avoid nested commit
-        self.update_athlete_calibration_factor(athlete_id, commit=False)
-        
-        # Single commit after both operations
         self.db.commit()
         self.db.refresh(calibration)
-        
+
         return calibration
     
-    def update_athlete_calibration_factor(
+    def compute_calibration_factor(
         self,
         athlete_id: int,
         lookback_sessions: int = 10,
-        commit: bool = True
     ) -> float:
         """
-        Update athlete's overall RPE calibration factor based on recent history.
-        
-        Recalculates every 5-10 workouts to adapt to athlete's RPE reporting patterns.
-        
-        Args:
-            athlete_id: Athlete ID
-            lookback_sessions: Number of recent sessions to analyze
-            commit: Whether to commit the transaction (default: True). Set to False when called within a larger transaction.
-            
-        Returns:
-            Updated calibration factor
+        Compute the athlete's overall RPE calibration factor from recent local
+        calibration records. Auto-regulation owns this signal, so it is derived on
+        demand (no athlete read/write); the 10-session window provides the smoothing
+        that the old persisted-factor blend used to provide.
+
+        Returns 1.0 (neutral) when there is too little data.
         """
-        # Get recent calibration records with actual RIR
+        from app.utils.constants import (
+            RPE_CALIBRATION_FACTOR_MIN, RPE_CALIBRATION_FACTOR_MAX
+        )
+
         recent_calibrations = self.db.query(AthleteRPECalibration).filter(
             AthleteRPECalibration.athlete_id == athlete_id,
             AthleteRPECalibration.actual_rir.isnot(None)
         ).order_by(desc(AthleteRPECalibration.session_date)).limit(lookback_sessions).all()
-        
+
         if len(recent_calibrations) < 5:
-            # Not enough data for calibration
             return 1.0
-        
-        # Calculate average error
-        errors = []
-        for cal in recent_calibrations:
-            if cal.predicted_rir > 0 and cal.actual_rir is not None:
-                # Positive error = athlete reported lower RPE than reality
-                # Negative error = athlete reported higher RPE than reality
-                error_ratio = cal.actual_rir / cal.predicted_rir
-                errors.append(error_ratio)
-        
+
+        errors = [
+            cal.actual_rir / cal.predicted_rir
+            for cal in recent_calibrations
+            if cal.predicted_rir > 0 and cal.actual_rir is not None
+        ]
         if not errors:
             return 1.0
-        
-        # Calculate new calibration factor as average of error ratios
+
         avg_error_ratio = statistics.mean(errors)
-        
-        # Smooth the adjustment (don't overcorrect)
-        from app.utils.constants import (
-            RPE_CALIBRATION_NEW_FACTOR_WEIGHT, RPE_CALIBRATION_OLD_FACTOR_WEIGHT,
-            RPE_CALIBRATION_FACTOR_MIN, RPE_CALIBRATION_FACTOR_MAX
-        )
-        
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        current_factor = athlete.rpe_calibration_factor if athlete else 1.0
-        
-        # Apply smoothing weights for new and old factors
-        new_factor = (avg_error_ratio * RPE_CALIBRATION_NEW_FACTOR_WEIGHT) + (current_factor * RPE_CALIBRATION_OLD_FACTOR_WEIGHT)
-        
-        # Clamp to reasonable range
-        new_factor = max(RPE_CALIBRATION_FACTOR_MIN, min(RPE_CALIBRATION_FACTOR_MAX, new_factor))
-        
-        # Update athlete record
-        if athlete:
-            athlete.rpe_calibration_factor = new_factor
-            if commit:
-                self.db.commit()
-        
+        new_factor = max(RPE_CALIBRATION_FACTOR_MIN, min(RPE_CALIBRATION_FACTOR_MAX, avg_error_ratio))
         return round(new_factor, 3)
     
     def get_exercise_specific_calibration(
@@ -277,11 +243,10 @@ class RPECalibrationService:
             return None
         
         avg_error_ratio = statistics.mean(errors)
-        
+
         # Only use exercise-specific calibration if significantly different from overall
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        overall_factor = athlete.rpe_calibration_factor if athlete else 1.0
-        
+        overall_factor = self.compute_calibration_factor(athlete_id)
+
         # If exercise-specific differs by >10%, use it
         if abs(avg_error_ratio - overall_factor) > 0.1:
             return round(max(0.7, min(1.3, avg_error_ratio)), 3)
@@ -301,10 +266,8 @@ class RPECalibrationService:
         Returns:
             Dict with calibration statistics
         """
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            return {"error": "Athlete not found"}
-        
+        calibration_factor = self.compute_calibration_factor(athlete_id)
+
         # Get all calibration records
         all_calibrations = self.db.query(AthleteRPECalibration).filter(
             AthleteRPECalibration.athlete_id == athlete_id,
@@ -315,7 +278,7 @@ class RPECalibrationService:
         
         if total_records == 0:
             return {
-                "calibration_factor": athlete.rpe_calibration_factor,
+                "calibration_factor": calibration_factor,
                 "total_records": 0,
                 "average_accuracy": None,
                 "status": "insufficient_data",
@@ -341,7 +304,7 @@ class RPECalibrationService:
             message = "RPE reporting needs calibration - focus on accurate failure estimation"
         
         return {
-            "calibration_factor": athlete.rpe_calibration_factor,
+            "calibration_factor": calibration_factor,
             "total_records": total_records,
             "average_accuracy": round(avg_accuracy, 3) if avg_accuracy else None,
             "status": status,

@@ -9,11 +9,8 @@ import numpy as np
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from app.models import (
-    Athlete, WorkoutSession, ExerciseSet, RecoveryMetrics,
-    PerformanceTrend
-)
-from app.models.workout import PlanEntry, WorkoutPlan
+from app.models import PerformanceTrend, WorkoutPrescriptionHistory  # algo-owned, local
+from app.modules.analysis import AnalysisContext, TrainingHistory
 from app.utils.constants import Gender, TrainingExperience
 from app.modules.ml.feature_scaler import FeatureScaler
 
@@ -37,46 +34,32 @@ class SequentialFeatureEngineer:
     
     def extract_sequence_features(
         self,
-        athlete_id: int,
+        ctx: "AnalysisContext",
         sequence_length: int = 15,
         lookback_sessions: int = 20
     ) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
         """
-        Extract temporal sequence features for current prediction.
-        
-        Args:
-            athlete_id: Athlete ID
-            sequence_length: Length of sequence (number of timesteps)
-            lookback_sessions: Number of recent sessions to consider
-            
-        Returns:
-            Tuple of (sequence_array, feature_names)
-            - sequence_array: (sequence_length, n_features_per_timestep)
-            - feature_names: List of feature names per timestep
+        Extract temporal sequence features for the current prediction, from the
+        local performance_trends. Recovery is api-owned; on the sync path only the
+        current session's recovery (from the context) is available.
         """
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            return None, None
-        
-        # Get recent performance trends
+        athlete_id = ctx.athlete_id
+
+        # Get recent local performance trends
         recent_trends = self.db.query(PerformanceTrend).filter(
             PerformanceTrend.athlete_id == athlete_id
         ).order_by(desc(PerformanceTrend.session_date)).limit(lookback_sessions).all()
-        
+
         if len(recent_trends) < sequence_length:
             return None, None
-        
+
         # Reverse to get chronological order (oldest first)
         recent_trends = list(reversed(recent_trends))
-        
-        # Get recent recovery metrics
-        recent_recovery = self.db.query(RecoveryMetrics).filter(
-            RecoveryMetrics.athlete_id == athlete_id
-        ).order_by(desc(RecoveryMetrics.date)).limit(lookback_sessions).all()
-        recent_recovery = list(reversed(recent_recovery))
-        
-        # Create recovery lookup by date
-        recovery_by_date = {r.date.date(): r for r in recent_recovery}
+
+        # Recovery lookup (only the current session's recovery on the sync path)
+        recovery_by_date = {}
+        if ctx.recovery is not None:
+            recovery_by_date = {ctx.recovery.date.date(): ctx.recovery}
         
         # Extract features for each timestep
         sequence = []
@@ -186,54 +169,26 @@ class SequentialFeatureEngineer:
     
     def prepare_sequential_dataset(
         self,
-        athlete_id: int,
+        history: "TrainingHistory",
         min_sessions: int = 20,
         sequence_length: int = 15
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[List[str]], Optional[List[str]]]:
         """
-        Prepare sequential training dataset using SHIFTED TARGETS.
-        
-        Creates sliding windows of sequences for training where:
-        - Features: sequence of sessions [i-sequence_length : i]
-        - Targets: multipliers from session i+1 (the NEXT session)
-        
-        This properly aligns the prediction task: "Given this sequence of
-        past sessions, what multipliers should be used for the NEXT workout?"
-        
-        No temporal data leakage because:
-        - Features only use past sessions
-        - Targets use the next session's actual multipliers
-        - Outcome weighting uses only the next session's own metrics
-        
-        Args:
-            athlete_id: Athlete ID
-            min_sessions: Minimum sessions required
-            sequence_length: Length of each sequence
-            
-        Returns:
-            Tuple of (X_sequences, y_targets, feature_names, target_names)
-            - X_sequences: (n_samples, sequence_length, n_features)
-            - y_targets: (n_samples, n_targets)
+        Prepare the shifted-target sequential dataset from a TrainingHistory: sliding
+        windows of local performance_trends, with each window's target taken from the
+        NEXT trend's prescribed multipliers (local). No api-owned data is read.
         """
-        athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-        if not athlete:
-            return None, None, None, None
-        
-        # Get all workout sessions
-        sessions = self.db.query(WorkoutSession).filter(
-            WorkoutSession.athlete_id == athlete_id
-        ).order_by(WorkoutSession.session_date).all()
-        
-        if len(sessions) < min_sessions:
-            return None, None, None, None
-        
-        # Get all performance trends
-        all_trends = self.db.query(PerformanceTrend).filter(
-            PerformanceTrend.athlete_id == athlete_id
-        ).order_by(PerformanceTrend.session_date).all()
-        
+        athlete_id = history.athlete_id
+
+        # All local performance trends, chronological (one per session)
+        all_trends = sorted(history.performance_trends, key=lambda t: t.session_date)
         if len(all_trends) < min_sessions:
             return None, None, None, None
+
+        # Recovery lookup by date (api-owned, supplied in the history)
+        recovery_by_date = {}
+        for r in history.recovery_history:
+            recovery_by_date[r.date.date()] = r
         
         X_sequences = []
         y_targets = []
@@ -251,12 +206,9 @@ class SequentialFeatureEngineer:
             # Build sequence features
             sequence = []
             for j, trend in enumerate(sequence_trends):
-                # Get recovery for this date
-                recovery = self.db.query(RecoveryMetrics).filter(
-                    RecoveryMetrics.athlete_id == athlete_id,
-                    RecoveryMetrics.date == trend.session_date.date()
-                ).first()
-                
+                # Recovery for this date (api-owned, from the history)
+                recovery = recovery_by_date.get(trend.session_date.date())
+
                 # Extract timestep features (same as extract_sequence_features)
                 timestep_features = self._extract_timestep_features(
                     trend, recovery, j, sequence_length
@@ -275,24 +227,15 @@ class SequentialFeatureEngineer:
             volume_mult = 1.0
             intensity_mult = 1.0
             
-            # Try to get from plan entry
-            plan_entry = self.db.query(PlanEntry).filter(
-                PlanEntry.workout_plan_id.in_(
-                    self.db.query(WorkoutPlan.id).filter(
-                        WorkoutPlan.athlete_id == athlete_id
-                    )
-                ),
-                PlanEntry.start_date <= next_trend.session_date,
-                PlanEntry.end_date >= next_trend.session_date
-            ).first()
-            
-            if plan_entry:
-                if plan_entry.ai_adjustments:
-                    volume_mult = plan_entry.ai_adjustments.get("volume_multiplier", 1.0)
-                    intensity_mult = plan_entry.ai_adjustments.get("intensity_multiplier", 1.0)
-                else:
-                    volume_mult = plan_entry.target_volume_multiplier
-                    intensity_mult = plan_entry.target_intensity_multiplier
+            # Multipliers prescribed around the next session (local prescription history)
+            prescription = self.db.query(WorkoutPrescriptionHistory).filter(
+                WorkoutPrescriptionHistory.athlete_id == athlete_id,
+                WorkoutPrescriptionHistory.prescribed_date <= next_trend.session_date,
+            ).order_by(desc(WorkoutPrescriptionHistory.prescribed_date)).first()
+
+            if prescription:
+                volume_mult = prescription.volume_multiplier
+                intensity_mult = prescription.intensity_multiplier
             else:
                 # Fallback: calculate from volume/intensity ratios
                 # Must check both numerator and denominator for None before division
@@ -434,7 +377,7 @@ class SequentialFeatureEngineer:
     def _extract_timestep_features(
         self,
         trend: PerformanceTrend,
-        recovery: Optional[RecoveryMetrics],
+        recovery,
         position: int,
         sequence_length: int
     ) -> List[float]:

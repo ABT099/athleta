@@ -74,9 +74,6 @@ jobs:
           - service: muscle-image-api
             context: ./services/muscle-image
             dockerfile: ./services/muscle-image/Dockerfile
-          - service: migrator
-            context: ./migrator
-            dockerfile: ./migrator/Dockerfile
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

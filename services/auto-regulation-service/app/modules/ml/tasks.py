@@ -7,9 +7,34 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.celery_app import celery_app
-from app.database import SessionLocal
+from app.database import AutoregSessionLocal
 from app.models import MLTrainingJob, MLJobStatus
+from app.clients.api_client import ApiClient
+from app.modules.analysis import build_training_history
 from app.modules.ml.workout_predictor import WorkoutPredictorService
+
+
+def _build_training_history(athlete_id: int, db):
+    """
+    Assemble a TrainingHistory: bulk api reads (athlete + recovery + PRs +
+    active-plan focus) plus local trend/progression history. Returns None if the
+    athlete can't be fetched from api.
+    """
+    with ApiClient() as api:
+        athlete = api.get_athlete(athlete_id)
+        if athlete is None:
+            return None
+        recovery_history = api.list_recovery_metrics(athlete_id)
+        personal_records = {pr.exercise_id: pr for pr in api.list_personal_records(athlete_id)}
+        active_plan = api.get_active_plan(athlete_id)
+    focus_areas = list(active_plan.focus_areas or []) if active_plan else []
+    return build_training_history(
+        athlete=athlete,
+        recovery_history=recovery_history,
+        db=db,
+        personal_records=personal_records,
+        focus_areas=focus_areas,
+    )
 
 
 class DatabaseTask(Task):
@@ -36,7 +61,7 @@ def retrain_athlete_model(self, athlete_id: int, job_id: int, trigger_reason: st
     Returns:
         Dict with success status and metrics
     """
-    db = SessionLocal()
+    db = AutoregSessionLocal()
     self._db = db
     
     try:
@@ -51,9 +76,18 @@ def retrain_athlete_model(self, athlete_id: int, job_id: int, trigger_reason: st
         job.celery_task_id = self.request.id
         db.commit()
         
+        # Assemble the training history (api-owned inputs + local trends)
+        history = _build_training_history(athlete_id, db)
+        if history is None:
+            job.status = MLJobStatus.FAILED
+            job.completed_at = datetime.now(timezone.utc)
+            job.error_message = "Could not fetch athlete from api"
+            db.commit()
+            return {"success": False, "athlete_id": athlete_id, "error": "athlete fetch failed"}
+
         # Train the model
         predictor_service = WorkoutPredictorService(db)
-        success, metrics, error = predictor_service.train_athlete_model(athlete_id)
+        success, metrics, error = predictor_service.train_athlete_model(history)
         
         if success:
             # Update job with success
@@ -116,7 +150,7 @@ def check_and_queue_retraining(athlete_id: int, trigger_reason: str = "scheduled
     Returns:
         Dict with status information
     """
-    db = SessionLocal()
+    db = AutoregSessionLocal()
     
     try:
         # Check for existing pending/running jobs

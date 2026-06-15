@@ -1,29 +1,32 @@
 """
-Workouts API endpoints.
-"""
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session, undefer
-from datetime import datetime, timedelta, timezone
-import json
+Analysis (workout-completion) API endpoints.
 
-from app.database import get_db
+api persists the logged session/sets/recovery and then calls this endpoint with
+the data pushed in the request body (the Analysis Context). Auto-regulation
+computes over that context + its own local history, writes only its own algo
+tables, and returns the adjustments plus the write-backs (new PRs, updated RPE
+calibration factor) for api to persist. The endpoint is idempotent by session id.
+"""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from datetime import datetime, timezone, timedelta
+
+from app.database import get_autoreg_db
 from app.models import (
-    Athlete, WorkoutDay, WorkoutSession, ExerciseSet, 
-    RecoveryMetrics
+    PerformanceTrend,
+    ExerciseProgressionTracking,
+    MuscleVolumeLog,
+    JointStressLog,
+    FormQualityTrend,
+    WorkoutPrescriptionHistory,
 )
 from app.utils.helpers import get_athlete_or_404
-from app.schemas.workout import (
-    WorkoutCompletionRequest,
-    WorkoutCompletionResponse,
-    WorkoutSessionResponse,
-    RecoveryMetricsResponse,
-    NextWorkoutResponse
-)
+from app.modules.analysis import AnalysisRequest, build_analysis_context
 from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
 from app.modules.progression.plan_updater import PlanUpdaterService
-from app.modules.rpe import RPECalibrationService
 from app.modules.progression.pr_tracker import PRTrackerService
 from app.modules.progression.workout_scheduler import WorkoutScheduler
+from app.modules.rpe import RPECalibrationService
 
 # Import ML services with graceful degradation
 try:
@@ -37,253 +40,112 @@ except ImportError:
 router = APIRouter()
 
 
+def _clear_session_algo_rows(db: Session, session_id: int, athlete_id: int, session_date) -> None:
+    """Idempotency: drop any algo rows previously written for this session."""
+    for model in (PerformanceTrend, ExerciseProgressionTracking, MuscleVolumeLog, JointStressLog):
+        db.query(model).filter(model.workout_session_id == session_id).delete(synchronize_session=False)
+    # Form trends are keyed by (athlete, exercise, date); clear this session's date.
+    db.query(FormQualityTrend).filter(
+        FormQualityTrend.athlete_id == athlete_id,
+        FormQualityTrend.date == session_date,
+    ).delete(synchronize_session=False)
 
-@router.post("/workouts/complete", response_model=WorkoutCompletionResponse)
-def complete_workout(
-    request: WorkoutCompletionRequest,
-    db: Session = Depends(get_db)
-):
-    """
-    Main endpoint: Submit completed workout and receive next workout adjustments.
-    
-    This is the core API that processes workout data and returns AI-generated
-    progressive overload recommendations.
-    """
+
+def _maybe_queue_retraining(db: Session, athlete_id: int) -> None:
+    """Queue ML retraining if due (CPU-bound work stays on Celery)."""
+    if not ML_AVAILABLE:
+        return
     try:
-        # Validate athlete exists - cache for reuse
-        athlete = db.query(Athlete).filter(Athlete.id == request.athlete_id).first()
-        if not athlete:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Athlete {request.athlete_id} not found"
-            )
-        
-        # Validate workout day exists
-        workout_day = db.query(WorkoutDay).filter(
-            WorkoutDay.id == request.workout_day_id
+        from app.models import MLTrainingJob, MLJobStatus
+        predictor = WorkoutPredictorService(db)
+        if not predictor.should_retrain(athlete_id):
+            return
+        existing = db.query(MLTrainingJob).filter(
+            MLTrainingJob.athlete_id == athlete_id,
+            MLTrainingJob.status.in_([MLJobStatus.PENDING, MLJobStatus.RUNNING]),
         ).first()
-        if not workout_day:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Workout day {request.workout_day_id} not found"
-            )
-        
-        # Create workout session
-        workout_session = WorkoutSession(
-            athlete_id=request.athlete_id,
-            workout_day_id=request.workout_day_id,
-            session_date=request.session_date,
-            duration_minutes=request.duration_minutes,
-            overall_rpe=request.overall_rpe,
-            overall_feeling=request.overall_feeling,
-            notes=request.notes
-        )
-        
-        db.add(workout_session)
-        db.flush()  # Get session ID
-        
-        # Create exercise sets
-        total_volume = 0
-        for set_data in request.exercise_sets:
-            exercise_set = ExerciseSet(
-                workout_session_id=workout_session.id,
-                exercise_id=set_data.exercise_id,
-                set_number=set_data.set_number,
-                weight=set_data.weight,
-                reps=set_data.reps,
-                rpe=set_data.rpe,
-                rir=set_data.rir,
-                form_quality=set_data.form_quality,
-                set_type_used=set_data.set_type_used,
-                rep_style_used=set_data.rep_style_used,
-                technique_details=set_data.technique_details,
-                notes=set_data.notes
-            )
-            db.add(exercise_set)
-            total_volume += set_data.weight * set_data.reps
-        
-        workout_session.total_volume = total_volume
-        
-        # Create recovery metrics
-        recovery_metrics = RecoveryMetrics(
-            athlete_id=request.athlete_id,
-            date=request.session_date,
-            sleep_quality=request.recovery_metrics.sleep_quality,
-            sleep_hours=request.recovery_metrics.sleep_hours,
-            overall_soreness=request.recovery_metrics.overall_soreness,
-            muscle_soreness=json.dumps(request.recovery_metrics.muscle_soreness) if request.recovery_metrics.muscle_soreness else None,
-            stress_level=request.recovery_metrics.stress_level,
-            energy_level=request.recovery_metrics.energy_level,
-            nutrition_adherence=request.recovery_metrics.nutrition_adherence,
-            hydration_level=request.recovery_metrics.hydration_level,
-            notes=request.recovery_metrics.notes
-        )
-        
-        db.add(recovery_metrics)
+        if existing:
+            return
+        job = MLTrainingJob(athlete_id=athlete_id, trigger_reason="session_threshold", status=MLJobStatus.PENDING)
+        db.add(job)
         db.flush()
-        
-        # === AI PROCESSING ===
-        # Initialize AI engine
+        from app.modules.ml.tasks import retrain_athlete_model
+        retrain_athlete_model.delay(athlete_id, job.id, "session_threshold")
+    except Exception as e:
+        # Retraining is non-critical; never fail the analysis for it.
+        print(f"Warning: ML retraining trigger failed: {e}")
+
+
+@router.post("/analysis/sessions")
+def analyze_session(request: AnalysisRequest, db: Session = Depends(get_autoreg_db)):
+    """
+    Analyse a completed workout (pushed in the request) and return adjustments +
+    write-backs. Writes only auto-regulation's own algo tables. Idempotent by
+    ``session.id``.
+    """
+    ctx = build_analysis_context(request, db)
+    athlete_id = ctx.athlete_id
+    session = ctx.session
+
+    try:
+        # Idempotency: clear any algo rows from a previous analysis of this session.
+        _clear_session_algo_rows(db, session.id, athlete_id, session.session_date)
+        db.flush()
+
+        # Run the engine (records this session's denormalised signals internally,
+        # then computes adjustments over the local history).
         engine = ProgressiveOverloadEngine(db)
-        
-        # Prepare data for AI engine
-        session_data = {
-            "exercise_sets": [
-                {
-                    "exercise_id": s.exercise_id,
-                    "set_number": s.set_number,
-                    "weight": s.weight,
-                    "reps": s.reps,
-                    "rpe": s.rpe,
-                    "rir": s.rir,
-                    "form_quality": s.form_quality
-                }
-                for s in request.exercise_sets
-            ]
-        }
-        
-        recovery_data = {
-            "sleep_quality": request.recovery_metrics.sleep_quality,
-            "sleep_hours": request.recovery_metrics.sleep_hours,
-            "overall_soreness": request.recovery_metrics.overall_soreness,
-            "stress_level": request.recovery_metrics.stress_level,
-            "energy_level": request.recovery_metrics.energy_level,
-            "muscle_soreness": request.recovery_metrics.muscle_soreness
-        }
-        
-        # Step 1: Analyze plan context (needed for recovery assessment)
-        plan_context = engine.analyze_plan_context(request.athlete_id)
-        
-        # Step 2: Analyze workout performance (needed for PerformanceTrend)
-        # Use cached athlete object instead of re-querying
-        performance_analysis = engine.analyze_workout_performance(
-            athlete, request.workout_day_id, session_data, plan_context
-        )
-        
-        # Step 3: Assess recovery status (needed for PerformanceTrend and ML)
-        recovery_status = engine.assess_recovery_status(
-            request.athlete_id, recovery_data, plan_context
-        )
-        
-        # Step 4: Create PerformanceTrend BEFORE ML prediction
-        # This ensures the new session is included in ML feature extraction
-        performance_trend = engine.create_performance_trend_for_session(
-            workout_session=workout_session,
-            recovery_status=recovery_status,
-            performance_analysis=performance_analysis,
-            athlete_id=request.athlete_id
-        )
-        db.flush()  # Make PerformanceTrend available for ML queries
-        
-        # Step 5: Process workout and get AI recommendations (now includes current session)
-        ai_result = engine.process_workout_completion(
-            athlete_id=request.athlete_id,
-            workout_day_id=request.workout_day_id,
-            session_data=session_data,
-            recovery_data=recovery_data
-        )
-        
-        # Update recovery metrics with calculated readiness score
-        recovery_metrics.readiness_score = ai_result["recovery_status"]["readiness_score"]
-        
-        # Update workout session with estimated fatigue
-        workout_session.estimated_fatigue = ai_result["recovery_status"]["fatigue_status"]["fatigue_score"]
-        
-        # Track form quality for this session
-        from app.modules.form import FormQualityService
-        form_service = FormQualityService(db)
-        session_metrics = form_service.track_session_form_quality(workout_session.id)
-        
-        # Save form quality trends for each exercise
-        for exercise_id, metrics in session_metrics.items():
-            form_service.save_form_quality_trend(
-                athlete_id=request.athlete_id,
-                exercise_id=exercise_id,
-                date=workout_session.session_date,
-                average_form_score=metrics["average_form_score"],
-                sets_analyzed=metrics["sets_analyzed"],
-                degradation_rate=metrics["degradation_rate"],
-                high_rpe_poor_form_count=metrics["high_rpe_poor_form_count"]
-            )
-        
-        # === MULTI-STEP WORKOUT UPDATES ===
-        
-        # Step 1: Update plan entry with new multipliers (existing code)
+        ai_result = engine.analyze(ctx)
+
+        adjustments = ai_result["adjustments"]
+        recovery_status = ai_result["recovery_status"]
+        performance_analysis = ai_result["performance_analysis"]
         plan_context = ai_result["plan_context"]
+
+        # PR detection -> write-back for api to persist.
+        pr_updates = PRTrackerService().detect_prs(ctx)
+
+        # RPE calibration factor (auto-regulation-owned) -> write-back for api.
+        calibration_factor = RPECalibrationService(db).compute_calibration_factor(athlete_id)
+
+        plan_updater = PlanUpdaterService(db)
+
+        # Update the current week's plan entry.
         if plan_context.get("plan_entry_id"):
-            plan_updater = PlanUpdaterService(db)
             plan_updater.update_plan_entry_after_workout(
                 plan_entry_id=plan_context["plan_entry_id"],
-                workout_session=workout_session,
-                recovery_metrics=recovery_metrics,
-                ai_adjustments=ai_result["adjustments"],
-                commit=False  # Defer commit to parent transaction
+                overall_rpe=session.overall_rpe,
+                total_volume=performance_analysis.get("total_volume"),
+                readiness_score=recovery_status.get("readiness_score"),
+                ai_adjustments=adjustments,
+                commit=False,
             )
-        
-        # Step 2: Generate current workout with updated parameters (FOR RETURN)
-        # This returns the SAME workout (e.g., Upper) with adjustments for next week
-        plan_updater = PlanUpdaterService(db)
-        current_workout_updated = plan_updater.generate_next_workout(
-            athlete_id=request.athlete_id,
-            workout_day_id=request.workout_day_id,  # SAME workout
-            ai_adjustments=ai_result["adjustments"],
+
+        # The same workout, updated for next time (returned to the client).
+        next_workout = plan_updater.generate_next_workout(
+            ctx=ctx,
+            workout_day_id=session.workout_day_id,
+            ai_adjustments=adjustments,
             injury_warnings=ai_result["injury_risk"]["warnings"],
-            recovery_recommendations=ai_result["recovery_status"]["recommendations"]
+            recovery_recommendations=recovery_status["recommendations"],
         )
-        
-        # Step 3: Pre-calculate and store next workout in rotation WITH RECOVERY ADJUSTMENT
-        scheduler = WorkoutScheduler(db)
-        next_workout_day_id = scheduler.get_next_workout_in_rotation(
-            athlete_id=request.athlete_id,
-            completed_workout_day_id=request.workout_day_id,
-            plan_id=plan_context["plan_id"]
-        )
-        
-        if next_workout_day_id:
-            # Extract readiness score from current workout
-            current_readiness = recovery_metrics.readiness_score
-            
-            # Adjust multipliers for next workout based on current recovery
-            # If readiness is low, reduce volume/intensity for next workout
-            from app.utils.constants import (
-                LOW_READINESS_THRESHOLD,
-                EXCELLENT_READINESS_THRESHOLD,
-                POOR_RECOVERY_VOLUME_REDUCTION,
-                POOR_RECOVERY_INTENSITY_REDUCTION,
-                EXCELLENT_RECOVERY_VOLUME_INCREASE
-            )
-            
-            next_workout_adjustments = ai_result["adjustments"].copy()
-            if current_readiness and current_readiness < LOW_READINESS_THRESHOLD:
-                next_workout_adjustments["volume_multiplier"] *= POOR_RECOVERY_VOLUME_REDUCTION
-                next_workout_adjustments["intensity_multiplier"] *= POOR_RECOVERY_INTENSITY_REDUCTION
-                adjustment_note = f"Reduced due to low readiness ({current_readiness:.2f})"
-            elif current_readiness and current_readiness > EXCELLENT_READINESS_THRESHOLD:
-                next_workout_adjustments["volume_multiplier"] *= EXCELLENT_RECOVERY_VOLUME_INCREASE
-                adjustment_note = f"Increased due to high readiness ({current_readiness:.2f})"
-            else:
-                adjustment_note = "Standard progression"
-            
-            # Generate next workout parameters with recovery-adjusted multipliers
-            next_workout_params = plan_updater.generate_next_workout(
-                athlete_id=request.athlete_id,
-                workout_day_id=next_workout_day_id,  # NEXT in rotation (e.g., Lower)
-                ai_adjustments=next_workout_adjustments,  # Recovery-adjusted
+
+        # Pre-store the next workout in rotation as prescription history (local).
+        next_day_id = WorkoutScheduler.get_next_workout_in_rotation(session.workout_day_id, ctx.plan)
+        if next_day_id:
+            next_params = plan_updater.generate_next_workout(
+                ctx=ctx,
+                workout_day_id=next_day_id,
+                ai_adjustments=adjustments,
                 injury_warnings=[],
-                recovery_recommendations=[]
+                recovery_recommendations=[],
             )
-            
-            # Store prescription history for each exercise in next workout
-            from app.models.workout_prescription_history import WorkoutPrescriptionHistory
-            
-            for exercise in next_workout_params["workout_day"].exercises:
-                prescription = WorkoutPrescriptionHistory(
-                    athlete_id=request.athlete_id,
-                    workout_day_id=next_workout_day_id,
+            for exercise in next_params["workout_day"].exercises:
+                db.add(WorkoutPrescriptionHistory(
+                    athlete_id=athlete_id,
+                    workout_day_id=next_day_id,
                     exercise_id=exercise.exercise_id,
                     prescribed_date=datetime.now(timezone.utc),
-                    
-                    # Prescribed parameters
                     prescribed_weight=exercise.adjusted_weight,
                     prescribed_sets=exercise.adjusted_sets,
                     prescribed_reps_min=exercise.adjusted_reps_min,
@@ -291,219 +153,68 @@ def complete_workout(
                     prescribed_rpe=exercise.target_rpe,
                     prescribed_rir=exercise.target_rir,
                     rest_period_seconds=exercise.rest_period_seconds,
-                    
-                    # Intensity techniques
                     set_type=exercise.set_type,
                     rep_style=exercise.rep_style,
                     set_type_params=exercise.set_type_params,
                     rep_style_params=exercise.rep_style_params,
-                    
-                    # AI context
-                    volume_multiplier=next_workout_adjustments["volume_multiplier"],
-                    intensity_multiplier=next_workout_adjustments["intensity_multiplier"],
-                    adjustment_reason=f"{adjustment_note}. {exercise.adjustment_reason or ''}",
-                    
-                    # Context
+                    volume_multiplier=adjustments.get("volume_multiplier", 1.0),
+                    intensity_multiplier=adjustments.get("intensity_multiplier", 1.0),
+                    adjustment_reason=exercise.adjustment_reason,
                     week_number=plan_context.get("week_number"),
-                    readiness_score=current_readiness,
-                    training_phase=plan_context.get("current_phase")
-                )
-                db.add(prescription)
-        
-        # === PR DETECTION ===
-        # Detect and update personal records
-        pr_tracker = PRTrackerService(db)
-        pr_updates = pr_tracker.detect_and_update_prs(workout_session.id, commit=False)  # Defer commit to parent transaction
-        
-        # Add PR achievements to AI insights
-        if pr_updates.get("achievements"):
-            ai_result["ai_insights"].extend(pr_updates["achievements"])
-        
-        # === ML RETRAINING TRIGGER ===
-        # Check if ML model should be retrained after this workout
-        if ML_AVAILABLE:
-            try:
-                from app.models import MLTrainingJob, MLJobStatus, PlanEntry
-                from app.modules.periodization import PeriodizationService
-                
-                # Get current and previous plan entries to detect phase transitions
-                current_plan_entry = None
-                previous_plan_entry = None
-                
-                if plan_context.get("plan_entry_id"):
-                    current_plan_entry = db.query(PlanEntry).filter(
-                        PlanEntry.id == plan_context["plan_entry_id"]
-                    ).first()
-                    
-                    if current_plan_entry:
-                        # Get previous week's entry
-                        previous_plan_entry = db.query(PlanEntry).filter(
-                            PlanEntry.workout_plan_id == current_plan_entry.workout_plan_id,
-                            PlanEntry.week_number == current_plan_entry.week_number - 1
-                        ).first()
-                
-                # Determine trigger reason
-                trigger_reason = None
-                
-                # Primary trigger: Mesocycle completion (Realization -> Accumulation)
-                if current_plan_entry and previous_plan_entry:
-                    predictor_service = WorkoutPredictorService(db)
-                    current_phase = current_plan_entry.training_phase.value if hasattr(current_plan_entry.training_phase, 'value') else str(current_plan_entry.training_phase)
-                    previous_phase = previous_plan_entry.training_phase.value if hasattr(previous_plan_entry.training_phase, 'value') else str(previous_plan_entry.training_phase)
-                    
-                    if predictor_service.check_mesocycle_complete(
-                        request.athlete_id,
-                        current_phase,
-                        previous_phase
-                    ):
-                        trigger_reason = "mesocycle_complete"
-                
-                # Fallback triggers if no mesocycle completion detected
-                if not trigger_reason:
-                    predictor_service = WorkoutPredictorService(db)
-                    if predictor_service.should_retrain(request.athlete_id):
-                        # Determine specific fallback reason
-                        metadata = predictor_service.model_manager.get_model_metadata("workout_predictor", request.athlete_id)
-                        if metadata:
-                            training_date = datetime.fromisoformat(metadata.get("training_date"))
-                            days_since = (datetime.now(timezone.utc) - training_date).days
-                            if days_since > 60:
-                                trigger_reason = "staleness"
-                            else:
-                                trigger_reason = "session_threshold"
-                        else:
-                            trigger_reason = "no_model"
-                
-                # Queue retraining if trigger identified
-                if trigger_reason:
-                    # Check for existing pending/running jobs
-                    existing_job = db.query(MLTrainingJob).filter(
-                        MLTrainingJob.athlete_id == request.athlete_id,
-                        MLTrainingJob.status.in_([MLJobStatus.PENDING, MLJobStatus.RUNNING])
-                    ).first()
-                    
-                    if not existing_job:
-                        # Create job record
-                        job = MLTrainingJob(
-                            athlete_id=request.athlete_id,
-                            trigger_reason=trigger_reason,
-                            status=MLJobStatus.PENDING
-                        )
-                        db.add(job)
-                        db.flush()  # Get job ID
-                        
-                        # Queue the training task (after commit)
-                        # We'll store the job_id to queue after successful commit
-                        _retraining_job_id = job.id
-                        _retraining_trigger = trigger_reason
-                    else:
-                        _retraining_job_id = None
-                        _retraining_trigger = None
-                else:
-                    _retraining_job_id = None
-                    _retraining_trigger = None
-            except Exception as e:
-                # Don't fail workout completion if retraining check fails
-                print(f"Warning: ML retraining check failed: {e}")
-                _retraining_job_id = None
-                _retraining_trigger = None
-        else:
-            _retraining_job_id = None
-            _retraining_trigger = None
-        
-        # Single commit for all changes - ensures atomicity
+                    readiness_score=recovery_status.get("readiness_score"),
+                    training_phase=str(plan_context.get("current_phase")),
+                ))
+
+        # ML retraining is CPU-bound -> Celery (after commit).
+        _maybe_queue_retraining(db, athlete_id)
+
         db.commit()
-        
-        # Queue retraining task after successful commit
-        if _retraining_job_id:
-            try:
-                from app.modules.ml.tasks import retrain_athlete_model
-                retrain_athlete_model.delay(request.athlete_id, _retraining_job_id, _retraining_trigger)
-            except Exception as e:
-                # Log but don't fail - retraining is non-critical
-                print(f"Warning: Failed to queue ML retraining task: {e}")
-        
-        # Undefer deferred fields for response
-        db.refresh(workout_session)
-        db.refresh(recovery_metrics)
-        
-        # Undefer notes and created_at for response
-        workout_session = db.query(WorkoutSession).options(
-            undefer(WorkoutSession.notes),
-            undefer(WorkoutSession.created_at)
-        ).filter(WorkoutSession.id == workout_session.id).first()
-        
-        recovery_metrics = db.query(RecoveryMetrics).options(
-            undefer(RecoveryMetrics.notes),
-            undefer(RecoveryMetrics.created_at)
-        ).filter(RecoveryMetrics.id == recovery_metrics.id).first()
-        
-        # Build response
-        return WorkoutCompletionResponse(
-            workout_session=WorkoutSessionResponse.model_validate(workout_session),
-            recovery_metrics=RecoveryMetricsResponse.model_validate(recovery_metrics),
-            next_workout=NextWorkoutResponse(**current_workout_updated),  # Same workout, updated
-            performance_analysis=ai_result["performance_analysis"],
-            ai_insights=ai_result["ai_insights"]
-        )
-    
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
+
+        return {
+            "session_id": session.id,
+            "adjustments": adjustments,
+            "next_workout": next_workout,
+            "performance_analysis": performance_analysis,
+            "ai_insights": ai_result["ai_insights"],
+            # write-backs for api to persist:
+            "pr_updates": pr_updates,
+            "calibration_factor": calibration_factor,
+        }
     except Exception as e:
-        # Rollback on any error
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to complete workout: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to analyze session: {str(e)}")
+
 
 @router.get("/athletes/{athlete_id}/analytics")
 def get_athlete_analytics(
     athlete_id: int,
     days: int = 30,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_autoreg_db),
 ):
-    """
-    Get comprehensive athlete analytics.
-    
-    Includes:
-    - Performance trends
-    - Recovery patterns
-    - Volume/intensity progression
-    - Injury risk indicators
-    """
-    from app.models import PerformanceTrend
-    from datetime import timedelta
-    from sqlalchemy import desc
-    
-    athlete = get_athlete_or_404(db, athlete_id)
-    
-    # Get performance trends
+    """Athlete analytics from the local performance_trends (ACWR, readiness, deloads)."""
+    get_athlete_or_404(athlete_id)  # validates existence via api
+
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
-    trends = db.query(PerformanceTrend).filter(
-        PerformanceTrend.athlete_id == athlete_id,
-        PerformanceTrend.session_date >= cutoff_date
-    ).order_by(desc(PerformanceTrend.session_date)).all()
-    
+    trends = (
+        db.query(PerformanceTrend)
+        .filter(
+            PerformanceTrend.athlete_id == athlete_id,
+            PerformanceTrend.session_date >= cutoff_date,
+        )
+        .order_by(PerformanceTrend.session_date.desc())
+        .all()
+    )
+
     if not trends:
-        return {
-            "athlete_id": athlete_id,
-            "message": "No performance data available",
-            "trends": []
-        }
-    
-    # Calculate analytics
+        return {"athlete_id": athlete_id, "message": "No performance data available", "trends": []}
+
     avg_performance = sum(t.performance_score for t in trends) / len(trends)
     avg_readiness = sum(t.readiness_score for t in trends) / len(trends)
     avg_volume = sum(t.total_volume for t in trends) / len(trends)
     avg_rpe = sum(t.average_rpe for t in trends) / len(trends)
-    
     deload_count = sum(1 for t in trends if t.deload_triggered)
-    
-    # Recent ACWR (injury risk indicator)
     recent_acwr = trends[0].acwr if trends and trends[0].acwr else None
-    
+
     return {
         "athlete_id": athlete_id,
         "period_days": days,
@@ -512,7 +223,7 @@ def get_athlete_analytics(
             "performance_score": round(avg_performance, 3),
             "readiness_score": round(avg_readiness, 3),
             "volume": round(avg_volume, 1),
-            "rpe": round(avg_rpe, 1)
+            "rpe": round(avg_rpe, 1),
         },
         "deload_count": deload_count,
         "current_acwr": recent_acwr,
@@ -530,9 +241,8 @@ def get_athlete_analytics(
                 "total_volume": t.total_volume,
                 "average_rpe": t.average_rpe,
                 "acwr": t.acwr,
-                "deload_triggered": t.deload_triggered
+                "deload_triggered": t.deload_triggered,
             }
             for t in trends
-        ]
+        ],
     }
-

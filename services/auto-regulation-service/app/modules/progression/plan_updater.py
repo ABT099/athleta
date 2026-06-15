@@ -3,15 +3,14 @@ Plan updater service.
 
 Updates PlanEntry records and generates next workout with adjusted parameters.
 """
-from typing import Dict, List
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 from app.utils.constants import DELOAD_INTENSITY_MULTIPLIER, DELOAD_VOLUME_MULTIPLIER
 from sqlalchemy.orm import Session, undefer
 
-from app.models import (
-    PlanEntry, WorkoutDay, WorkoutDayExercise,
-    WorkoutSession, ExerciseSet, RecoveryMetrics
-)
+from app.models import PlanEntry, ExerciseProgressionTracking, PerformanceTrend  # algo-owned, local
+from app.modules.analysis import AnalysisContext
+from app.clients.api_client import WorkoutDayExerciseDTO
 from app.clients.exercise_client import ExerciseClient
 from app.schemas.workout import (
     WorkoutDayResponse,
@@ -34,61 +33,51 @@ class PlanUpdaterService:
     def update_plan_entry_after_workout(
         self,
         plan_entry_id: int,
-        workout_session: WorkoutSession,
-        recovery_metrics: RecoveryMetrics,
+        overall_rpe: Optional[float],
+        total_volume: Optional[float],
+        readiness_score: Optional[float],
         ai_adjustments: Dict,
         commit: bool = True
     ):
         """
-        Update PlanEntry with completed workout data and AI adjustments.
-        
-        Args:
-            plan_entry_id: PlanEntry ID
-            workout_session: Completed workout session
-            recovery_metrics: Recovery metrics
-            ai_adjustments: AI-generated adjustments
-            commit: Whether to commit the transaction (default: True). Set to False when called within a larger transaction.
+        Update PlanEntry with the completed workout's summary and AI adjustments.
+        Scalars come from the Analysis Context / engine results (readiness is the
+        engine-computed score, not an api field).
         """
         plan_entry = self.db.query(PlanEntry).filter(
             PlanEntry.id == plan_entry_id
         ).first()
-        
+
         if not plan_entry:
             return
-        
+
         # Update completed workouts count
         plan_entry.completed_workouts += 1
-        
-        # Update average metrics
-        if workout_session.overall_rpe:
+
+        # Update average RPE (running average)
+        if overall_rpe:
             if plan_entry.average_rpe:
-                # Running average
                 total_workouts = plan_entry.completed_workouts
                 plan_entry.average_rpe = (
-                    (plan_entry.average_rpe * (total_workouts - 1) + workout_session.overall_rpe)
-                    / total_workouts
+                    (plan_entry.average_rpe * (total_workouts - 1) + overall_rpe) / total_workouts
                 )
             else:
-                plan_entry.average_rpe = workout_session.overall_rpe
-        
+                plan_entry.average_rpe = overall_rpe
+
         # Update average recovery score
-        if recovery_metrics.readiness_score:
+        if readiness_score:
             if plan_entry.average_recovery_score:
                 total_workouts = plan_entry.completed_workouts
                 plan_entry.average_recovery_score = (
-                    (plan_entry.average_recovery_score * (total_workouts - 1) + recovery_metrics.readiness_score)
-                    / total_workouts
+                    (plan_entry.average_recovery_score * (total_workouts - 1) + readiness_score) / total_workouts
                 )
             else:
-                plan_entry.average_recovery_score = recovery_metrics.readiness_score
-        
+                plan_entry.average_recovery_score = readiness_score
+
         # Update total volume
-        if workout_session.total_volume:
-            if plan_entry.total_volume:
-                plan_entry.total_volume += workout_session.total_volume
-            else:
-                plan_entry.total_volume = workout_session.total_volume
-        
+        if total_volume:
+            plan_entry.total_volume = (plan_entry.total_volume or 0) + total_volume
+
         # Store AI adjustments
         plan_entry.ai_adjustments = ai_adjustments
         
@@ -105,44 +94,32 @@ class PlanUpdaterService:
     
     def generate_next_workout(
         self,
-        athlete_id: int,
+        ctx: AnalysisContext,
         workout_day_id: int,
         ai_adjustments: Dict,
         injury_warnings: List[str],
         recovery_recommendations: List[str]
     ) -> Dict:
         """
-        Generate next workout with AI-adjusted parameters.
-        
-        Args:
-            athlete_id: Athlete ID
-            workout_day_id: Workout day to generate (could be next in rotation)
-            ai_adjustments: AI adjustments to apply
-            injury_warnings: Injury warnings
-            recovery_recommendations: Recovery recommendations
-            
-        Returns:
-            Dict with next workout data
+        Generate the next workout with AI-adjusted parameters. The day to generate
+        (which may be the next in rotation) and its prescribed exercises come from
+        the context's plan.
         """
-        workout_day = self.db.query(WorkoutDay).filter(
-            WorkoutDay.id == workout_day_id
-        ).first()
-        
-        if not workout_day:
+        athlete_id = ctx.athlete_id
+
+        day = None
+        if ctx.plan:
+            day = next((d for d in ctx.plan.days if d.id == workout_day_id), None)
+        if day is None:
             raise ValueError(f"Workout day {workout_day_id} not found")
-        
-        # Get prescribed exercises
-        prescribed_exercises = (
-            self.db.query(WorkoutDayExercise)
-            .filter(WorkoutDayExercise.workout_day_id == workout_day_id)
-            .order_by(WorkoutDayExercise.order_in_workout)
-            .all()
-        )
-        
+
+        # Prescribed exercises for this day (from the context's plan)
+        prescribed_exercises = sorted(day.exercises, key=lambda e: e.order_in_workout)
+
         # Get plan context for weekly progression
         from app.modules.progression.progressive_overload_engine import ProgressiveOverloadEngine
         engine = ProgressiveOverloadEngine(self.db)
-        plan_context = engine.analyze_plan_context(athlete_id)
+        plan_context = engine.analyze_plan_context(ctx)
         
         # Extract recovery indicators from recommendations
         recovery_score = self._estimate_recovery_from_recommendations(recovery_recommendations)
@@ -167,12 +144,11 @@ class PlanUpdaterService:
                 volume_multiplier=ex_volume_mult
             )
             
-            # Calculate adjusted weight using PR if available
-            pr_tracker = PRTrackerService(self.db)
+            # Calculate adjusted weight using PR if available (PRs are in the context)
+            pr_tracker = PRTrackerService()
             target_reps_avg = (prescribed.target_reps_min + prescribed.target_reps_max) / 2
             pr_record = pr_tracker.get_pr_for_rep_range(
-                prescribed.exercise_id,
-                athlete_id,
+                ctx.pr_for(prescribed.exercise_id),
                 target_reps_avg
             )
             
@@ -285,21 +261,15 @@ class PlanUpdaterService:
             
             adjusted_exercises.append(adjusted_ex)
         
-        # Undefer deferred fields for response
-        workout_day = self.db.query(WorkoutDay).options(
-            undefer(WorkoutDay.name),
-            undefer(WorkoutDay.created_at)
-        ).filter(WorkoutDay.id == workout_day.id).first()
-        
-        # Create workout day response
+        # Create workout day response from the context's plan day
         workout_day_response = WorkoutDayResponse(
-            id=workout_day.id,
-            workout_plan_id=workout_day.workout_plan_id,
-            name=workout_day.name,
-            day_of_week=workout_day.day_of_week,
-            order_in_week=workout_day.order_in_week,
+            id=day.id,
+            workout_plan_id=day.workout_plan_id,
+            name=day.name,
+            day_of_week=day.day_of_week,
+            order_in_week=day.order_in_week,
             exercises=adjusted_exercises,
-            created_at=workout_day.created_at
+            created_at=datetime.now(timezone.utc)
         )
         
         # Generate adjustments summary
@@ -323,7 +293,7 @@ class PlanUpdaterService:
     
     def _calculate_dynamic_sets(
         self,
-        prescribed: WorkoutDayExercise,
+        prescribed: WorkoutDayExerciseDTO,
         plan_context: Dict,
         recovery_score: float,
         volume_multiplier: float
@@ -437,53 +407,33 @@ class PlanUpdaterService:
         
         return score
     
-    def _get_last_weight_used(self, athlete_id: int, exercise_id: int) -> float:
-        """
-        Get the last weight used for an exercise.
-        
-        Args:
-            athlete_id: Athlete ID
-            exercise_id: Exercise ID
-            
-        Returns:
-            Last weight used (kg) or None
-        """
-        last_set = (
-            self.db.query(ExerciseSet)
-            .join(WorkoutSession)
+    def _get_last_weight_used(self, athlete_id: int, exercise_id: int) -> Optional[float]:
+        """Last weight used for an exercise, from the local progression history."""
+        latest = (
+            self.db.query(ExerciseProgressionTracking)
             .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                ExerciseSet.exercise_id == exercise_id
+                ExerciseProgressionTracking.athlete_id == athlete_id,
+                ExerciseProgressionTracking.exercise_id == exercise_id,
             )
-            .order_by(WorkoutSession.session_date.desc())
+            .order_by(ExerciseProgressionTracking.session_date.desc())
             .first()
         )
-        
-        return last_set.weight if last_set else None
-    
+        return latest.weight_used if latest else None
+
     def _calculate_weekly_progress(self, athlete_id: int) -> Dict:
-        """
-        Calculate weekly progress metrics.
-        
-        Args:
-            athlete_id: Athlete ID
-            
-        Returns:
-            Dict with weekly progress
-        """
-        # Get workouts from this week
+        """Weekly progress metrics, from the local performance_trends."""
         now = datetime.now(timezone.utc)
         week_start = now - timedelta(days=now.weekday())
-        
+
         weekly_sessions = (
-            self.db.query(WorkoutSession)
+            self.db.query(PerformanceTrend)
             .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= week_start
+                PerformanceTrend.athlete_id == athlete_id,
+                PerformanceTrend.session_date >= week_start
             )
             .all()
         )
-        
+
         if not weekly_sessions:
             return {
                 "workouts_this_week": 0,
@@ -492,28 +442,28 @@ class PlanUpdaterService:
                 "trend": "starting",
                 "volume_vs_last_week": "N/A"
             }
-        
+
         # Calculate metrics
         total_volume = sum(s.total_volume or 0 for s in weekly_sessions)
-        rpe_values = [s.overall_rpe for s in weekly_sessions if s.overall_rpe]
+        rpe_values = [s.average_rpe for s in weekly_sessions if s.average_rpe]
         avg_rpe = sum(rpe_values) / len(rpe_values) if rpe_values else None
-        
+
         # Compare to last week
         last_week_start = week_start - timedelta(days=7)
         last_week_sessions = (
-            self.db.query(WorkoutSession)
+            self.db.query(PerformanceTrend)
             .filter(
-                WorkoutSession.athlete_id == athlete_id,
-                WorkoutSession.session_date >= last_week_start,
-                WorkoutSession.session_date < week_start
+                PerformanceTrend.athlete_id == athlete_id,
+                PerformanceTrend.session_date >= last_week_start,
+                PerformanceTrend.session_date < week_start
             )
             .all()
         )
-        
+
         trend = "stable"
         last_week_volume = 0
         volume_vs_last_week = "N/A"
-        
+
         if last_week_sessions:
             last_week_volume = sum(s.total_volume or 0 for s in last_week_sessions)
             if last_week_volume > 0:

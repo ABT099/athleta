@@ -177,12 +177,13 @@ import pytest
 
 @pytest.mark.integration
 class TestWorkoutJourney:
-    def test_complete_workout_flow(self, client, db_session, setup_workout_plan):
-        """Test complete workout submission to AI recommendations."""
-        # Submit workout
-        response = client.post("/api/workouts/complete", json=workout_data)
+    def test_complete_workout_flow(self, client, db_session, workout_setup):
+        """api pushes the logged session; auto-reg computes and returns adjustments."""
+        # Build the analyze request (athlete + plan + session + recovery) and POST it
+        request = AnalysisRequestFactory.create(...)
+        response = client.post("/api/analysis/sessions", json=request.model_dump(mode="json"))
 
-        # Verify response structure
+        # Verify response structure (adjustments + write-backs for api)
         assert response.status_code == 200
         assert "next_workout" in response.json()
         assert "ai_insights" in response.json()

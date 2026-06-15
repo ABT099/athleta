@@ -7,8 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from app.database import get_db
-from app.models import Athlete, WorkoutSession
+from app.database import get_autoreg_db
 from app.utils.helpers import get_athlete_or_404
 from app.modules.ml.model_selector import ModelSelector
 from app.modules.ml.model_manager import ModelManager
@@ -28,7 +27,7 @@ router = APIRouter()
 def train_athlete_model_async(
     athlete_id: int,
     trigger_reason: str = "manual",
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_autoreg_db)
 ):
     """
     Queue async ML model training for specific athlete.
@@ -48,7 +47,7 @@ def train_athlete_model_async(
         )
     
     # Validate athlete exists
-    athlete = get_athlete_or_404(db, athlete_id)
+    athlete = get_athlete_or_404(athlete_id)
     
     # Check for existing pending/running jobs
     from app.models import MLTrainingJob, MLJobStatus
@@ -101,7 +100,7 @@ def train_athlete_model_async(
 @router.get("/ml/jobs/{job_id}")
 def get_training_job_status(
     job_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_autoreg_db)
 ):
     """
     Get status of a specific ML training job.
@@ -148,7 +147,7 @@ def list_training_jobs(
     athlete_id: Optional[int] = None,
     status: Optional[str] = None,
     limit: int = 50,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_autoreg_db)
 ):
     """
     List ML training jobs with optional filters.
