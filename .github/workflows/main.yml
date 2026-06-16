@@ -108,79 +108,79 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  # deploy:
+  #   needs: build-and-push
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: Copy files via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.HETZNER_HOST }}
-          username: ${{ secrets.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_KEY }}
-          # Added traefik-dynamic.yml to the deployment
-          source: "./docker-compose.yml,./traefik-dynamic.yml,./monitoring"
-          target: "/root/athleta"
-          strip_components: 0
+  #     - name: Copy files via SCP
+  #       uses: appleboy/scp-action@v0.1.7
+  #       with:
+  #         host: ${{ secrets.HETZNER_HOST }}
+  #         username: ${{ secrets.HETZNER_USER }}
+  #         key: ${{ secrets.HETZNER_SSH_KEY }}
+  #         # Added traefik-dynamic.yml to the deployment
+  #         source: "./docker-compose.yml,./traefik-dynamic.yml,./monitoring"
+  #         target: "/root/athleta"
+  #         strip_components: 0
 
-      - name: SSH and Deploy
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HETZNER_HOST }}
-          username: ${{ secrets.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_KEY }}
-          envs: GHCR_PAT,GITHUB_ACTOR
-          timeout: 30m
-          command_timeout: 30m
-          script: |
-            # 1. Log in to Registry
-            echo $GHCR_PAT | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
+  #     - name: SSH and Deploy
+  #       uses: appleboy/ssh-action@v1.0.3
+  #       with:
+  #         host: ${{ secrets.HETZNER_HOST }}
+  #         username: ${{ secrets.HETZNER_USER }}
+  #         key: ${{ secrets.HETZNER_SSH_KEY }}
+  #         envs: GHCR_PAT,GITHUB_ACTOR
+  #         timeout: 30m
+  #         command_timeout: 30m
+  #         script: |
+  #           # 1. Log in to Registry
+  #           echo $GHCR_PAT | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
 
-            cd /root/athleta
+  #           cd /root/athleta
 
-            # 2. Setup Environment
-            echo "${{ secrets.ENV_FILE }}" > .env
-            echo "DOCKER_REGISTRY=ghcr.io" >> .env
-            echo "GITHUB_REPOSITORY=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> .env
-            echo "IMAGE_TAG=latest" >> .env
+  #           # 2. Setup Environment
+  #           echo "${{ secrets.ENV_FILE }}" > .env
+  #           echo "DOCKER_REGISTRY=ghcr.io" >> .env
+  #           echo "GITHUB_REPOSITORY=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> .env
+  #           echo "IMAGE_TAG=latest" >> .env
 
-            # 3. Setup Cloudflare Certificates (one-time, will be skipped if exists)
-            if [ ! -f certs/cloudflare-cert.pem ] || [ ! -f certs/cloudflare-key.pem ]; then
-              echo "⚠️  Warning: Cloudflare certificates not found in certs/ directory"
-              echo "Please create them manually if using Cloudflare SSL"
-            fi
+  #           # 3. Setup Cloudflare Certificates (one-time, will be skipped if exists)
+  #           if [ ! -f certs/cloudflare-cert.pem ] || [ ! -f certs/cloudflare-key.pem ]; then
+  #             echo "⚠️  Warning: Cloudflare certificates not found in certs/ directory"
+  #             echo "Please create them manually if using Cloudflare SSL"
+  #           fi
 
-            # 4. Create Directories
-            mkdir -p backups
-            mkdir -p monitoring/grafana/provisioning
+  #           # 4. Create Directories
+  #           mkdir -p backups
+  #           mkdir -p monitoring/grafana/provisioning
 
-            # 5. Permission Fix for Prometheus
-            docker run --rm -v $(pwd)/prometheus_data:/data alpine chown -R 65534:65534 /data || true
+  #           # 5. Permission Fix for Prometheus
+  #           docker run --rm -v $(pwd)/prometheus_data:/data alpine chown -R 65534:65534 /data || true
 
-            # 6. PULL
-            # Pull largest images first, one by one
-            echo "Pulling Auto Regulation Service..."
-            docker compose pull auto-regulation-service
-            echo "Pulling Neo4j..."
-            docker compose pull neo4j
-            echo "Pulling Database..."
-            docker compose pull db
-            # Pull remaining small services
-            echo "Pulling remaining services..."
-            docker compose pull
+  #           # 6. PULL
+  #           # Pull largest images first, one by one
+  #           echo "Pulling Auto Regulation Service..."
+  #           docker compose pull auto-regulation-service
+  #           echo "Pulling Neo4j..."
+  #           docker compose pull neo4j
+  #           echo "Pulling Database..."
+  #           docker compose pull db
+  #           # Pull remaining small services
+  #           echo "Pulling remaining services..."
+  #           docker compose pull
 
-            # 7. START
-            docker compose --profile monitoring up -d --remove-orphans --no-build
+  #           # 7. START
+  #           docker compose --profile monitoring up -d --remove-orphans --no-build
 
-            # 8. Cleanup
-            docker image prune -f
+  #           # 8. Cleanup
+  #           docker image prune -f
 
-            # 9. Verify deployment
-            echo "✅ Deployment complete. Checking service status..."
-            docker compose ps
-        env:
-          GHCR_PAT: ${{ secrets.GHCR_PAT }}
-          GITHUB_ACTOR: ${{ github.actor }}
+  #           # 9. Verify deployment
+  #           echo "✅ Deployment complete. Checking service status..."
+  #           docker compose ps
+  #       env:
+  #         GHCR_PAT: ${{ secrets.GHCR_PAT }}
+  #         GITHUB_ACTOR: ${{ github.actor }}
