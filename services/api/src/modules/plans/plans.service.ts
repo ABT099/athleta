@@ -242,10 +242,15 @@ export class PlansService {
         };
       });
 
-      const insertedWorkoutDays = await tx
-        .insert(workoutDays)
-        .values(workoutDayValues.map((wd) => wd.values))
-        .returning({ id: workoutDays.id });
+      // A plan can be created with no days (e.g. a shell to fill in later);
+      // guard the insert since Drizzle rejects an empty values() array.
+      const insertedWorkoutDays =
+        workoutDayValues.length > 0
+          ? await tx
+              .insert(workoutDays)
+              .values(workoutDayValues.map((wd) => wd.values))
+              .returning({ id: workoutDays.id })
+          : [];
 
       // Map the returned IDs to the muscle data
       insertedWorkoutDays.forEach((insertedDay, index) => {
