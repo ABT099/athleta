@@ -17,8 +17,10 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
-    "db:introspect": "npx drizzle-kit pull && mv drizzle/schema.ts src/db/schema.ts && mv drizzle/relations.ts src/db/relations.ts && rm -rf drizzle"
+    "test:integration": "jest --config ./test/jest-integration.json --runInBand",
+    "db:introspect": "npx drizzle-kit pull && mv drizzle/schema.ts src/db/schema.ts && mv drizzle/relations.ts src/db/relations.ts && rm -rf drizzle",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.9.14",
@@ -41,6 +43,7 @@
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0",
     "jwt-decode": "^4.0.0",
+    "kafkajs": "^2.2.4",
     "nestjs-cls": "^6.1.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
@@ -55,6 +58,8 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@testcontainers/kafka": "^12.0.2",
+    "@testcontainers/postgresql": "^12.0.2",
     "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
@@ -73,6 +78,7 @@
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
+    "testcontainers": "^12.0.2",
     "ts-jest": "^29.2.5",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",

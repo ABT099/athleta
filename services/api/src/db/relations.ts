@@ -5,11 +5,8 @@ import {
   workoutPlans,
   workoutDays,
   workoutDayExercises,
-  exercises,
   refreshTokens,
   passwordResetTokens,
-  muscleGroups,
-  exerciseMuscles,
 } from './schema';
 
 export const athletesRelations = relations(athletes, ({ one, many }) => ({
@@ -45,6 +42,8 @@ export const workoutDaysRelations = relations(workoutDays, ({ one, many }) => ({
   workoutDayExercises: many(workoutDayExercises),
 }));
 
+// workout_day_exercises.exercise_id is a soft reference to an exercise owned
+// by the exercise-service; there is no local exercises relation.
 export const workoutDayExercisesRelations = relations(
   workoutDayExercises,
   ({ one }) => ({
@@ -52,17 +51,8 @@ export const workoutDayExercisesRelations = relations(
       fields: [workoutDayExercises.workoutDayId],
       references: [workoutDays.id],
     }),
-    exercise: one(exercises, {
-      fields: [workoutDayExercises.exerciseId],
-      references: [exercises.id],
-    }),
   }),
 );
-
-export const exercisesRelations = relations(exercises, ({ many }) => ({
-  workoutDayExercises: many(workoutDayExercises),
-  exerciseMuscles: many(exerciseMuscles),
-}));
 
 export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
   user: one(users, {
@@ -77,35 +67,6 @@ export const passwordResetTokensRelations = relations(
     user: one(users, {
       fields: [passwordResetTokens.userId],
       references: [users.id],
-    }),
-  }),
-);
-
-export const muscleGroupsRelations = relations(
-  muscleGroups,
-  ({ one, many }) => ({
-    muscleGroup: one(muscleGroups, {
-      fields: [muscleGroups.antagonistId],
-      references: [muscleGroups.id],
-      relationName: 'muscleGroups_antagonistId_muscleGroups_id',
-    }),
-    muscleGroups: many(muscleGroups, {
-      relationName: 'muscleGroups_antagonistId_muscleGroups_id',
-    }),
-    exerciseMuscles: many(exerciseMuscles),
-  }),
-);
-
-export const exerciseMusclesRelations = relations(
-  exerciseMuscles,
-  ({ one }) => ({
-    exercise: one(exercises, {
-      fields: [exerciseMuscles.exerciseId],
-      references: [exercises.id],
-    }),
-    muscleGroup: one(muscleGroups, {
-      fields: [exerciseMuscles.muscleGroupId],
-      references: [muscleGroups.id],
     }),
   }),
 );

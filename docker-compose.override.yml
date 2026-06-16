@@ -16,17 +16,15 @@ services:
     ports:
       - "6379:6379"
 
-  migrator:
-    image: athleta/migrator:local
-    build:
-      context: ./migrator
-      dockerfile: Dockerfile
+  kafka:
+    ports:
+      - "9092:9092"
 
-  exercise-inference:
-    image: athleta/exercise-inference:local
+  exercise-service:
+    image: athleta/exercise-service:local
     build:
-      context: ./services/exercise-inference
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/exercise-service/Dockerfile
 
   muscle-image-api:
     image: athleta/muscle-image:local
@@ -34,10 +32,16 @@ services:
       context: ./services/muscle-image
       dockerfile: Dockerfile
 
-  ai-engine:
-    image: athleta/ai-engine:local
+  muscle-image-worker:
+    image: athleta/muscle-image:local
     build:
-      context: ./services/ai-engine
+      context: ./services/muscle-image
+      dockerfile: Dockerfile
+
+  auto-regulation-service:
+    image: athleta/auto-regulation-service:local
+    build:
+      context: ./services/auto-regulation-service
       dockerfile: Dockerfile
 
   api:

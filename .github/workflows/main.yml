@@ -10,7 +10,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  test-ai-engine:
+  test-auto-regulation-service:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -23,14 +23,14 @@ jobs:
         run: uv python install 3.13
 
       - name: Install Python Dependencies
-        working-directory: services/ai-engine
+        working-directory: services/auto-regulation-service
         run: uv sync --all-extras
 
       - name: Run tests
-        working-directory: services/ai-engine
+        working-directory: services/auto-regulation-service
         run: uv run pytest -m "not ml" --verbose --cov=app --cov-report=html --cov-report=term
 
-  test-exercise-inference:
+  test-exercise-service:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -40,18 +40,18 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: "1.25"
-          cache-dependency-path: services/exercise-inference/go.sum
+          cache-dependency-path: services/exercise-service/go.sum
 
       - name: Install Go dependencies
-        working-directory: services/exercise-inference
+        working-directory: services/exercise-service
         run: go mod download
 
       - name: Run tests
-        working-directory: services/exercise-inference
+        working-directory: services/exercise-service
         run: go test -v ./...
 
   build-and-push:
-    needs: [test-ai-engine, test-exercise-inference]
+    needs: [test-auto-regulation-service, test-exercise-service]
     runs-on: ubuntu-latest
 
     permissions:
@@ -62,21 +62,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - service: ai-engine
-            context: ./services/ai-engine
-            dockerfile: ./services/ai-engine/Dockerfile
+          - service: auto-regulation-service
+            context: ./services/auto-regulation-service
+            dockerfile: ./services/auto-regulation-service/Dockerfile
           - service: api
             context: .
             dockerfile: ./services/api/Dockerfile
-          - service: exercise-inference
+          - service: exercise-service
             context: .
-            dockerfile: ./services/exercise-inference/Dockerfile
+            dockerfile: ./services/exercise-service/Dockerfile
           - service: muscle-image-api
             context: ./services/muscle-image
             dockerfile: ./services/muscle-image/Dockerfile
-          - service: migrator
-            context: ./migrator
-            dockerfile: ./migrator/Dockerfile
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -165,8 +162,8 @@ jobs:
 
             # 6. PULL
             # Pull largest images first, one by one
-            echo "Pulling AI Engine..."
-            docker compose pull ai-engine
+            echo "Pulling Auto Regulation Service..."
+            docker compose pull auto-regulation-service
             echo "Pulling Neo4j..."
             docker compose pull neo4j
             echo "Pulling Database..."

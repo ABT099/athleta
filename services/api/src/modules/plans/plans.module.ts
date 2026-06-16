@@ -5,12 +5,19 @@ import { PlansController } from './plans.controller';
 import { PlansService } from './plans.service';
 import { ExerciseModule } from '../exercise/exercise.module';
 import { WorkoutsModule } from '../workouts/workouts.module';
-import { AIEngineIntegration } from '../../integrations/ai-engine.integration';
+import { AthletesModule } from '../athletes/athletes.module';
+import { AutoRegulationServiceIntegration } from '../../integrations/auto-regulation-service.integration';
 
 @Module({
-  imports: [HttpModule, ConfigModule, ExerciseModule, WorkoutsModule],
+  imports: [
+    HttpModule,
+    ConfigModule,
+    ExerciseModule,
+    WorkoutsModule,
+    AthletesModule,
+  ],
   controllers: [PlansController],
-  providers: [PlansService, AIEngineIntegration],
+  providers: [PlansService, AutoRegulationServiceIntegration],
   exports: [PlansService],
 })
 export class PlansModule {}

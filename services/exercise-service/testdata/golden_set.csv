@@ -1,0 +1,26 @@
+Input,ExpectedExerciseID,ExpectedResultType,MinConfidence,Category
+bench press,bench_press,MATCH,0.80,exact
+bech press,bench_press,MATCH,0.70,typo
+press bench flat,bench_press,MATCH,0.70,word_order
+bb bench,bench_press,MATCH,0.80,abbreviation
+i did some bench press,bench_press,MATCH,0.75,conversational
+chest press,AMBIGUOUS,AMBIGUOUS,0.70,ambiguous
+asdfghjkl,NO_MATCH,NO_MATCH,0.0,garbage
+skull crushers,lying_tricep_extension,MATCH,0.80,slang
+barbell bench press,bench_press,MATCH,0.80,exact
+dumbell bench press,AMBIGUOUS,AMBIGUOUS,0.70,typo
+incline bench,incline_bench_press,MATCH,0.75,abbreviation
+squat,squat,MATCH,0.80,exact
+deadlift,deadlift,MATCH,0.80,exact
+pull up,pull_up,MATCH,0.80,exact
+bicep curl,bicep_curl,MATCH,0.80,exact
+overhead press,overhead_press,MATCH,0.80,exact
+just finished bench press,bench_press,MATCH,0.75,conversational
+working on squats,squat,MATCH,0.75,conversational
+i'm doing deadlifts,deadlift,MATCH,0.75,conversational
+rdl,romanian_deadlift,MATCH,0.80,abbreviation
+lat pulldown,lat_pulldown,MATCH,0.80,exact
+lateral raises,lateral_raise,MATCH,0.80,plural
+leg curls,leg_curl,MATCH,0.80,plural
+farmers walk,farmers_carry,MATCH,0.80,alias
+chin up,chin_up,MATCH,0.80,exact

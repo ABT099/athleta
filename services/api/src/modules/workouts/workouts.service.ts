@@ -1,27 +1,40 @@
-import { Injectable, NotFoundException, Inject, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  Logger,
+} from '@nestjs/common';
 import { DRIZZLE, type DrizzleDB } from '../common/database/database.provider';
 import {
   workoutDayExercises,
-  exercises,
   workoutDays,
   workoutPlans,
+  athletes,
+  workoutSessions,
+  exerciseSets,
+  recoveryMetrics,
+  exercisePersonalRecords,
 } from 'src/db/schema';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { WorkoutExerciseDto } from '../plans/dto/create-plan.dto';
-import { ExerciseService } from '../exercise/exercise.service';
-import { MuscleImageIntegration } from 'src/integrations/muscle-image.integration';
-import { AIEngineIntegration } from 'src/integrations/ai-engine.integration';
-import { PrescriptionRequestDto } from 'src/integrations/integrations.types';
-import { DayOfWeek, TrainingType } from 'src/constants';
+import { ExerciseClientService } from '../exercise/exercise-client.service';
+import { EventPublisher } from '../common/messaging/event-publisher.service';
+import { AutoRegulationServiceIntegration } from 'src/integrations/auto-regulation-service.integration';
 import {
-  IntensityCategory,
-  ExerciseType,
-  MuscleTarget,
-} from '../exercise/exercise.types';
+  PrescriptionRequestDto,
+  PrUpdate,
+} from 'src/integrations/integrations.types';
+import { InternalService } from '../internal/internal.service';
+import { AthletesService } from '../athletes/athletes.service';
+import { CompleteWorkoutDto } from './dto/complete-workout.dto';
+import { DayOfWeek, TrainingType } from 'src/constants';
+import { InferredExercise, MuscleTarget } from '../exercise/exercise.types';
 import {
   CreateWorkoutExerciseInput,
   CreateWorkoutDayInput,
 } from './workout.types';
+import { determineIsPrimary } from './workout.utils';
 
 @Injectable()
 export class WorkoutsService {
@@ -29,10 +42,248 @@ export class WorkoutsService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
-    private readonly exerciseService: ExerciseService,
-    private readonly muscleImageIntegration: MuscleImageIntegration,
-    private readonly AIEngineIntegration: AIEngineIntegration,
+    private readonly exerciseClient: ExerciseClientService,
+    private readonly eventPublisher: EventPublisher,
+    private readonly autoReg: AutoRegulationServiceIntegration,
+    private readonly internalService: InternalService,
+    private readonly athletesService: AthletesService,
   ) {}
+
+  /**
+   * Complete a logged workout: persist the session/sets/recovery in api's DB,
+   * push the full context to auto-regulation for analysis, then persist the
+   * write-backs it returns (PRs + calibration factor). The log is committed
+   * first; analysis is best-effort, so a transient auto-reg failure still keeps
+   * the workout the athlete logged.
+   */
+  async completeWorkout(userId: number, dto: CompleteWorkoutDto) {
+    const athlete = await this.athletesService.requireAthleteByUserId(userId);
+
+    const sessionDate = dto.sessionDate ?? new Date().toISOString();
+    const totalVolume = dto.exerciseSets.reduce(
+      (sum, s) => sum + s.weight * s.reps,
+      0,
+    );
+
+    // 1. Persist the log (one transaction in api's DB).
+    const { session, sets, recovery } = await this.db.transaction(
+      async (tx) => {
+        const [session] = await tx
+          .insert(workoutSessions)
+          .values({
+            athleteId: athlete.id,
+            workoutDayId: dto.workoutDayId,
+            sessionDate,
+            durationMinutes: dto.durationMinutes ?? null,
+            overallRpe: dto.overallRpe ?? null,
+            overallFeeling: dto.overallFeeling ?? null,
+            notes: dto.notes ?? null,
+            totalVolume,
+          })
+          .returning();
+
+        const sets = await tx
+          .insert(exerciseSets)
+          .values(
+            dto.exerciseSets.map((s) => ({
+              workoutSessionId: session.id,
+              exerciseId: s.exerciseId,
+              setNumber: s.setNumber,
+              weight: s.weight,
+              reps: s.reps,
+              rpe: s.rpe ?? null,
+              rir: s.rir ?? null,
+              formQuality: s.formQuality ?? null,
+              setTypeUsed: (s.setTypeUsed ??
+                null) as (typeof exerciseSets.$inferInsert)['setTypeUsed'],
+              repStyleUsed: (s.repStyleUsed ??
+                null) as (typeof exerciseSets.$inferInsert)['repStyleUsed'],
+              techniqueDetails: s.techniqueDetails ?? null,
+              notes: s.notes ?? null,
+            })),
+          )
+          .returning();
+
+        let recovery: typeof recoveryMetrics.$inferSelect | null = null;
+        if (dto.recoveryMetrics) {
+          const r = dto.recoveryMetrics;
+          [recovery] = await tx
+            .insert(recoveryMetrics)
+            .values({
+              athleteId: athlete.id,
+              date: sessionDate,
+              sleepQuality:
+                r.sleepQuality as (typeof recoveryMetrics.$inferInsert)['sleepQuality'],
+              sleepHours: r.sleepHours ?? null,
+              overallSoreness: r.overallSoreness ?? null,
+              muscleSoreness: r.muscleSoreness ?? null,
+              stressLevel: r.stressLevel ?? null,
+              energyLevel: r.energyLevel ?? null,
+              nutritionAdherence: r.nutritionAdherence ?? null,
+              hydrationLevel: r.hydrationLevel ?? null,
+              notes: r.notes ?? null,
+            })
+            .returning();
+        }
+
+        return { session, sets, recovery };
+      },
+    );
+
+    // 2. Assemble the analyze request api pushes (athlete-owned data + the log).
+    const [athleteDto, planDto, prDtos] = await Promise.all([
+      this.internalService.getAthlete(athlete.id),
+      this.internalService.getActivePlanOrNull(athlete.id),
+      this.internalService.listPersonalRecords(athlete.id),
+    ]);
+
+    const sessionDto = {
+      id: session.id,
+      athlete_id: session.athleteId,
+      workout_day_id: session.workoutDayId,
+      session_date: session.sessionDate,
+      duration_minutes: session.durationMinutes,
+      overall_rpe: session.overallRpe,
+      overall_feeling: session.overallFeeling,
+      total_volume: session.totalVolume,
+      estimated_fatigue: session.estimatedFatigue,
+      notes: session.notes,
+      sets: sets.map((s) => ({
+        id: s.id,
+        workout_session_id: s.workoutSessionId,
+        exercise_id: s.exerciseId,
+        set_number: s.setNumber,
+        weight: s.weight,
+        reps: s.reps,
+        rpe: s.rpe,
+        rir: s.rir,
+        form_quality: s.formQuality,
+        set_type_used: s.setTypeUsed,
+        rep_style_used: s.repStyleUsed,
+        technique_details: s.techniqueDetails,
+        notes: s.notes,
+      })),
+    };
+    const recoveryDto = recovery
+      ? this.internalService.toRecoveryDto(recovery)
+      : null;
+
+    // 3. Push to auto-regulation. Analysis is best-effort.
+    let analysis;
+    try {
+      analysis = await this.autoReg.analyzeSession({
+        athlete: athleteDto,
+        plan: planDto,
+        session: sessionDto,
+        recovery: recoveryDto,
+        personal_records: prDtos,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Session ${session.id} persisted but analysis failed: ${message}`,
+      );
+      return { session_id: session.id, analysis: null };
+    }
+
+    // 4. Persist the write-backs (PRs + calibration factor).
+    await this.persistPrUpdates(athlete.id, analysis.pr_updates?.updates ?? []);
+    if (typeof analysis.calibration_factor === 'number') {
+      await this.db
+        .update(athletes)
+        .set({ rpeCalibrationFactor: analysis.calibration_factor })
+        .where(eq(athletes.id, athlete.id));
+    }
+
+    return { session_id: session.id, analysis };
+  }
+
+  /**
+   * Apply PR write-backs from auto-regulation into exercise_personal_records,
+   * grouped per exercise and upserted on (athlete_id, exercise_id).
+   */
+  private async persistPrUpdates(athleteId: number, updates: PrUpdate[]) {
+    if (updates.length === 0) return;
+
+    const byExercise = new Map<number, PrUpdate[]>();
+    for (const u of updates) {
+      const list = byExercise.get(u.exercise_id) ?? [];
+      list.push(u);
+      byExercise.set(u.exercise_id, list);
+    }
+
+    const now = new Date().toISOString();
+    for (const [exerciseId, exerciseUpdates] of byExercise) {
+      const fields: Partial<typeof exercisePersonalRecords.$inferInsert> = {};
+      let prCount = 0;
+      let latestDate = now;
+      for (const u of exerciseUpdates) {
+        const date = typeof u.date === 'string' ? u.date : now;
+        switch (u.pr_type) {
+          case '1RM':
+            fields.oneRepMax = u.new_value;
+            fields.oneRmDate = date;
+            break;
+          case '3RM':
+            fields.threeRepMax = u.new_value;
+            fields.threeRmDate = date;
+            break;
+          case '5RM':
+            fields.fiveRepMax = u.new_value;
+            fields.fiveRmDate = date;
+            break;
+          case '8RM':
+            fields.eightRepMax = u.new_value;
+            fields.eightRmDate = date;
+            break;
+          case '10RM':
+            fields.tenRepMax = u.new_value;
+            fields.tenRmDate = date;
+            break;
+          case '12RM':
+            fields.twelveRepMax = u.new_value;
+            fields.twelveRmDate = date;
+            break;
+          case 'volume':
+            fields.maxVolumeSession = u.new_value;
+            fields.maxVolumeDate = date;
+            break;
+          case 'total_reps':
+            fields.maxTotalReps = Math.round(u.new_value);
+            fields.maxRepsDate = date;
+            break;
+          default:
+            continue;
+        }
+        prCount += 1;
+        latestDate = date;
+      }
+      if (prCount === 0) continue;
+
+      await this.db
+        .insert(exercisePersonalRecords)
+        .values({
+          athleteId,
+          exerciseId,
+          ...fields,
+          totalPrCount: prCount,
+          lastPrDate: latestDate,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [
+            exercisePersonalRecords.athleteId,
+            exercisePersonalRecords.exerciseId,
+          ],
+          set: {
+            ...fields,
+            totalPrCount: sql`${exercisePersonalRecords.totalPrCount} + ${prCount}`,
+            lastPrDate: latestDate,
+            updatedAt: now,
+          },
+        });
+    }
+  }
 
   async substituteExercise(
     workoutDayId: number,
@@ -53,10 +304,9 @@ export class WorkoutsService {
       );
     }
 
-    // Verify substitute exercise exists
-    const substituteExercise = await this.db.query.exercises.findFirst({
-      where: eq(exercises.id, substituteExerciseId),
-    });
+    // Verify substitute exercise exists in the exercise service
+    const substituteExercise =
+      await this.exerciseClient.getExercise(substituteExerciseId);
 
     if (!substituteExercise) {
       throw new NotFoundException(
@@ -71,7 +321,8 @@ export class WorkoutsService {
       .where(eq(workoutDayExercises.id, workoutExercise.id));
   }
 
-  async getCurrentWorkoutDay(athleteId: number, dayOfWeek: DayOfWeek) {
+  async getCurrentWorkoutDay(userId: number, dayOfWeek: DayOfWeek) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
     const currentWorkoutDay = await this.db
       .select({
         id: workoutDays.id,
@@ -101,6 +352,89 @@ export class WorkoutsService {
     return currentWorkoutDay[0];
   }
 
+  /**
+   * Verify a workout day belongs to the athlete (via its plan), throwing
+   * NotFoundException otherwise so one athlete can't read/mutate another's day.
+   */
+  private async assertWorkoutDayOwnership(
+    athleteId: number,
+    workoutDayId: number,
+  ): Promise<void> {
+    const [owned] = await this.db
+      .select({ id: workoutDays.id })
+      .from(workoutDays)
+      .innerJoin(workoutPlans, eq(workoutDays.workoutPlanId, workoutPlans.id))
+      .where(
+        and(
+          eq(workoutDays.id, workoutDayId),
+          eq(workoutPlans.athleteId, athleteId),
+        ),
+      )
+      .limit(1);
+
+    if (!owned) {
+      throw new NotFoundException(`Workout day ${workoutDayId} not found`);
+    }
+  }
+
+  async updateWorkoutDay(
+    userId: number,
+    workoutDayId: number,
+    fields: { name?: string; dayOfWeek?: number; orderInWeek?: number },
+  ) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
+    await this.assertWorkoutDayOwnership(athleteId, workoutDayId);
+
+    const updates: Partial<typeof workoutDays.$inferInsert> = {};
+    if (fields.name !== undefined) updates.name = fields.name;
+    if (fields.dayOfWeek !== undefined) updates.dayOfWeek = fields.dayOfWeek;
+    if (fields.orderInWeek !== undefined) {
+      updates.orderInWeek = fields.orderInWeek;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      const [day] = await this.db
+        .select()
+        .from(workoutDays)
+        .where(eq(workoutDays.id, workoutDayId))
+        .limit(1);
+      return day;
+    }
+
+    const [updated] = await this.db
+      .update(workoutDays)
+      .set(updates)
+      .where(eq(workoutDays.id, workoutDayId))
+      .returning();
+    return updated;
+  }
+
+  async deleteWorkoutDay(userId: number, workoutDayId: number): Promise<void> {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
+    await this.assertWorkoutDayOwnership(athleteId, workoutDayId);
+
+    // A logged session references the day (NOT NULL FK); deleting would either
+    // orphan training history or violate the constraint — block it instead.
+    const [loggedSession] = await this.db
+      .select({ id: workoutSessions.id })
+      .from(workoutSessions)
+      .where(eq(workoutSessions.workoutDayId, workoutDayId))
+      .limit(1);
+
+    if (loggedSession) {
+      throw new BadRequestException(
+        'Cannot delete a workout day with logged sessions',
+      );
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(workoutDayExercises)
+        .where(eq(workoutDayExercises.workoutDayId, workoutDayId));
+      await tx.delete(workoutDays).where(eq(workoutDays.id, workoutDayId));
+    });
+  }
+
   async updateWorkoutDayExercise(
     workoutDayId: number,
     exercisesToRemove: number[],
@@ -112,23 +446,16 @@ export class WorkoutsService {
 
     const allExerciseNames = exercisesToAdd.map((exercise) => exercise.name);
 
-    const exercisesWithMuscles =
-      await this.exerciseService.batchUpsertExercises(allExerciseNames);
-
-    // Store full exercise data for prescription generation
-    const exerciseDataMap = new Map(
-      exercisesWithMuscles.map((ex, index) => [
-        allExerciseNames[index].toLowerCase(),
-        ex,
-      ]),
-    );
+    const inferredExercises =
+      await this.exerciseClient.inferExercises(allExerciseNames);
+    const exerciseDataMap = this.mapByRequestedName(inferredExercises);
 
     const musclesTargets: Array<MuscleTarget> = [];
 
     for (const exercise of exercisesToAdd) {
       const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
       if (exerciseData) {
-        for (const muscle of exerciseData.muscles) {
+        for (const muscle of exerciseData.exercise.muscles) {
           musclesTargets.push(muscle);
         }
       }
@@ -184,14 +511,14 @@ export class WorkoutsService {
       }
 
       // Determine if this exercise is primary
-      const isPrimary = ExerciseService.determineIsPrimary(
-        exerciseData.intensityCategory,
+      const isPrimary = determineIsPrimary(
+        exerciseData.exercise.intensityCategory,
         exercise.orderInWorkout,
         totalExercises,
       );
 
       prescriptionRequests.push({
-        intensityCategory: exerciseData.intensityCategory,
+        intensityCategory: exerciseData.exercise.intensityCategory,
         trainingType: trainingType,
         trainingPhase: 'accumulation', // Default phase
         weekInPhase: 1, // Week 1
@@ -208,9 +535,7 @@ export class WorkoutsService {
     // Generate all prescriptions in one batch request
     const prescriptions =
       exercisesToAdd.length > 0
-        ? await this.AIEngineIntegration.generateBatchPrescriptions(
-            prescriptionRequests,
-          )
+        ? await this.autoReg.generateBatchPrescriptions(prescriptionRequests)
         : [];
 
     // Validate response length matches request length
@@ -236,7 +561,7 @@ export class WorkoutsService {
       if (exercisesToAdd.length > 0) {
         const exerciseValues = exerciseMetadata.map((meta, index) => ({
           workoutDayId,
-          exerciseId: meta.exerciseData.id,
+          exerciseId: meta.exerciseData.exercise.id,
           orderInWorkout: meta.exercise.orderInWorkout,
           targetSetsMin: meta.exercise.targetSetsMin,
           targetSetsMax:
@@ -256,9 +581,9 @@ export class WorkoutsService {
       }
     });
 
-    // Move image generation outside transaction to avoid holding it open
+    // Publish image-generation events outside the transaction
     if (exercisesToAdd.length > 0) {
-      await this.generateMuscleImagesForWorkoutDay([
+      this.generateMuscleImagesForWorkoutDay([
         { id: workoutDayId, muscles: musclesTargets },
       ]);
     }
@@ -278,30 +603,16 @@ export class WorkoutsService {
       workoutDay.exercises.map((exercise) => exercise.name),
     );
 
-    // Batch upsert exercises
-    const exercisesWithMuscles =
-      await this.exerciseService.batchUpsertExercises(allExerciseNames);
-
-    // Create exercise data map
-    const exerciseDataMap = new Map(
-      exercisesWithMuscles.map((ex, index) => [
-        allExerciseNames[index].toLowerCase(),
-        ex,
-      ]),
-    );
+    const inferredExercises =
+      await this.exerciseClient.inferExercises(allExerciseNames);
+    const exerciseDataMap = this.mapByRequestedName(inferredExercises);
 
     // Collect prescription requests
     const prescriptionRequests: PrescriptionRequestDto[] = [];
     const exerciseMetadataPreInsert: Array<{
       dayIndex: number;
       exercise: CreateWorkoutExerciseInput;
-      exerciseData: {
-        id: number;
-        name: string;
-        intensityCategory: IntensityCategory;
-        exerciseType: ExerciseType;
-        muscles: Array<MuscleTarget>;
-      };
+      exerciseData: InferredExercise;
       isPrimary: boolean;
     }> = [];
 
@@ -315,14 +626,14 @@ export class WorkoutsService {
           throw new Error(`Exercise data not found for: ${exercise.name}`);
         }
 
-        const isPrimary = ExerciseService.determineIsPrimary(
-          exerciseData.intensityCategory,
+        const isPrimary = determineIsPrimary(
+          exerciseData.exercise.intensityCategory,
           exercise.orderInWorkout,
           totalExercises,
         );
 
         prescriptionRequests.push({
-          intensityCategory: exerciseData.intensityCategory,
+          intensityCategory: exerciseData.exercise.intensityCategory,
           trainingType: trainingType,
           trainingPhase: 'accumulation',
           weekInPhase: 1,
@@ -341,9 +652,7 @@ export class WorkoutsService {
     // Generate prescriptions
     const prescriptions =
       prescriptionRequests.length > 0
-        ? await this.AIEngineIntegration.generateBatchPrescriptions(
-            prescriptionRequests,
-          )
+        ? await this.autoReg.generateBatchPrescriptions(prescriptionRequests)
         : [];
 
     if (
@@ -362,7 +671,7 @@ export class WorkoutsService {
       for (const exercise of workoutDay.exercises) {
         const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
         if (exerciseData) {
-          for (const muscle of exerciseData.muscles) {
+          for (const muscle of exerciseData.exercise.muscles) {
             musclesWithRoles.push(muscle);
           }
         }
@@ -431,7 +740,7 @@ export class WorkoutsService {
           const preInsertMeta = exerciseMetadataPreInsert[prescriptionIndex];
           allExerciseInserts.push({
             workoutDayId: workoutDayId,
-            exerciseId: preInsertMeta.exerciseData.id,
+            exerciseId: preInsertMeta.exerciseData.exercise.id,
             orderInWorkout: preInsertMeta.exercise.orderInWorkout,
             targetSetsMin: preInsertMeta.exercise.targetSetsMin,
             targetSetsMax:
@@ -461,59 +770,59 @@ export class WorkoutsService {
       return insertedWorkoutDays.map((wd) => wd.id);
     });
 
-    // Generate muscle images outside transaction
-    await this.generateMuscleImagesForWorkoutDay(workoutDaysDataForImages);
+    // Publish image-generation events outside the transaction
+    this.generateMuscleImagesForWorkoutDay(workoutDaysDataForImages);
 
     return insertedWorkoutDayIds;
   }
 
-  async generateMuscleImagesForWorkoutDay(
+  /**
+   * Request muscle images for the given workout days by publishing a
+   * `workout-day.created` event per day onto Kafka. muscle-image renders +
+   * uploads asynchronously and reports back via `muscle-image.generated`
+   * ({@link setMuscleImageUrl}); until then `muscle_image_url` stays null.
+   */
+  generateMuscleImagesForWorkoutDay(
     workoutDaysData: Array<{
       id: number;
       muscles: Array<{ name: string; role: string }>;
     }>,
-  ): Promise<void> {
+  ): void {
     if (!workoutDaysData || workoutDaysData.length === 0) {
       this.logger.warn('No workout days provided for muscle image generation');
       return;
     }
 
-    this.logger.log(
-      `Generating muscle images for ${workoutDaysData.length} workout days`,
+    for (const workoutDayData of workoutDaysData) {
+      this.eventPublisher.publishWorkoutDayCreated({
+        workoutDayId: workoutDayData.id,
+        muscles: workoutDayData.muscles,
+      });
+    }
+  }
+
+  /**
+   * Persist the muscle image URL produced asynchronously by muscle-image.
+   * Driven by the `muscle-image.generated` Kafka event.
+   */
+  async setMuscleImageUrl(workoutDayId: number, url: string): Promise<void> {
+    await this.db
+      .update(workoutDays)
+      .set({ muscleImageUrl: url })
+      .where(eq(workoutDays.id, workoutDayId));
+
+    this.logger.log(`Set muscle image url for workout day ${workoutDayId}`);
+  }
+
+  /**
+   * Index inference results by the lowercased name they were requested with.
+   * Results come back in request order, one per name.
+   */
+  private mapByRequestedName(
+    inferred: InferredExercise[],
+  ): Map<string, InferredExercise> {
+    return new Map(
+      inferred.map((entry) => [entry.requestedName.toLowerCase(), entry]),
     );
-
-    // Generate all images in parallel
-    const imageGenerationPromises = workoutDaysData.map(
-      async (workoutDayData) => {
-        try {
-          const muscleImageUrl =
-            await this.muscleImageIntegration.generateAndSaveImage(
-              workoutDayData.id,
-              workoutDayData.muscles,
-            );
-
-          // Update workout day with image URL
-          await this.db
-            .update(workoutDays)
-            .set({ muscleImageUrl })
-            .where(eq(workoutDays.id, workoutDayData.id));
-
-          this.logger.log(
-            `Successfully generated muscle image for workout day ${workoutDayData.id}`,
-          );
-        } catch (error) {
-          // Log error but don't fail the entire batch if one image generation fails
-          this.logger.error(
-            `Failed to generate muscle image for workout day ${workoutDayData.id}:`,
-            error,
-          );
-        }
-      },
-    );
-
-    // Wait for all image generations to complete (or fail)
-    await Promise.allSettled(imageGenerationPromises);
-
-    this.logger.log('Completed batch muscle image generation');
   }
 }

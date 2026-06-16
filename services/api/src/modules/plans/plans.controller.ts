@@ -35,7 +35,7 @@ export class PlansController {
   @Post()
   createPlan(@Body() dto: CreatePlanDto, @CurrentUser() user: CurrentAuthUser) {
     return this.plansService.createPlan({
-      athleteId: user.id,
+      userId: user.id,
       name: dto.name,
       description: dto.description,
       trainingType: dto.trainingType,

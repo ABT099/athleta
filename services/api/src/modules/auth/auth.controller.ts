@@ -46,7 +46,9 @@ export class AuthController {
   @Post('login')
   async login(@Request() req: AuthenticatedRequest) {
     this.logger.log('Login endpoint hit - user authenticated successfully');
-    this.logger.debug(`User ID: ${req.user.id}, hasInitialPlan: ${req.user.hasInitialPlan}`);
+    this.logger.debug(
+      `User ID: ${req.user.id}, hasInitialPlan: ${req.user.hasInitialPlan}`,
+    );
     return this.authenticationService.login(req.user);
   }
 

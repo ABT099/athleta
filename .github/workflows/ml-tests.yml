@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./services/ai-engine
+        working-directory: ./services/auto-regulation-service
 
     steps:
       - uses: actions/checkout@v5
@@ -21,11 +21,11 @@ jobs:
         run: uv python install 3.13
 
       - name: Install dependencies
-        working-directory: services/ai-engine
+        working-directory: services/auto-regulation-service
         run: uv sync --all-extras
 
       - name: Run all tests including ML
-        working-directory: services/ai-engine
+        working-directory: services/auto-regulation-service
         run: uv run pytest --verbose --cov=app --cov-report=html --cov-report=term
 
       - name: Upload coverage
@@ -33,4 +33,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ml-test-coverage
-          path: services/ai-engine/htmlcov/
+          path: services/auto-regulation-service/htmlcov/

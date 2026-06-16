@@ -9,41 +9,48 @@ export type MuscleRole = 'prime_mover' | 'synergist' | 'stabilizer';
 
 export type MuscleTarget = {
   name: string;
+  displayName: string;
   role: MuscleRole;
+  activationPercent: number;
 };
 
-export type MuscleActivation = {
-  id: number;
-  name: string;
-  displayName: string;
-  activationPercent: number;
+export type ExerciseAttributes = {
+  equipment: string;
+  laterality: string;
+  angle: string;
+  grip: string;
+  tempo: string;
+  forceVector: string;
+};
+
+export type SafetyProfile = {
+  injuryRiskLevel: number;
+  complexityScore: number;
+  jointStressAreas: string[];
 };
 
 export type Exercise = {
   id: number;
   name: string;
-  equipment: string;
-  muscles: MuscleActivation[];
-  injuryRiskLevel: number;
-  jointStressAreas: string[];
   movementPattern: string;
   exerciseType: ExerciseType;
-  complexityScore: number;
+  intensityCategory: IntensityCategory;
+  attributes: ExerciseAttributes;
+  muscles: MuscleTarget[];
+  safety: SafetyProfile;
 };
 
-export type MatchDetails = {
-  muscleSimilarity: number;
-  movementPatternMatch: number;
-  exerciseTypeMatch: number;
-  complexitySimilarity: number;
-  patternSimilarity: number;
-  modifierMatch: number;
-  hierarchyDistance: number;
-};
+export type ExerciseResolution = 'matched' | 'inferred';
 
-export type SubstitutionResult = {
+export type InferredExercise = {
   exercise: Exercise;
-  similarityScore: number;
+  requestedName: string;
+  resolution: ExerciseResolution;
+  confidence: number;
+};
+
+export type Substitution = {
+  exercise: Exercise;
+  score: number;
   reason: string;
-  matchDetails: MatchDetails;
 };

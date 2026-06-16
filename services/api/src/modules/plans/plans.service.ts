@@ -3,19 +3,17 @@ import { DRIZZLE, type DrizzleDB } from '../common/database/database.provider';
 import { PeriodizationModel, TrainingType } from 'src/constants';
 import { workoutDays, workoutPlans, workoutDayExercises } from 'src/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import { ExerciseService } from '../exercise/exercise.service';
+import { ExerciseClientService } from '../exercise/exercise-client.service';
 import { WorkoutsService } from '../workouts/workouts.service';
-import { AIEngineIntegration } from 'src/integrations/ai-engine.integration';
+import { AthletesService } from '../athletes/athletes.service';
+import { AutoRegulationServiceIntegration } from 'src/integrations/auto-regulation-service.integration';
 import {
   CreateWorkoutDayInput,
   CreateWorkoutExerciseInput,
 } from '../workouts/workout.types';
+import { determineIsPrimary } from '../workouts/workout.utils';
 import { PrescriptionRequestDto } from 'src/integrations/integrations.types';
-import {
-  ExerciseType,
-  IntensityCategory,
-  MuscleTarget,
-} from '../exercise/exercise.types';
+import { InferredExercise, MuscleTarget } from '../exercise/exercise.types';
 
 type WorkoutDay = CreateWorkoutDayInput;
 type WorkoutExercise = CreateWorkoutExerciseInput;
@@ -24,46 +22,75 @@ type WorkoutExercise = CreateWorkoutExerciseInput;
 export class PlansService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
-    private readonly exerciseService: ExerciseService,
+    private readonly exerciseClient: ExerciseClientService,
     private readonly workoutsService: WorkoutsService,
-    private readonly aiEngineIntegration: AIEngineIntegration,
+    private readonly athletesService: AthletesService,
+    private readonly autoRegulationServiceIntegration: AutoRegulationServiceIntegration,
   ) {}
 
-  async getPlans(athleteId: number) {
+  async getPlans(userId: number) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
     return this.db.query.workoutPlans.findMany({
       where: eq(workoutPlans.athleteId, athleteId),
     });
   }
 
-  async getPlan(athleteId: number, planId: number) {
+  async getPlan(userId: number, planId: number) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
     const plan = await this.db.query.workoutPlans.findFirst({
       where: and(
         eq(workoutPlans.id, planId),
         eq(workoutPlans.athleteId, athleteId),
       ),
-      with: {
-        workoutDays: {
-          orderBy: [asc(workoutDays.orderInWeek)],
-          with: {
-            workoutDayExercises: {
-              orderBy: [asc(workoutDayExercises.orderInWorkout)],
-              with: {
-                exercise: true,
-              },
-            },
-          },
-        },
-      },
     });
 
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
-    return plan;
+
+    const days = await this.db
+      .select()
+      .from(workoutDays)
+      .where(eq(workoutDays.workoutPlanId, planId))
+      .orderBy(asc(workoutDays.orderInWeek));
+
+    const dayIds = days.map((day) => day.id);
+    const dayExercises =
+      dayIds.length > 0
+        ? await this.db
+            .select()
+            .from(workoutDayExercises)
+            .where(inArray(workoutDayExercises.workoutDayId, dayIds))
+            .orderBy(asc(workoutDayExercises.orderInWorkout))
+        : [];
+
+    // Exercise details live in the exercise service; hydrate the stored
+    // exercise IDs into full exercise objects.
+    const exerciseIds = [...new Set(dayExercises.map((wde) => wde.exerciseId))];
+    const exercises = await this.exerciseClient.getExercises(exerciseIds);
+    const exercisesById = new Map(exercises.map((ex) => [ex.id, ex]));
+
+    const exercisesByDay = new Map<number, typeof dayExercises>();
+    for (const wde of dayExercises) {
+      const list = exercisesByDay.get(wde.workoutDayId) ?? [];
+      list.push(wde);
+      exercisesByDay.set(wde.workoutDayId, list);
+    }
+
+    return {
+      ...plan,
+      workoutDays: days.map((day) => ({
+        ...day,
+        workoutDayExercises: (exercisesByDay.get(day.id) ?? []).map((wde) => ({
+          ...wde,
+          exercise: exercisesById.get(wde.exerciseId) ?? null,
+        })),
+      })),
+    };
   }
 
   async createPlan(createPlanDto: {
-    athleteId: number;
+    userId: number;
     name: string;
     description?: string;
     trainingType: TrainingType;
@@ -73,18 +100,22 @@ export class PlansService {
     focusAreas?: string[];
     workoutDays: WorkoutDay[];
   }) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(
+      createPlanDto.userId,
+    );
+
     const allExerciseNames = createPlanDto.workoutDays.flatMap((workoutDay) =>
       workoutDay.exercises.map((exercise) => exercise.name),
     );
 
-    const exercisesWithMuscles =
-      await this.exerciseService.batchUpsertExercises(allExerciseNames);
+    const inferredExercises =
+      await this.exerciseClient.inferExercises(allExerciseNames);
 
-    // Store full exercise data for prescription generation
-    const exerciseDataMap = new Map(
-      exercisesWithMuscles.map((ex, index) => [
-        allExerciseNames[index].toLowerCase(),
-        ex,
+    // Index inference results by the lowercased name they were requested with
+    const exerciseDataMap = new Map<string, InferredExercise>(
+      inferredExercises.map((entry) => [
+        entry.requestedName.toLowerCase(),
+        entry,
       ]),
     );
 
@@ -97,19 +128,10 @@ export class PlansService {
     // Collect all prescription requests for batch processing (before transaction)
     const prescriptionRequests: PrescriptionRequestDto[] = [];
 
-    // Build prescription requests and metadata (before transaction)
-    // We need to prepare the requests, but we'll need workoutDayIds from the transaction
-    // So we'll build the structure here and populate IDs after insertion
     const exerciseMetadataPreInsert: Array<{
       dayIndex: number;
       exercise: WorkoutExercise;
-      exerciseData: {
-        id: number;
-        name: string;
-        intensityCategory: IntensityCategory;
-        exerciseType: ExerciseType;
-        muscles: Array<MuscleTarget>;
-      };
+      exerciseData: InferredExercise;
       isPrimary: boolean;
     }> = [];
 
@@ -128,14 +150,14 @@ export class PlansService {
         }
 
         // Determine if this exercise is primary
-        const isPrimary = ExerciseService.determineIsPrimary(
-          exerciseData.intensityCategory,
+        const isPrimary = determineIsPrimary(
+          exerciseData.exercise.intensityCategory,
           exercise.orderInWorkout,
           totalExercises,
         );
 
         prescriptionRequests.push({
-          intensityCategory: exerciseData.intensityCategory,
+          intensityCategory: exerciseData.exercise.intensityCategory,
           trainingType: createPlanDto.trainingType,
           trainingPhase: 'accumulation', // Default phase for new plans
           weekInPhase: 1, // Week 1
@@ -153,7 +175,7 @@ export class PlansService {
 
     // Generate all prescriptions in one batch request (outside transaction)
     const prescriptions =
-      await this.aiEngineIntegration.generateBatchPrescriptions(
+      await this.autoRegulationServiceIntegration.generateBatchPrescriptions(
         prescriptionRequests,
       );
 
@@ -170,12 +192,12 @@ export class PlansService {
         .set({
           isActive: false,
         })
-        .where(eq(workoutPlans.athleteId, createPlanDto.athleteId));
+        .where(eq(workoutPlans.athleteId, athleteId));
 
       const workoutPlanId: number = await tx
         .insert(workoutPlans)
         .values({
-          athleteId: createPlanDto.athleteId,
+          athleteId: athleteId,
           name: createPlanDto.name,
           description: createPlanDto.description ?? null,
           trainingType: createPlanDto.trainingType,
@@ -197,7 +219,7 @@ export class PlansService {
         for (const exercise of workoutDay.exercises) {
           const exerciseData = exerciseDataMap.get(exercise.name.toLowerCase());
           if (exerciseData) {
-            for (const muscle of exerciseData.muscles) {
+            for (const muscle of exerciseData.exercise.muscles) {
               musclesWithRoles.push(muscle);
             }
           }
@@ -220,10 +242,15 @@ export class PlansService {
         };
       });
 
-      const insertedWorkoutDays = await tx
-        .insert(workoutDays)
-        .values(workoutDayValues.map((wd) => wd.values))
-        .returning({ id: workoutDays.id });
+      // A plan can be created with no days (e.g. a shell to fill in later);
+      // guard the insert since Drizzle rejects an empty values() array.
+      const insertedWorkoutDays =
+        workoutDayValues.length > 0
+          ? await tx
+              .insert(workoutDays)
+              .values(workoutDayValues.map((wd) => wd.values))
+              .returning({ id: workoutDays.id })
+          : [];
 
       // Map the returned IDs to the muscle data
       insertedWorkoutDays.forEach((insertedDay, index) => {
@@ -238,13 +265,7 @@ export class PlansService {
         dayIndex: number;
         workoutDayId: number;
         exercise: WorkoutExercise;
-        exerciseData: {
-          id: number;
-          name: string;
-          intensityCategory: IntensityCategory;
-          exerciseType: ExerciseType;
-          muscles: Array<MuscleTarget>;
-        };
+        exerciseData: InferredExercise;
         isPrimary: boolean;
       }> = [];
 
@@ -273,7 +294,7 @@ export class PlansService {
       // Map prescriptions back to exercises and insert
       const allExerciseInserts = exerciseMetadata.map((meta, index) => ({
         workoutDayId: meta.workoutDayId,
-        exerciseId: meta.exerciseData.id,
+        exerciseId: meta.exerciseData.exercise.id,
         orderInWorkout: meta.exercise.orderInWorkout,
         targetSetsMin: meta.exercise.targetSetsMin,
         targetSetsMax:
@@ -295,14 +316,12 @@ export class PlansService {
       }
     });
 
-    // Generate muscle images in batch outside transaction
-    await this.workoutsService.generateMuscleImagesForWorkoutDay(
-      workoutDaysData,
-    );
+    // Publish muscle-image generation events outside the transaction
+    this.workoutsService.generateMuscleImagesForWorkoutDay(workoutDaysData);
   }
 
   async updatePlan(
-    athleteId: number,
+    userId: number,
     planId: number,
     fieldsToUpdate: {
       name: string;
@@ -316,6 +335,8 @@ export class PlansService {
       focusAreas?: string[];
     },
   ) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
+
     // Verify the plan exists and belongs to the athlete
     const plan = await this.db.query.workoutPlans.findFirst({
       where: and(
@@ -367,7 +388,8 @@ export class PlansService {
     }
   }
 
-  async deletePlan(athleteId: number, planId: number) {
+  async deletePlan(userId: number, planId: number) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
     await this.db
       .delete(workoutPlans)
       .where(
@@ -375,7 +397,8 @@ export class PlansService {
       );
   }
 
-  async activatePlan(athleteId: number, planId: number) {
+  async activatePlan(userId: number, planId: number) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
     await this.db.transaction(async (tx) => {
       const planResult = await tx
         .select({ durationWeeks: workoutPlans.durationWeeks })
