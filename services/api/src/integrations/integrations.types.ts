@@ -2,10 +2,6 @@ import { TrainingPhase } from 'src/modules/common/common.types';
 import { TrainingType } from '../constants';
 import { IntensityCategory } from 'src/modules/exercise/exercise.types';
 
-export interface MuscleImageResponse {
-  url: string;
-}
-
 export interface JointStressProfileDto {
   avoidJoints: string[];
   reason: string;

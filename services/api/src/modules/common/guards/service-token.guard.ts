@@ -23,7 +23,9 @@ export class ServiceTokenGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const expected = this.configService.get<string>('SERVICE_TOKEN');
     if (!expected) {
-      throw new UnauthorizedException('Service authentication is not configured');
+      throw new UnauthorizedException(
+        'Service authentication is not configured',
+      );
     }
 
     const request = context.switchToHttp().getRequest();

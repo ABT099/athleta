@@ -1,6 +1,8 @@
 import {
   Controller,
   Put,
+  Patch,
+  Delete,
   Param,
   ParseIntPipe,
   Body,
@@ -10,6 +12,7 @@ import {
 import { WorkoutsService } from './workouts.service';
 import { SubstituteExerciseDto } from './dto/substitute-exercise.dto';
 import { UpdateWorkoutDayExerciseDto } from './dto/update-workout-day-exercises.dto';
+import { UpdateWorkoutDayDto } from './dto/update-workout-day.dto';
 import { jsDayToDayOfWeek } from 'src/constants';
 import { CurrentUser } from 'src/decorators/user.decorator';
 import { CreateWorkoutDayDto } from './dto/create-workout-day.dto';
@@ -70,5 +73,26 @@ export class WorkoutsController {
     @Body() dto: CompleteWorkoutDto,
   ) {
     return await this.workoutsService.completeWorkout(user.id, dto);
+  }
+
+  @Patch(':workoutDayId')
+  async updateWorkoutDay(
+    @CurrentUser() user: CurrentAuthUser,
+    @Param('workoutDayId', ParseIntPipe) workoutDayId: number,
+    @Body() dto: UpdateWorkoutDayDto,
+  ) {
+    return await this.workoutsService.updateWorkoutDay(user.id, workoutDayId, {
+      name: dto.name,
+      dayOfWeek: dto.dayOfWeek,
+      orderInWeek: dto.orderInWeek,
+    });
+  }
+
+  @Delete(':workoutDayId')
+  async deleteWorkoutDay(
+    @CurrentUser() user: CurrentAuthUser,
+    @Param('workoutDayId', ParseIntPipe) workoutDayId: number,
+  ): Promise<void> {
+    await this.workoutsService.deleteWorkoutDay(user.id, workoutDayId);
   }
 }

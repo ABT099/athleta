@@ -19,7 +19,9 @@ export class ExerciseController {
     // exercises, not athletes. getJointStressProfile degrades to an empty
     // profile when the auto-regulation service is unavailable.
     const jointProfile =
-      await this.autoRegulationServiceIntegration.getJointStressProfile(athleteId);
+      await this.autoRegulationServiceIntegration.getJointStressProfile(
+        athleteId,
+      );
 
     return this.exerciseClient.findSubstitutions(exerciseId, {
       excludeJointStress: jointProfile.avoidJoints,

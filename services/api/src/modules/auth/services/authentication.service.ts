@@ -31,7 +31,7 @@ export class AuthenticationService {
     password: string,
   ): Promise<{ id: number; hasInitialPlan: boolean } | null> {
     this.logger.log(`validateUser called for email: ${email}`);
-    
+
     try {
       const user = await this.db
         .select({
@@ -45,11 +45,15 @@ export class AuthenticationService {
         .then((rows) => rows[0]);
 
       if (!user) {
-        this.logger.warn(`User not found with email: ${email} - throwing NotFoundException`);
+        this.logger.warn(
+          `User not found with email: ${email} - throwing NotFoundException`,
+        );
         throw new NotFoundException();
       }
 
-      this.logger.debug(`User found with ID: ${user.id}, has password: ${!!user.password}`);
+      this.logger.debug(
+        `User found with ID: ${user.id}, has password: ${!!user.password}`,
+      );
 
       if (!user.password) {
         this.logger.warn(`User ${user.id} is OAuth user without password`);
@@ -58,7 +62,7 @@ export class AuthenticationService {
 
       const passwordMatch = await compare(password, user.password);
       this.logger.debug(`Password comparison result: ${passwordMatch}`);
-      
+
       if (!passwordMatch) {
         this.logger.warn(`Password mismatch for user ${user.id}`);
         return null;
@@ -67,7 +71,10 @@ export class AuthenticationService {
       this.logger.log(`User ${user.id} validated successfully`);
       return { id: user.id, hasInitialPlan: user.hasInitialPlan };
     } catch (error) {
-      this.logger.error(`Error in validateUser for email: ${email}`, error.stack);
+      this.logger.error(
+        `Error in validateUser for email: ${email}`,
+        error.stack,
+      );
       throw error;
     }
   }

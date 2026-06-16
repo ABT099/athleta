@@ -391,4 +391,3 @@ export const exercisePersonalRecords = pgTable(
     ),
   ],
 );
-

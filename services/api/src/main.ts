@@ -1,11 +1,27 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './filters/http-exception.filter';
+import { API_CONSUMER_GROUP } from './modules/common/messaging/messaging.constants';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
+
+  // Consume events from muscle-image (and future producers) off Kafka.
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.KAFKA,
+    options: {
+      client: {
+        clientId: 'athleta-api',
+        brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
+      },
+      consumer: {
+        groupId: API_CONSUMER_GROUP,
+      },
+    },
+  });
 
   // Enable global exception filter for detailed error logging
   app.useGlobalFilters(new AllExceptionsFilter());
@@ -34,9 +50,11 @@ async function bootstrap() {
     ],
   });
 
+  await app.startAllMicroservices();
+
   const port = process.env.PORT ?? 8080;
   await app.listen(port);
-  
+
   logger.log(`🚀 Application is running on: http://localhost:${port}`);
   logger.log(`📝 Health check available at: http://localhost:${port}/health`);
   logger.log(`🔐 Auth endpoints available at: http://localhost:${port}/auth/*`);

@@ -19,16 +19,20 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const request = context.switchToHttp().getRequest();
     const path = request.url;
     const method = request.method;
-    
+
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
 
-    this.logger.debug(`JwtAuthGuard checking: ${method} ${path} - isPublic: ${isPublic}`);
+    this.logger.debug(
+      `JwtAuthGuard checking: ${method} ${path} - isPublic: ${isPublic}`,
+    );
 
     if (isPublic) {
-      this.logger.debug(`Route ${method} ${path} is public, skipping JWT validation`);
+      this.logger.debug(
+        `Route ${method} ${path} is public, skipping JWT validation`,
+      );
       return true;
     }
 

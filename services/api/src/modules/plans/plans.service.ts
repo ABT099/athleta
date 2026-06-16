@@ -5,6 +5,7 @@ import { workoutDays, workoutPlans, workoutDayExercises } from 'src/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { ExerciseClientService } from '../exercise/exercise-client.service';
 import { WorkoutsService } from '../workouts/workouts.service';
+import { AthletesService } from '../athletes/athletes.service';
 import { AutoRegulationServiceIntegration } from 'src/integrations/auto-regulation-service.integration';
 import {
   CreateWorkoutDayInput,
@@ -23,16 +24,19 @@ export class PlansService {
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly exerciseClient: ExerciseClientService,
     private readonly workoutsService: WorkoutsService,
+    private readonly athletesService: AthletesService,
     private readonly autoRegulationServiceIntegration: AutoRegulationServiceIntegration,
   ) {}
 
-  async getPlans(athleteId: number) {
+  async getPlans(userId: number) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
     return this.db.query.workoutPlans.findMany({
       where: eq(workoutPlans.athleteId, athleteId),
     });
   }
 
-  async getPlan(athleteId: number, planId: number) {
+  async getPlan(userId: number, planId: number) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
     const plan = await this.db.query.workoutPlans.findFirst({
       where: and(
         eq(workoutPlans.id, planId),
@@ -86,7 +90,7 @@ export class PlansService {
   }
 
   async createPlan(createPlanDto: {
-    athleteId: number;
+    userId: number;
     name: string;
     description?: string;
     trainingType: TrainingType;
@@ -96,6 +100,10 @@ export class PlansService {
     focusAreas?: string[];
     workoutDays: WorkoutDay[];
   }) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(
+      createPlanDto.userId,
+    );
+
     const allExerciseNames = createPlanDto.workoutDays.flatMap((workoutDay) =>
       workoutDay.exercises.map((exercise) => exercise.name),
     );
@@ -184,12 +192,12 @@ export class PlansService {
         .set({
           isActive: false,
         })
-        .where(eq(workoutPlans.athleteId, createPlanDto.athleteId));
+        .where(eq(workoutPlans.athleteId, athleteId));
 
       const workoutPlanId: number = await tx
         .insert(workoutPlans)
         .values({
-          athleteId: createPlanDto.athleteId,
+          athleteId: athleteId,
           name: createPlanDto.name,
           description: createPlanDto.description ?? null,
           trainingType: createPlanDto.trainingType,
@@ -303,14 +311,12 @@ export class PlansService {
       }
     });
 
-    // Generate muscle images in batch outside transaction
-    await this.workoutsService.generateMuscleImagesForWorkoutDay(
-      workoutDaysData,
-    );
+    // Publish muscle-image generation events outside the transaction
+    this.workoutsService.generateMuscleImagesForWorkoutDay(workoutDaysData);
   }
 
   async updatePlan(
-    athleteId: number,
+    userId: number,
     planId: number,
     fieldsToUpdate: {
       name: string;
@@ -324,6 +330,8 @@ export class PlansService {
       focusAreas?: string[];
     },
   ) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
+
     // Verify the plan exists and belongs to the athlete
     const plan = await this.db.query.workoutPlans.findFirst({
       where: and(
@@ -375,7 +383,8 @@ export class PlansService {
     }
   }
 
-  async deletePlan(athleteId: number, planId: number) {
+  async deletePlan(userId: number, planId: number) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
     await this.db
       .delete(workoutPlans)
       .where(
@@ -383,7 +392,8 @@ export class PlansService {
       );
   }
 
-  async activatePlan(athleteId: number, planId: number) {
+  async activatePlan(userId: number, planId: number) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
     await this.db.transaction(async (tx) => {
       const planResult = await tx
         .select({ durationWeeks: workoutPlans.durationWeeks })

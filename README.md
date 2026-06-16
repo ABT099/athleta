@@ -11,8 +11,8 @@ An all in one intelligent platform to enhance fitness progression with AI
 ```
 athleta/
 ├── services/
-│ ├── api/ # NestJS API service (owns its Postgres; migrations via drizzle-kit)
-│ ├── auto-regulation-service/ # Python AI/ML service (owns its Postgres; migrations via Alembic)
+│ ├── api/ # NestJS API service
+│ ├── auto-regulation-service/ # Python AI/ML service 
 │ ├── exercise-service/ # Go service for exercise inference and logic
 │ └── muscle-image/ # PHP service for muscle images
 ├── docker-compose.yml

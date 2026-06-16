@@ -16,6 +16,10 @@ services:
     ports:
       - "6379:6379"
 
+  kafka:
+    ports:
+      - "9092:9092"
+
   exercise-service:
     image: athleta/exercise-service:local
     build:
@@ -23,6 +27,12 @@ services:
       dockerfile: ./services/exercise-service/Dockerfile
 
   muscle-image-api:
+    image: athleta/muscle-image:local
+    build:
+      context: ./services/muscle-image
+      dockerfile: Dockerfile
+
+  muscle-image-worker:
     image: athleta/muscle-image:local
     build:
       context: ./services/muscle-image

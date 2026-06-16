@@ -135,6 +135,45 @@ services:
           cpus: "0.5"
           memory: 256M
 
+  kafka:
+    container_name: athleta_kafka
+    image: apache/kafka:3.9.0
+    environment:
+      # Single-node KRaft (no Zookeeper): this node is both broker and controller.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - backend
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
   exercise-service:
     container_name: athleta_exercise_service
     image: ghcr.io/${GITHUB_REPOSITORY}/exercise-service:latest
@@ -195,6 +234,30 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  muscle-image-worker:
+    container_name: muscle-image-worker
+    image: ghcr.io/${GITHUB_REPOSITORY}/muscle-image:latest
+    command: ["php", "consumer.php"]
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      KAFKA_BROKERS: kafka:9092
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_BUCKET: ${R2_BUCKET:-athleta-muscle-images}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+    networks:
+      - backend
+    depends_on:
+      kafka:
+        condition: service_healthy
     restart: always
     deploy:
       resources:
@@ -295,7 +358,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/athleta
       AUTO_REGULATION_SERVICE_URL: http://auto-regulation-service:8000
       EXERCISE_SERVICE_URL: exercise-service:50051
-      MUSCLE_IMAGE_URL: http://muscle-image-api:80
+      KAFKA_BROKERS: kafka:9092
       SERVICE_TOKEN: ${SERVICE_TOKEN}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       JWT_SECRET: ${JWT_SECRET}
@@ -311,7 +374,7 @@ services:
         condition: service_healthy
       exercise-service:
         condition: service_healthy
-      muscle-image-api:
+      kafka:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
@@ -409,6 +472,8 @@ volumes:
   neo4j_data:
     driver: local
   neo4j_logs:
+    driver: local
+  kafka_data:
     driver: local
   traefik_certs:
     driver: local

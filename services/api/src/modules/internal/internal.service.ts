@@ -49,9 +49,7 @@ export class InternalService {
       ),
     });
     if (!plan) {
-      throw new NotFoundException(
-        `No active plan for athlete ${athleteId}`,
-      );
+      throw new NotFoundException(`No active plan for athlete ${athleteId}`);
     }
 
     const days = await this.db
@@ -129,11 +127,7 @@ export class InternalService {
   }
 
   /** Recovery metrics for an athlete, newest first (ML retraining bulk read). */
-  async listRecoveryMetrics(
-    athleteId: number,
-    since?: Date,
-    limit?: number,
-  ) {
+  async listRecoveryMetrics(athleteId: number, since?: Date, limit?: number) {
     const conditions: SQL[] = [eq(recoveryMetrics.athleteId, athleteId)];
     if (since) {
       conditions.push(gte(recoveryMetrics.date, since.toISOString()));

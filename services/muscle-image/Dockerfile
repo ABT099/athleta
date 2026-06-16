@@ -1,7 +1,16 @@
 FROM php:8.1-apache
 
-RUN apt-get update && apt-get install -y libpng-dev unzip \
-    && docker-php-ext-install gd
+# gd: muscle image compositing. rdkafka: the Kafka consumer/producer (worker).
+# $PHPIZE_DEPS + librdkafka-dev are build-time deps for pecl install rdkafka.
+RUN apt-get update && apt-get install -y \
+        $PHPIZE_DEPS \
+        libpng-dev \
+        unzip \
+        librdkafka-dev \
+    && docker-php-ext-install gd \
+    && pecl install rdkafka \
+    && docker-php-ext-enable rdkafka \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN a2enmod rewrite
 

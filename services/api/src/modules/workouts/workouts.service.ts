@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, Inject, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Inject,
+  Logger,
+} from '@nestjs/common';
 import { DRIZZLE, type DrizzleDB } from '../common/database/database.provider';
 import {
   workoutDayExercises,
@@ -13,13 +19,14 @@ import {
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { WorkoutExerciseDto } from '../plans/dto/create-plan.dto';
 import { ExerciseClientService } from '../exercise/exercise-client.service';
-import { MuscleImageIntegration } from 'src/integrations/muscle-image.integration';
+import { EventPublisher } from '../common/messaging/event-publisher.service';
 import { AutoRegulationServiceIntegration } from 'src/integrations/auto-regulation-service.integration';
 import {
   PrescriptionRequestDto,
   PrUpdate,
 } from 'src/integrations/integrations.types';
 import { InternalService } from '../internal/internal.service';
+import { AthletesService } from '../athletes/athletes.service';
 import { CompleteWorkoutDto } from './dto/complete-workout.dto';
 import { DayOfWeek, TrainingType } from 'src/constants';
 import { InferredExercise, MuscleTarget } from '../exercise/exercise.types';
@@ -36,9 +43,10 @@ export class WorkoutsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly exerciseClient: ExerciseClientService,
-    private readonly muscleImageIntegration: MuscleImageIntegration,
+    private readonly eventPublisher: EventPublisher,
     private readonly autoReg: AutoRegulationServiceIntegration,
     private readonly internalService: InternalService,
+    private readonly athletesService: AthletesService,
   ) {}
 
   /**
@@ -49,12 +57,7 @@ export class WorkoutsService {
    * the workout the athlete logged.
    */
   async completeWorkout(userId: number, dto: CompleteWorkoutDto) {
-    const athlete = await this.db.query.athletes.findFirst({
-      where: eq(athletes.userId, userId),
-    });
-    if (!athlete) {
-      throw new NotFoundException(`No athlete profile for user ${userId}`);
-    }
+    const athlete = await this.athletesService.requireAthleteByUserId(userId);
 
     const sessionDate = dto.sessionDate ?? new Date().toISOString();
     const totalVolume = dto.exerciseSets.reduce(
@@ -109,7 +112,8 @@ export class WorkoutsService {
             .values({
               athleteId: athlete.id,
               date: sessionDate,
-              sleepQuality: r.sleepQuality as (typeof recoveryMetrics.$inferInsert)['sleepQuality'],
+              sleepQuality:
+                r.sleepQuality as (typeof recoveryMetrics.$inferInsert)['sleepQuality'],
               sleepHours: r.sleepHours ?? null,
               overallSoreness: r.overallSoreness ?? null,
               muscleSoreness: r.muscleSoreness ?? null,
@@ -317,7 +321,8 @@ export class WorkoutsService {
       .where(eq(workoutDayExercises.id, workoutExercise.id));
   }
 
-  async getCurrentWorkoutDay(athleteId: number, dayOfWeek: DayOfWeek) {
+  async getCurrentWorkoutDay(userId: number, dayOfWeek: DayOfWeek) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
     const currentWorkoutDay = await this.db
       .select({
         id: workoutDays.id,
@@ -345,6 +350,89 @@ export class WorkoutsService {
     }
 
     return currentWorkoutDay[0];
+  }
+
+  /**
+   * Verify a workout day belongs to the athlete (via its plan), throwing
+   * NotFoundException otherwise so one athlete can't read/mutate another's day.
+   */
+  private async assertWorkoutDayOwnership(
+    athleteId: number,
+    workoutDayId: number,
+  ): Promise<void> {
+    const [owned] = await this.db
+      .select({ id: workoutDays.id })
+      .from(workoutDays)
+      .innerJoin(workoutPlans, eq(workoutDays.workoutPlanId, workoutPlans.id))
+      .where(
+        and(
+          eq(workoutDays.id, workoutDayId),
+          eq(workoutPlans.athleteId, athleteId),
+        ),
+      )
+      .limit(1);
+
+    if (!owned) {
+      throw new NotFoundException(`Workout day ${workoutDayId} not found`);
+    }
+  }
+
+  async updateWorkoutDay(
+    userId: number,
+    workoutDayId: number,
+    fields: { name?: string; dayOfWeek?: number; orderInWeek?: number },
+  ) {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
+    await this.assertWorkoutDayOwnership(athleteId, workoutDayId);
+
+    const updates: Partial<typeof workoutDays.$inferInsert> = {};
+    if (fields.name !== undefined) updates.name = fields.name;
+    if (fields.dayOfWeek !== undefined) updates.dayOfWeek = fields.dayOfWeek;
+    if (fields.orderInWeek !== undefined) {
+      updates.orderInWeek = fields.orderInWeek;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      const [day] = await this.db
+        .select()
+        .from(workoutDays)
+        .where(eq(workoutDays.id, workoutDayId))
+        .limit(1);
+      return day;
+    }
+
+    const [updated] = await this.db
+      .update(workoutDays)
+      .set(updates)
+      .where(eq(workoutDays.id, workoutDayId))
+      .returning();
+    return updated;
+  }
+
+  async deleteWorkoutDay(userId: number, workoutDayId: number): Promise<void> {
+    const athleteId = await this.athletesService.getAthleteIdByUserId(userId);
+    await this.assertWorkoutDayOwnership(athleteId, workoutDayId);
+
+    // A logged session references the day (NOT NULL FK); deleting would either
+    // orphan training history or violate the constraint — block it instead.
+    const [loggedSession] = await this.db
+      .select({ id: workoutSessions.id })
+      .from(workoutSessions)
+      .where(eq(workoutSessions.workoutDayId, workoutDayId))
+      .limit(1);
+
+    if (loggedSession) {
+      throw new BadRequestException(
+        'Cannot delete a workout day with logged sessions',
+      );
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(workoutDayExercises)
+        .where(eq(workoutDayExercises.workoutDayId, workoutDayId));
+      await tx.delete(workoutDays).where(eq(workoutDays.id, workoutDayId));
+    });
   }
 
   async updateWorkoutDayExercise(
@@ -447,9 +535,7 @@ export class WorkoutsService {
     // Generate all prescriptions in one batch request
     const prescriptions =
       exercisesToAdd.length > 0
-        ? await this.autoReg.generateBatchPrescriptions(
-            prescriptionRequests,
-          )
+        ? await this.autoReg.generateBatchPrescriptions(prescriptionRequests)
         : [];
 
     // Validate response length matches request length
@@ -495,9 +581,9 @@ export class WorkoutsService {
       }
     });
 
-    // Move image generation outside transaction to avoid holding it open
+    // Publish image-generation events outside the transaction
     if (exercisesToAdd.length > 0) {
-      await this.generateMuscleImagesForWorkoutDay([
+      this.generateMuscleImagesForWorkoutDay([
         { id: workoutDayId, muscles: musclesTargets },
       ]);
     }
@@ -566,9 +652,7 @@ export class WorkoutsService {
     // Generate prescriptions
     const prescriptions =
       prescriptionRequests.length > 0
-        ? await this.autoReg.generateBatchPrescriptions(
-            prescriptionRequests,
-          )
+        ? await this.autoReg.generateBatchPrescriptions(prescriptionRequests)
         : [];
 
     if (
@@ -686,60 +770,48 @@ export class WorkoutsService {
       return insertedWorkoutDays.map((wd) => wd.id);
     });
 
-    // Generate muscle images outside transaction
-    await this.generateMuscleImagesForWorkoutDay(workoutDaysDataForImages);
+    // Publish image-generation events outside the transaction
+    this.generateMuscleImagesForWorkoutDay(workoutDaysDataForImages);
 
     return insertedWorkoutDayIds;
   }
 
-  async generateMuscleImagesForWorkoutDay(
+  /**
+   * Request muscle images for the given workout days by publishing a
+   * `workout-day.created` event per day onto Kafka. muscle-image renders +
+   * uploads asynchronously and reports back via `muscle-image.generated`
+   * ({@link setMuscleImageUrl}); until then `muscle_image_url` stays null.
+   */
+  generateMuscleImagesForWorkoutDay(
     workoutDaysData: Array<{
       id: number;
       muscles: Array<{ name: string; role: string }>;
     }>,
-  ): Promise<void> {
+  ): void {
     if (!workoutDaysData || workoutDaysData.length === 0) {
       this.logger.warn('No workout days provided for muscle image generation');
       return;
     }
 
-    this.logger.log(
-      `Generating muscle images for ${workoutDaysData.length} workout days`,
-    );
+    for (const workoutDayData of workoutDaysData) {
+      this.eventPublisher.publishWorkoutDayCreated({
+        workoutDayId: workoutDayData.id,
+        muscles: workoutDayData.muscles,
+      });
+    }
+  }
 
-    // Generate all images in parallel
-    const imageGenerationPromises = workoutDaysData.map(
-      async (workoutDayData) => {
-        try {
-          const muscleImageUrl =
-            await this.muscleImageIntegration.generateAndSaveImage(
-              workoutDayData.id,
-              workoutDayData.muscles,
-            );
+  /**
+   * Persist the muscle image URL produced asynchronously by muscle-image.
+   * Driven by the `muscle-image.generated` Kafka event.
+   */
+  async setMuscleImageUrl(workoutDayId: number, url: string): Promise<void> {
+    await this.db
+      .update(workoutDays)
+      .set({ muscleImageUrl: url })
+      .where(eq(workoutDays.id, workoutDayId));
 
-          // Update workout day with image URL
-          await this.db
-            .update(workoutDays)
-            .set({ muscleImageUrl })
-            .where(eq(workoutDays.id, workoutDayData.id));
-
-          this.logger.log(
-            `Successfully generated muscle image for workout day ${workoutDayData.id}`,
-          );
-        } catch (error) {
-          // Log error but don't fail the entire batch if one image generation fails
-          this.logger.error(
-            `Failed to generate muscle image for workout day ${workoutDayData.id}:`,
-            error,
-          );
-        }
-      },
-    );
-
-    // Wait for all image generations to complete (or fail)
-    await Promise.allSettled(imageGenerationPromises);
-
-    this.logger.log('Completed batch muscle image generation');
+    this.logger.log(`Set muscle image url for workout day ${workoutDayId}`);
   }
 
   /**

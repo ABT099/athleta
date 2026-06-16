@@ -35,6 +35,32 @@ class R2Uploader {
         ]);
     }
     
+    /**
+     * Public R2 URL for an object key (no existence check).
+     */
+    public function urlFor($key) {
+        return "{$this->publicUrl}/{$key}";
+    }
+
+    /**
+     * Whether an object already exists in the bucket. Used to dedupe renders:
+     * if the content-addressed key is already present we skip regeneration.
+     */
+    public function objectExists($key) {
+        try {
+            $this->s3Client->headObject([
+                'Bucket' => $this->bucket,
+                'Key'    => $key,
+            ]);
+            return true;
+        } catch (AwsException $e) {
+            if ($e->getStatusCode() === 404 || $e->getAwsErrorCode() === 'NotFound') {
+                return false;
+            }
+            throw $e;
+        }
+    }
+
     public function uploadImage($imageResource, $key) {
         // Save to temp file
         $tempFile = tempnam(sys_get_temp_dir(), 'muscle_');

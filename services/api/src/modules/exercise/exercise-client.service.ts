@@ -163,8 +163,7 @@ export class ExerciseClientService implements OnModuleInit {
       name: raw.name,
       movementPattern: raw.movementPattern ?? '',
       exerciseType: raw.exerciseType as Exercise['exerciseType'],
-      intensityCategory:
-        raw.intensityCategory as Exercise['intensityCategory'],
+      intensityCategory: raw.intensityCategory as Exercise['intensityCategory'],
       attributes: {
         equipment: raw.attributes?.equipment ?? '',
         laterality: raw.attributes?.laterality ?? '',
