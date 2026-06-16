@@ -1,126 +1,187 @@
-# API Endpoint Documentation
+# muscle-image
 
-This documentation provides an overview of all available endpoints in the Muscle Group Image Generator API. Each endpoint returns an image or an appropriate error message in JSON format.
-
-## Overview
-
-- [GET /getMuscleGroups](#get-getmusclegroups)
-- [GET /getBaseImage](#get-getbaseimage)
-- [GET /getImage](#get-getimage)
-- [GET /getMulticolorImage](#get-getmulticolorimage)
-- [GET /getIndividualColorImage](#get-getindividualcolorimage)
+Renders **anatomical muscle-group images** for Athleta — front/back body diagrams
+with chosen muscles highlighted in chosen colors. It runs as two processes from
+one PHP codebase: a synchronous **HTTP API** for on-demand rendering, and an
+asynchronous **Kafka worker** that pre-renders a workout's muscle map and stores
+it in Cloudflare R2.
 
 ---
 
-## GET /getMuscleGroups
+## Why two processes
 
-This endpoint returns a list of all available muscle groups.
+A muscle map is cheap to *look at* but not free to *generate* — it composites
+several overlay PNGs. Two access patterns need it:
 
-### Query Parameters
+- **On demand** — a caller wants an image right now for given muscles/colors. The
+  HTTP API renders and returns it in the response.
+- **Ahead of time** — when api creates a workout day, its muscle map can be
+  rendered once and cached so clients just load a URL. That work shouldn't block
+  api's request, so it happens off a Kafka event in the background worker, which
+  uploads to R2 and reports the URL back.
 
-None.
+```mermaid
+flowchart LR
+    subgraph sync["synchronous"]
+      caller(["caller"]) -->|"GET /getImage …"| http["HTTP API<br/><i>index.php</i>"]
+      http -->|PNG| caller
+    end
+    subgraph async["asynchronous"]
+      api["api"] -->|"athleta.workout-day.created"| k(["Kafka"])
+      k --> worker["worker<br/><i>consumer.php</i>"]
+      worker -->|"render + upload"| r2[("Cloudflare R2")]
+      worker -->|"athleta.muscle-image.generated"| k2(["Kafka"])
+      k2 --> api
+    end
 
-### Possible Calls
+    classDef self fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
+    classDef ext fill:#1f2937,stroke:#111827,color:#f9fafb;
+    classDef store fill:#ecfdf5,stroke:#10b981,color:#064e3b;
+    classDef bus fill:#fef3c7,stroke:#f59e0b,color:#78350f;
+    class http,worker self;
+    class caller,api ext;
+    class r2 store;
+    class k,k2 bus;
+```
 
-- `/getMuscleGroups`
-- `/getMuscleGroups?`
+Both processes share the same image-compositing code
+([controllers/MuscleImageController.php](controllers/MuscleImageController.php));
+only the entry point differs — [index.php](index.php) (HTTP) vs
+[consumer.php](consumer.php) (worker).
 
-### Example
+### The worker is idempotent
+
+The worker derives a **content-addressed R2 key** from the render parameters, so
+two identical requests resolve to the same object and an already-rendered image is
+served from R2 without re-compositing. Reprocessing a Kafka message is therefore
+safe.
+
+---
+
+## Synchronous HTTP API
+
+Each endpoint returns an image, or a JSON error. Useful for previews and ad-hoc
+rendering.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /getMuscleGroups` | List the available muscle-group names. |
+| `GET /getBaseImage` | The base silhouette, optionally transparent. |
+| `GET /getImage` | Highlight one set of muscles in a single color. |
+| `GET /getMulticolorImage` | Highlight primary and secondary muscle sets in two colors. |
+| `GET /getIndividualColorImage` | Highlight each muscle in its own color. |
+| `POST /generateAndStore` | Render for a workout day and upload to R2; returns the URL. |
+| `GET /health` | Liveness probe. |
+
+Common query parameter: `transparentBackground` (`0`/`1`, default `0`) is
+accepted by every rendering endpoint.
+
+### `GET /getMuscleGroups`
+
+Returns the list of all available muscle groups. No parameters.
 
 ```bash
-curl -X GET "http://localhost/getMuscleGroups"
+curl "http://localhost/getMuscleGroups"
+```
+
+### `GET /getBaseImage`
+
+Returns the base image (silhouette / basic layout).
+
+- `transparentBackground` (optional, default `0`)
+
+```bash
+curl "http://localhost/getBaseImage?transparentBackground=1"
+```
+
+### `GET /getImage`
+
+Highlights certain muscle groups, with an optional custom color.
+
+- `muscleGroups` (**required**) — comma-separated muscle names.
+- `color` (optional) — hex, e.g. `FF0000`. A default is used if omitted.
+- `transparentBackground` (optional, default `0`)
+
+```bash
+curl "http://localhost/getImage?muscleGroups=biceps,triceps&color=FF0000&transparentBackground=1"
+```
+
+### `GET /getMulticolorImage`
+
+Highlights two muscle sets in two different colors.
+
+- `primaryMuscleGroups` (**required**)
+- `secondaryMuscleGroups` (**required**)
+- `primaryColor` (**required**)
+- `secondaryColor` (**required**)
+- `transparentBackground` (optional, default `0`)
+
+```bash
+curl "http://localhost/getMulticolorImage?primaryMuscleGroups=biceps&secondaryMuscleGroups=triceps&primaryColor=FF0000&secondaryColor=00FF00&transparentBackground=1"
+```
+
+### `GET /getIndividualColorImage`
+
+Assigns an individual color to each muscle group. The two lists are positional.
+
+- `muscleGroups` (**required**) — comma-separated, e.g. `biceps,triceps`.
+- `colors` (**required**) — comma-separated, e.g. `FF0000,00FF00`. Must match the
+  number of muscle groups.
+- `transparentBackground` (optional, default `0`)
+
+```bash
+curl "http://localhost/getIndividualColorImage?muscleGroups=biceps,triceps&colors=FF0000,00FF00&transparentBackground=1"
+```
+
+### `POST /generateAndStore`
+
+Renders a two-color (primary/secondary) muscle map for a workout day and uploads
+it to R2, returning the public URL. This is the same work the worker performs;
+the endpoint exposes it synchronously for testing or backfills.
+
+```bash
+curl -X POST http://localhost/generateAndStore \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workoutDayId": 1,
+    "primaryMuscleGroups": "chest,triceps",
+    "secondaryMuscleGroups": "shoulders",
+    "primaryColor": "255,89,94",
+    "secondaryColor": "138,201,38"
+  }'
+# -> { "url": "https://pub-xxxxx.r2.dev/muscle-images/1.png" }
 ```
 
 ---
 
-## GET /getBaseImage
+## Asynchronous worker
 
-This endpoint returns the base image (e.g., a silhouette or basic layout).
+[consumer.php](consumer.php) is a long-lived process (`php consumer.php`) that:
 
-### Query Parameters
+1. Consumes `athleta.workout-day.created` from Kafka (consumer group
+   `muscle-image-workers`).
+2. Renders the day's muscle map and uploads it to R2 under a content-addressed
+   key (skipping the render if the object already exists).
+3. Publishes `athleta.muscle-image.generated` with the resulting URL, which api
+   consumes and persists on the workout day.
 
-- `transparentBackground` (optional, default `0`): An integer value indicating whether the background should be transparent (`1`) or not (`0`).
-
-### Possible Calls
-
-- `/getBaseImage`
-- `/getBaseImage?` (no parameters)
-- `/getBaseImage?transparentBackground=1`
-
-### Example
-
-```bash
-curl -X GET "http://localhost/getBaseImage?transparentBackground=1"
-```
+In production it runs as the `muscle-image-worker` container; the HTTP API runs as
+`muscle-image-api`. Both are built from the same image.
 
 ---
 
-## GET /getImage
+## Configuration & running
 
-This endpoint returns an image in which certain muscle groups can be highlighted. An optional custom color can be specified for highlighting the muscles.
-
-### Query Parameters
-
-- `muscleGroups` (**required**): A string specifying which muscles to highlight. Multiple muscle groups can be separated by commas.
-- `color` (optional): The color used for highlighting the muscles (e.g., in hex notation `FF0000`).
-- `transparentBackground` (optional, default `0`): An integer value indicating whether the background should be transparent (`1`) or not (`0`).
-
-### Possible Calls
-
-- `/getImage?muscleGroups=MUSCLE_GROUPS&color=COLOR&transparentBackground=0_or_1`
-
-&gt; **Note**: If `color` is not specified, a default color is used.
-
-### Example
+The worker needs `KAFKA_BROKERS`; both processes need the Cloudflare R2
+credentials (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+`R2_BUCKET`, `R2_PUBLIC_URL`). Full storage setup is in
+**[README_R2_SETUP.md](README_R2_SETUP.md)**.
 
 ```bash
-curl -X GET "http://localhost/getImage?muscleGroups=biceps,triceps&color=FF0000&transparentBackground=1"
+composer install
+php -S localhost:80 index.php   # HTTP API (or serve via the provided Dockerfile)
+php consumer.php                # the Kafka worker
 ```
 
----
-
-## GET /getMulticolorImage
-
-This endpoint produces an image in which two sets of muscle groups are highlighted using different colors.
-
-### Query Parameters
-
-- `primaryMuscleGroups` (**required**): A string containing the primary muscle groups.
-- `secondaryMuscleGroups` (**required**): A string containing the secondary muscle groups.
-- `primaryColor` (**required**): The color for the primary muscle groups.
-- `secondaryColor` (**required**): The color for the secondary muscle groups.
-- `transparentBackground` (optional, default `0`): An integer value indicating whether the background should be transparent (`1`) or not (`0`).
-
-### Possible Calls
-
-- `/getMulticolorImage?primaryMuscleGroups=GROUPS&secondaryMuscleGroups=GROUPS&primaryColor=COLOR&secondaryColor=COLOR&transparentBackground=0_or_1`
-
-### Example
-
-```bash
-curl -X GET "http://localhost/getMulticolorImage?primaryMuscleGroups=biceps&secondaryMuscleGroups=triceps&primaryColor=FF0000&secondaryColor=00FF00&transparentBackground=1"
-```
-
----
-
-## GET /getIndividualColorImage
-
-This endpoint allows you to assign individual colors for each muscle group. Both the muscle groups and their colors are provided as comma-separated strings.
-
-### Query Parameters
-
-- `muscleGroups` (**required**): A comma-separated string of muscle groups, for example `biceps,triceps`.
-- `colors` (**required**): A comma-separated string of colors, for example `FF0000,00FF00`.
-- `transparentBackground` (optional, default `0`): An integer value indicating whether the background should be transparent (`1`) or not (`0`).
-
-&gt; **Note**: The number of colors in `colors` should match the number of muscle groups in `muscleGroups`.
-
-### Possible Calls
-
-- `/getIndividualColorImage?muscleGroups=GROUPS&colors=COLORS&transparentBackground=0_or_1`
-
-### Example
-
-```bash
-curl -X GET "http://localhost/getIndividualColorImage?muscleGroups=biceps,triceps&colors=FF0000,00FF00&transparentBackground=1"
-```
+From the repo root, `docker compose up muscle-image-api muscle-image-worker`
+runs both against the shared Kafka and R2 configuration.

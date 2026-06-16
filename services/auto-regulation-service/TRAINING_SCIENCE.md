@@ -1,25 +1,48 @@
-# Training Science & Implementation Guide
+# Training Science
 
-## Overview
+The evidence base behind every number the **auto-regulation-service** produces.
+Each section states the principle, the supporting research, and exactly how it is
+implemented — so a prescription, a deload trigger, or a volume target can always
+be traced back to *why*.
 
-This document explains the scientific principles and research backing the AthleteAI progressive overload system.
+> This is the **science** reference. For how the service is *built* — modules,
+> seams, data ownership — see the [README](README.md).
+
+---
+
+## How the science maps to the code
+
+Each topic is implemented by one vertical module under
+[`app/modules/`](app/modules/):
+
+| Science | Module |
+| --- | --- |
+| Progressive Overload · Exercise-Specific Progression | `progression` |
+| Prescription Generation · Intensity Techniques | `prescription` |
+| Volume Landmarks (MEV/MAV/MRV) | `volume` |
+| Autoregulated Deloads (ACWR · sRPE) | `volume` · `injury` |
+| Periodization Models | `periodization` |
+| Gender & Age Adjustments | cross-cutting (`volume` · `progression`) |
+| RPE Calibration | `rpe` |
+| Machine Learning Integration | `ml` |
 
 ---
 
-## Table of Contents
+## Contents
 
-1. [Progressive Overload](#progressive-overload)
-2. [Prescription Generation](#prescription-generation)
-3. [Gender & Age-Based Adjustments](#gender--age-based-adjustments)
-4. [Exercise-Specific Progression](#exercise-specific-progression)
-5. [Intensity Techniques](#intensity-techniques)
-6. [Autoregulated Deloads](#autoregulated-deloads)
-7. [Periodization Models](#periodization-models)
-8. [RPE Calibration](#rpe-calibration)
-9. [Machine Learning Integration](#machine-learning-integration)
-10. [Scientific References](#scientific-references)
+| Part | Sections |
+| --- | --- |
+| **I · The Progression Engine** | [Progressive Overload](#progressive-overload) · [Prescription Generation](#prescription-generation) |
+| **II · Individualization** | [Gender & Age Adjustments](#gender--age-based-adjustments) · [Exercise-Specific Progression](#exercise-specific-progression) |
+| **III · Shaping the Stimulus** | [Intensity Techniques](#intensity-techniques) · [Volume Landmarks](#volume-landmarks-mev-mav-and-mrv) |
+| **IV · Fatigue & Structure** | [Autoregulated Deloads](#autoregulated-deloads) · [Periodization Models](#periodization-models) |
+| **V · Learning the Athlete** | [RPE Calibration](#rpe-calibration) · [Machine Learning Integration](#machine-learning-integration) |
+
+[Scientific References](#scientific-references)
 
 ---
+
+## Part I · The Progression Engine
 
 ## Progressive Overload
 
@@ -54,6 +77,23 @@ Progressive overload is the gradual increase of stress placed on the body during
 ### Overview
 
 The system automatically generates scientifically-validated training prescriptions for target RPE, RIR, and rest periods based on exercise characteristics, training goals, and training phase.
+
+```mermaid
+flowchart LR
+    cat["exercise category<br/><i>compound heavy /<br/>moderate / isolation</i>"] --> base["base RPE + rest<br/><i>by training goal</i>"]
+    base --> phase["× phase modifier<br/><i>accumulation … deload</i>"]
+    phase --> week["× week-in-phase<br/><i>microcycle ramp</i>"]
+    week --> safety{"safety caps"}
+    safety -->|"compounds ≤ RPE 9"| out["target<br/>RPE · RIR · rest"]
+    safety -->|"deload floor ≥ RPE 5"| out
+
+    classDef step fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
+    classDef io fill:#1f2937,stroke:#111827,color:#f9fafb;
+    classDef decision fill:#fef3c7,stroke:#f59e0b,color:#78350f;
+    class cat,base,phase,week step;
+    class out io;
+    class safety decision;
+```
 
 ### Exercise Intensity Categories
 
@@ -172,6 +212,8 @@ prescription = service.generate_prescription(
 - **Grgic et al. (2018)**: Rest interval between sets in resistance training: A systematic review
 
 ---
+
+## Part II · Individualization
 
 ## Gender & Age-Based Adjustments
 
@@ -316,6 +358,8 @@ Week 8: 105kg × 6 reps × 3 sets (weight increased, reps reset)
 - Schoenfeld (2010): Mechanisms of hypertrophy
 
 ---
+
+## Part III · Shaping the Stimulus
 
 ## Intensity Techniques
 
@@ -465,6 +509,26 @@ These multipliers are used to:
 
 Training volume (sets per muscle group per week) follows a dose-response relationship with muscle growth. The system tracks three critical landmarks:
 
+```mermaid
+flowchart LR
+    z0["below MEV<br/><i>maintenance</i>"] --> mev(["MEV<br/>~8–10 sets"])
+    mev --> z1["MEV → MAV<br/><i>productive</i>"]
+    z1 --> mav(["MAV<br/>~12–18 sets"])
+    mav --> z2["MAV → MRV<br/><i>optimal · sweet spot</i>"]
+    z2 --> mrv(["MRV<br/>~20–25 sets"])
+    mrv --> z3["beyond MRV<br/><i>excess fatigue</i>"]
+
+    classDef low fill:#fee2e2,stroke:#ef4444,color:#7f1d1d;
+    classDef good fill:#ecfdf5,stroke:#10b981,color:#064e3b;
+    classDef mark fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
+    class z0,z3 low;
+    class z1,z2 good;
+    class mev,mav,mrv mark;
+```
+
+For hypertrophy training the engine blends performance-based adjustments with an
+athlete's position on this curve (70% performance, 30% volume landmarks).
+
 ### Key Volume Thresholds
 
 **MEV (Minimum Effective Volume)**
@@ -566,6 +630,8 @@ Priority: High
 
 ---
 
+## Part IV · Fatigue & Structure
+
 ## Autoregulated Deloads
 
 ### Traditional vs Autoregulated
@@ -584,7 +650,29 @@ Priority: High
 
 ### Deload Triggers
 
-System monitors these indicators:
+System monitors these indicators — **any one** is enough to trigger a deload
+(safety-first):
+
+```mermaid
+flowchart LR
+    t1["performance drop ≥10%"] --> any{"any<br/>trigger?"}
+    t2["readiness <0.5 × 3 days"] --> any
+    t3["RPE spike >1.5"] --> any
+    t4["ACWR >1.5"] --> any
+    t5["sRPE spike >20%"] --> any
+    t6["critical readiness <0.4"] --> any
+    any -->|yes| deload["deload<br/><i>volume 50% · intensity 85–90%</i>"]
+    any -->|no| cont["continue progression"]
+
+    classDef trig fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
+    classDef decision fill:#fef3c7,stroke:#f59e0b,color:#78350f;
+    classDef warn fill:#fee2e2,stroke:#ef4444,color:#7f1d1d;
+    classDef ok fill:#ecfdf5,stroke:#10b981,color:#064e3b;
+    class t1,t2,t3,t4,t5,t6 trig;
+    class any decision;
+    class deload warn;
+    class cont ok;
+```
 
 1. **Performance Drop**
 
@@ -770,6 +858,8 @@ Sequential blocks focusing on specific adaptations
 
 ---
 
+## Part V · Learning the Athlete
+
 ## RPE Calibration
 
 ### The RPE-RIR Relationship
@@ -850,6 +940,22 @@ Sequential blocks focusing on specific adaptations
 ### Tiered Model Selection
 
 The system uses a tiered approach based on available data:
+
+```mermaid
+flowchart LR
+    s0["0–9<br/>sessions"] --> rules["rules only"]
+    s1["10–19<br/>sessions"] --> lgbm["LightGBM<br/><i>5-model ensemble</i>"]
+    s2["20+<br/>sessions"] --> cnn["Sequential CNN<br/><i>preferred</i>"]
+    cnn -.->|"if TensorFlow<br/>unavailable"| lgbm10["LightGBM<br/><i>10-model ensemble</i>"]
+
+    classDef io fill:#1f2937,stroke:#111827,color:#f9fafb;
+    classDef step fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
+    class s0,s1,s2 io;
+    class rules,lgbm,cnn,lgbm10 step;
+```
+
+More data unlocks a more capable model, but **rules are always the fallback** —
+the system never depends on ML being available.
 
 | Sessions       | Model Type     | Ensemble Size | Description                                                  |
 | -------------- | -------------- | ------------- | ------------------------------------------------------------ |
@@ -1093,78 +1199,16 @@ LightGBM provides feature importance scores that can be accessed via API:
 
 ---
 
-## Implementation Summary
+## Design Principles
 
-### What Makes This System Effective
+Five commitments tie all of the above together in code:
 
-1. **Individualized**: Adapts to each athlete's unique characteristics
-2. **Evidence-Based**: Grounded in peer-reviewed research
-3. **Autoregulated**: Adjusts based on performance and recovery
-4. **Safety-First**: Injury prevention built into every decision
-5. **Hybrid Intelligence**: Combines rules + ML for best results
+1. **Individualized** — adapts to each athlete's age, gender, experience, and training history.
+2. **Evidence-based** — every number traces to peer-reviewed research (see [Scientific References](#scientific-references)).
+3. **Autoregulated** — adjusts on measured performance and recovery, never a fixed calendar.
+4. **Safety-first** — injury-prevention caps (CNS-tax ceiling, ACWR, form gates, deload floor) gate every recommendation.
+5. **Hybrid intelligence** — rules are the guardrails; ML personalizes within them, weighted by its own confidence and uncertainty.
 
-### Key Innovations
-
-- **Gender-specific fatigue resistance** (women +8%, with individual variability emphasis)
-- **Age × Training Age adjustments** (6 age brackets with experience-based offsets)
-- **Volume landmark tracking** (MEV/MAV/MRV for hypertrophy optimization)
-- **Advanced deload triggers** (ACWR, sRPE, performance, readiness)
-- **Exercise-specific rates** (compound vs isolation progression)
-- **Performance-based deloads** (not time-based, truly autoregulated)
-- **Hybrid ML predictions** (confidence-based weighting)
-- **Individual RPE calibration** (learns your patterns)
-- **Multiple periodization models** (DUP, Block, Linear)
-- **Automatic intensity techniques** (trigger-based set types and rep styles)
-
-### Recent Updates (January 2025)
-
-**Automatic Prescription Generation (NEW):**
-
-- Scientifically-validated automatic generation of target RPE, RIR, and rest periods
-- Exercise intensity categories stored in database (compound_heavy, compound_moderate, isolation)
-- CNS Tax Rule: All compound exercises capped at RPE 9.0 for safety
-- Inverse RPE/RIR Law: Strictly enforced as RIR = 10 - RPE
-- Hybrid training logic: Compounds follow strength rules, isolations follow hypertrophy rules
-- Phase-aware adjustments: Accumulation, intensification, realization, and deload
-- Microcycle progression: Week 1-4 progressive overload within each phase
-- Deload safety: Aggressive intensity reduction (-2.0 RPE modifier, floor at 5.0)
-- Database-driven: No brittle string matching, intensity category stored per exercise
-
-**Automatic Intensity Techniques:**
-
-- Added Set Types: Drop Set, Rest-Pause, Myo-Reps, Cluster Set, Superset, Pre-Exhaust
-- Added Rep Styles: Lengthened Partials, Tempo Eccentric, Tempo Paused, Eccentric Overload
-- Composable system: Set types and rep styles can be combined
-- Trigger-based recommendations (defaults to straight sets unless needed):
-  - Plateau detection (stalled progress for 2-3 sessions)
-  - Struggling performance (high RPE, no progression)
-  - Volume ceiling (at MRV, need more stimulus)
-  - Phase-based (late accumulation phase)
-- Experience-gated: Advanced techniques require Intermediate/Advanced experience
-- Fatigue multipliers integrated into recovery calculations
-- Full execution tracking for ML analytics
-
-**Enhanced Gender & Age Science:**
-
-- Refined gender modifier from 10% to 8% to reflect "fatigue resistance" more accurately
-- Added emphasis on individual variability over population averages
-- Integrated training age to offset chronological age decline
-- Expanded to 6 age brackets including senior masters (66+)
-
-**Volume Landmark System:**
-
-- Implemented MEV/MAV/MRV tracking per muscle group
-- Individualized based on experience, age, and muscle size
-- Integrated into hypertrophy training recommendations
-- Prevents both under and overtraining
-
-**Advanced Fatigue Detection:**
-
-- Added ACWR (Acute:Chronic Workload Ratio) for injury prevention
-- Implemented Session RPE spike detection
-- Removed HRV dependency (requires external hardware)
-- Six independent deload triggers for comprehensive monitoring
-
----
-
-_Last Updated: January 21, 2025_
+These are why the engine is built as a pure function over an immutable
+[Analysis Context](README.md): the policy is large, but it stays testable,
+traceable, and honest about what it does not yet know.

@@ -1,32 +1,53 @@
 # ATHLETA
 
-An all in one intelligent platform to enhance fitness progression with AI
+An all-in-one intelligent platform that turns logged workouts into the next
+adaptation. Athleta is a **polyglot microservice system**: each service owns one
+domain in the language that fits it best, and they compose over gRPC, HTTP, and
+Kafka.
 
-## Architecture
+---
 
-![Alt Text](/assets/architecture.png)
+## The big picture
 
-## Folder structure
+A single public gateway (`api`) fronts four specialized backends. Each owns its
+**own database** and exposes a narrow contract; nothing reaches into another
+service's tables.
 
-```
-athleta/
-├── services/
-│ ├── api/ # NestJS API service
-│ ├── auto-regulation-service/ # Python AI/ML service 
-│ ├── exercise-service/ # Go service for exercise inference and logic
-│ └── muscle-image/ # PHP service for muscle images
-├── docker-compose.yml
-├── docker-compose.prod.yml
-└── backups/
-```
+![architecture diagram](/assets/architecture.png)
 
-## Get Started
+| Service | Stack | Owns | Talks via | Docs |
+| --- | --- | --- | --- | --- |
+| **api** | NestJS / TypeScript | The user & workout domain (athletes, plans, sessions, sets, recovery, PRs) in Postgres `athleta` | Public REST · gRPC client · Kafka · HTTP | [services/api](services/api/README.md) |
+| **auto-regulation** | Python / FastAPI | Training-science *algo state* (trends, progression, calibration) in Postgres `autoreg` | HTTP (in & out) · gRPC client · Celery | [services/auto-regulation-service](services/auto-regulation-service/README.md) |
+| **exercise-service** | Go | The exercise domain (inference, muscles, substitution) in Neo4j | gRPC server | [services/exercise-service](services/exercise-service/README.md) |
+| **muscle-image** | PHP | Muscle-group image rendering → Cloudflare R2 | HTTP API + Kafka worker | [services/muscle-image](services/muscle-image/README.md) |
 
-We have packaged everything to Docker containers so if you want to start the app just run:
+Supporting infrastructure: **Traefik** (gateway/TLS), **Redis** (Celery broker),
+**Kafka** (events), **Prometheus + Grafana** (monitoring). Only `api` is exposed
+to the internet; everything else lives on the private `backend` network.
+
+---
+
+## Get started
+
+Everything is packaged into Docker containers. Create a `.env` at the repo root
+with the secrets listed under **Required environment** below, then from the repo
+root:
 
 ```bash
-docker compose up -d
+docker compose up -d   # builds local images + exposes ports via the override file
 ```
+
+`docker compose` automatically layers [docker-compose.override.yml](docker-compose.override.yml)
+on top of [docker-compose.yml](docker-compose.yml). The base file pins the
+published `ghcr.io` images for production; the override **builds each service
+locally** and exposes infra ports (Postgres `5432`, Neo4j `7474/7687`, Redis
+`6379`, Kafka `9092`, Traefik dashboard `8080`) for development.
+
+Required environment (in `.env`): `POSTGRES_USER` / `POSTGRES_PASSWORD`,
+`JWT_SECRET`, `SERVICE_TOKEN` (shared service-to-service auth), `NEO4J_PASSWORD`,
+and the `R2_*` credentials for image storage (see
+[muscle-image/README_R2_SETUP.md](services/muscle-image/README_R2_SETUP.md)).
 
 ### Databases
 
@@ -44,7 +65,7 @@ migrator. Migrations are applied **manually** (not on container boot):
   ```
 
 - **auto-regulation-service** owns its own `autoreg` Postgres (the `ai_analysis`
-  schema). Models map onto `AutoregBase`; migrations use Alembic:
+  schema, *algo state only*). Models map onto `AutoregBase`; migrations use Alembic:
 
   ```bash
   cd services/auto-regulation-service
@@ -56,3 +77,24 @@ migrator. Migrations are applied **manually** (not on container boot):
 
 Run the relevant `migrate` / `upgrade head` step before starting the services
 against a fresh database.
+
+---
+
+## Repository layout
+
+```text
+athleta/
+├── services/
+│   ├── api/                       # NestJS gateway — public API + orchestration
+│   ├── auto-regulation-service/   # Python AI/ML — progressive-overload engine
+│   ├── exercise-service/          # Go — exercise inference over a Neo4j graph
+│   └── muscle-image/              # PHP — muscle-group image rendering (HTTP + worker)
+├── monitoring/                    # Prometheus scrape config
+├── assets/                        # diagrams and static docs assets
+├── docker-compose.yml             # base topology (production images)
+├── docker-compose.override.yml    # local dev: build from source + expose ports
+└── traefik-dynamic.yml            # Traefik dynamic configuration
+```
+
+Each service has its own README with the domain philosophy, architecture
+diagrams, and run instructions — start there for the deep dives.
